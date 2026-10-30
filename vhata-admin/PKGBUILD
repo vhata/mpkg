@@ -1,15 +1,18 @@
 pkgname=vhata-admin
 pkgver=1
-pkgrel=1
+pkgrel=2
 pkgdesc=Admin\ utilities
 arch=('any')
 
 depends=(
+  'docker'
+  'docker-compose'
   'inetutils'
   'lostfiles'
   'man-db'
   'net-tools'
   'pkgfile'
+  'tailscale'
   'yay-bin'
 )
 
