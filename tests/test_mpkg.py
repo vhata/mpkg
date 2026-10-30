@@ -1,4 +1,5 @@
 """Integration tests; package tools are stubbed, Git runs in temporary repos."""
+import json
 import os
 from pathlib import Path
 import shutil
@@ -32,12 +33,12 @@ if sys.argv[1:2] == ['-Qi']:
     print('Name : git\\nProvides : None\\n\\nName : provider\\nProvides : virtual=1')
 if Path(sys.argv[0]).name == 'sudo':
     sys.exit(int(os.environ.get('FAIL_MARK', '0')))
-if '-si' in sys.argv or '-sif' in sys.argv:
+if '-Bi' in sys.argv:
     sys.exit(int(os.environ.get('FAIL_BUILD', '0')))
 if '-T' in sys.argv:
     sys.exit(int(os.environ.get('MISSING', '0')))
 '''
-        for name in ('makepkg', 'sudo', 'pacman'):
+        for name in ('makepkg', 'sudo', 'pacman', 'yay'):
             path = bin_dir / name
             path.write_text(stub)
             path.chmod(0o755)
@@ -73,6 +74,30 @@ if '-T' in sys.argv:
         self.assertEqual(self.git('log', '-1', '--format=%s'),
                          '[pkgs] Update vhata-test: add python; remove git')
         self.assertIn('pkgrel=2', (self.repo / 'vhata-test/PKGBUILD').read_text())
+        calls = [json.loads(line) for line in (self.root / 'log').read_text().splitlines()]
+        self.assertIn(['yay', '-Bi', str(self.repo / 'vhata-test')], calls)
+
+    def test_missing_yay_blocks_changes_but_allows_queries(self):
+        self.create()
+        build = self.repo / 'vhata-test/PKGBUILD'
+        before = build.read_bytes()
+        head = self.git('rev-parse', 'HEAD')
+        bin_dir = self.root / 'bin'
+        (bin_dir / 'yay').unlink()
+        (bin_dir / 'python3').symlink_to(shutil.which('python3'))
+        # Restrict PATH so an installed system yay cannot mask the missing stub.
+        for args in [('test', '+gitstatus'), ('test', '--refresh'),
+                     ('new', 'New package', 'git')]:
+            result = self.invoke(*args, PATH=str(bin_dir))
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('yay is required', result.stderr)
+            self.assertEqual(build.read_bytes(), before)
+            self.assertFalse((self.repo / 'vhata-new').exists())
+            self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+        for args in [('--list',), ('--info', 'test'), ('--description', 'test'),
+                     ('--depends', 'test'), ('--help',)]:
+            result = self.invoke(*args, PATH=str(bin_dir))
+            self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_description_quoting_and_redefinition(self):
         self.create()
@@ -123,7 +148,8 @@ if '-T' in sys.argv:
         for env in ({'INSTALLED': '0-1'}, {'MISSING': '127'}):
             result = self.invoke('test', '--refresh', **env)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertIn('["makepkg", "-sif"]', (self.root / 'log').read_text())
+            calls = [json.loads(line) for line in (self.root / 'log').read_text().splitlines()]
+            self.assertIn(['yay', '-Bi', str(self.repo / 'vhata-test'), '--mflags=--force'], calls)
         self.assertEqual((self.repo / 'vhata-test/PKGBUILD').read_bytes(), before)
         self.assertEqual(self.git('rev-parse', 'HEAD'), head)
 

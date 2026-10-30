@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import re
 import shlex
+import shutil
 import subprocess
 import sys
 
@@ -30,6 +31,19 @@ def build_path(name):
 def require_package(name):
     if not build_path(name).is_file():
         raise ValueError(f"Unknown metapackage: {name}")
+
+
+def require_yay():
+    if shutil.which("yay") is None:
+        raise ValueError("yay is required to create, update, or refresh metapackages. "
+                         "Install yay and retry. Listing and inspection are still available.")
+
+
+def install(name, force=False):
+    args = ["yay", "-Bi", str(ROOT / name)]
+    if force:
+        args.append("--mflags=--force")
+    run(*args)
 
 
 def metadata(name):
@@ -101,6 +115,7 @@ def installed_providers(output, deps):
 
 def refresh(name):
     require_package(name)
+    require_yay()
     fields = metadata(name)
     if not fields.get("pkgver") or not fields.get("pkgrel"):
         raise ValueError("Cannot refresh: missing version metadata.")
@@ -115,7 +130,7 @@ def refresh(name):
         missing = run("pacman", "-T", *deps, capture=True, check=False)
         need_build = need_build or missing.returncode != 0
     if need_build:
-        run("makepkg", "-sif", cwd=ROOT / name)
+        install(name, force=True)
     else:
         print(f"{name} is up to date ({version}).")
     if deps:
@@ -159,6 +174,7 @@ def commit_message(name, old, new, description=None):
 
 
 def update(name, args):
+    require_yay()
     path = build_path(name)
     original = path.read_text() if path.exists() else None
     release = 1
@@ -196,7 +212,7 @@ def update(name, args):
     path.parent.mkdir(exist_ok=True)
     path.write_text(updated)
     try:
-        run("makepkg", "-si", cwd=path.parent)
+        install(name)
         if deps:
             run("sudo", "pacman", "-D", "--asdeps", *sorted(deps))
     except (subprocess.CalledProcessError, OSError):
