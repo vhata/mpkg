@@ -1,9 +1,88 @@
 #!/usr/bin/env bash
 
-if (( $# < 2 )); then
+usage() {
   echo "Usage: $0 METAPKG_NAME DESC PKG [ PKG .. ]"
   echo "       $0 METAPKG_NAME +PKG|-PKG [ +PKG|-PKG .. ]"
   echo "       $0 METAPKG_NAME --refresh"
+  echo "       $0 --list"
+  echo "       $0 --info|--description|--depends METAPKG_NAME [ METAPKG_NAME .. ]"
+}
+
+case "${1-}" in
+  --help|-h)
+    usage
+    exit 0
+    ;;
+  --list)
+    if (( $# != 1 )); then
+      usage >&2
+      exit 1
+    fi
+    for build in vhata-*/PKGBUILD; do
+      [[ -f "$build" ]] || continue
+      printf '%s\n' "${build%/PKGBUILD}"
+    done | LC_ALL=C sort
+    exit 0
+    ;;
+  --info|--description|--depends)
+    QUERY=$1
+    shift
+    if (( $# == 0 )); then
+      usage >&2
+      exit 1
+    fi
+    # Validate every name before invoking makepkg for any of them.
+    for name in "$@"; do
+      if [[ ! "$name" =~ ^[a-z0-9][a-z0-9_+-]*$ ]]; then
+        echo "Invalid package name: $name" >&2
+        exit 1
+      fi
+      if [[ ! -f "vhata-${name#vhata-}/PKGBUILD" ]]; then
+        echo "Unknown metapackage: $name" >&2
+        exit 1
+      fi
+    done
+    FIRST=true
+    for name in "$@"; do
+      name="vhata-${name#vhata-}"
+      SRCINFO=$(cd "$name" && makepkg --printsrcinfo) || exit $?
+      DESCRIPTION=
+      DEPENDENCIES=()
+      while IFS= read -r line; do
+        if [[ "$line" =~ ^[[:space:]]*(pkgdesc|depends|depends_[a-zA-Z0-9_]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+          case "${BASH_REMATCH[1]}" in
+            pkgdesc) DESCRIPTION=${BASH_REMATCH[2]} ;;
+            *) DEPENDENCIES+=("${BASH_REMATCH[2]}") ;;
+          esac
+        fi
+      done <<< "$SRCINFO"
+      if [[ "$QUERY" == --info ]] || (( $# > 1 )); then
+        "$FIRST" || printf '\n'
+        printf '%s:\n' "$name"
+      fi
+      FIRST=false
+      case "$QUERY" in
+        --info)
+          printf '  Description: %s\n' "$DESCRIPTION"
+          printf '  Dependencies:\n'
+          if (( ${#DEPENDENCIES[@]} > 0 )); then
+            printf '    %s\n' "${DEPENDENCIES[@]}"
+          fi
+          ;;
+        --description) printf '%s\n' "$DESCRIPTION" ;;
+        --depends)
+          if (( ${#DEPENDENCIES[@]} > 0 )); then
+            printf '%s\n' "${DEPENDENCIES[@]}"
+          fi
+          ;;
+      esac
+    done
+    exit 0
+    ;;
+esac
+
+if (( $# < 2 )); then
+  usage
   exit 1
 fi
 
