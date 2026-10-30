@@ -17,7 +17,7 @@ cat <<EOF > "${METAPKG_NAME}/PKGBUILD"
 pkgname=${METAPKG_NAME}
 pkgver=1
 pkgrel=1
-pkgdesc='${DESC}'
+pkgdesc=$(printf '%q' "$DESC")
 arch=('any')
 
 depends=(
@@ -35,7 +35,7 @@ package() {
 EOF
 
 (
-  cd "$METAPKG_NAME"
+  cd "$METAPKG_NAME" || exit
   makepkg -si
-)
+) || exit $?
 sudo pacman -D --asdeps "$@"
