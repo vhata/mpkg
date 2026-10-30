@@ -40,10 +40,17 @@ def require_yay():
 
 
 def install(name, force=False):
-    args = ["yay", "-Bi", str(ROOT / name)]
-    if force:
-        args.append("--mflags=--force")
-    run(*args)
+    # Local PKGBUILDs are not AUR checkouts: yay -B may try to Git-merge them.
+    fields = metadata(name)
+    deps = dependencies(fields) + fields.get(f"depends_{os.uname().machine}", [])
+    if deps:
+        missing = run("pacman", "-T", *deps, capture=True, check=False)
+        if missing.returncode not in (0, 127):
+            raise subprocess.CalledProcessError(missing.returncode, missing.args)
+        targets = missing.stdout.splitlines()
+        if targets:
+            run("yay", "-S", "--needed", "--asdeps", "--", *targets)
+    run("makepkg", "-sif" if force else "-si", cwd=ROOT / name)
 
 
 def metadata(name):

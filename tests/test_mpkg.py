@@ -33,9 +33,13 @@ if sys.argv[1:2] == ['-Qi']:
     print('Name : git\\nProvides : None\\n\\nName : provider\\nProvides : virtual=1')
 if Path(sys.argv[0]).name == 'sudo':
     sys.exit(int(os.environ.get('FAIL_MARK', '0')))
-if '-Bi' in sys.argv:
+if '-si' in sys.argv or '-sif' in sys.argv:
     sys.exit(int(os.environ.get('FAIL_BUILD', '0')))
+if Path(sys.argv[0]).name == 'yay':
+    sys.exit(int(os.environ.get('FAIL_YAY', '0')))
 if '-T' in sys.argv:
+    if os.environ.get('MISSING') == '127':
+        print(os.environ.get('MISSING_DEPS', 'git'))
     sys.exit(int(os.environ.get('MISSING', '0')))
 '''
         for name in ('makepkg', 'sudo', 'pacman', 'yay'):
@@ -75,7 +79,8 @@ if '-T' in sys.argv:
                          '[pkgs] Update vhata-test: add python; remove git')
         self.assertIn('pkgrel=2', (self.repo / 'vhata-test/PKGBUILD').read_text())
         calls = [json.loads(line) for line in (self.root / 'log').read_text().splitlines()]
-        self.assertIn(['yay', '-Bi', str(self.repo / 'vhata-test')], calls)
+        self.assertIn(['makepkg', '-si'], calls)
+        self.assertFalse(any(call[0] == 'yay' for call in calls))
 
     def test_missing_yay_blocks_changes_but_allows_queries(self):
         self.create()
@@ -98,6 +103,29 @@ if '-T' in sys.argv:
                      ('--depends', 'test'), ('--help',)]:
             result = self.invoke(*args, PATH=str(bin_dir))
             self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_missing_aur_and_repo_dependencies_installed_before_local_build(self):
+        self.create()
+        result = self.invoke('test', '+gitstatus', '+zsh', MISSING='127',
+                             MISSING_DEPS='gitstatus\nzsh')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = [json.loads(line) for line in (self.root / 'log').read_text().splitlines()]
+        install = ['yay', '-S', '--needed', '--asdeps', '--', 'gitstatus', 'zsh']
+        self.assertIn(install, calls)
+        self.assertEqual(calls[calls.index(install) + 1], ['makepkg', '-si'])
+        self.assertFalse(any('-Bi' in call for call in calls))
+
+    def test_dependency_install_or_check_failure_prevents_build_and_commit(self):
+        self.create()
+        head = self.git('rev-parse', 'HEAD')
+        for env in ({'MISSING': '127', 'MISSING_DEPS': 'gitstatus', 'FAIL_YAY': '1'},
+                    {'MISSING': '1'}):
+            (self.root / 'log').write_text('')
+            result = self.invoke('test', '+gitstatus', **env)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+            calls = [json.loads(line) for line in (self.root / 'log').read_text().splitlines()]
+            self.assertNotIn(['makepkg', '-si'], calls)
 
     def test_description_quoting_and_redefinition(self):
         self.create()
@@ -149,7 +177,7 @@ if '-T' in sys.argv:
             result = self.invoke('test', '--refresh', **env)
             self.assertEqual(result.returncode, 0, result.stderr)
             calls = [json.loads(line) for line in (self.root / 'log').read_text().splitlines()]
-            self.assertIn(['yay', '-Bi', str(self.repo / 'vhata-test'), '--mflags=--force'], calls)
+            self.assertIn(['makepkg', '-sif'], calls)
         self.assertEqual((self.repo / 'vhata-test/PKGBUILD').read_bytes(), before)
         self.assertEqual(self.git('rev-parse', 'HEAD'), head)
 
