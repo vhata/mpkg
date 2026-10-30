@@ -3,6 +3,7 @@
 if (( $# < 2 )); then
   echo "Usage: $0 METAPKG_NAME DESC PKG [ PKG .. ]"
   echo "       $0 METAPKG_NAME +PKG|-PKG [ +PKG|-PKG .. ]"
+  echo "       $0 METAPKG_NAME --refresh"
   exit 1
 fi
 
@@ -12,6 +13,77 @@ if [[ ! "$1" =~ ^[a-z0-9][a-z0-9_+-]*$ ]]; then
 fi
 
 METAPKG_NAME="vhata-${1#vhata-}"
+# Refresh never rewrites the PKGBUILD or increments its release.
+if [[ "$2" == --refresh ]]; then
+  if (( $# != 2 )) || [[ ! -f "${METAPKG_NAME}/PKGBUILD" ]]; then
+    echo "Refresh requires an existing metapackage and no additional arguments." >&2
+    exit 1
+  fi
+  SRCINFO=$(cd "$METAPKG_NAME" && makepkg --printsrcinfo) || exit $?
+  VERSION= RELEASE= EPOCH=
+  DEPENDENCIES=()
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^[[:space:]]*(pkgver|pkgrel|epoch|depends)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      case "${BASH_REMATCH[1]}" in
+        pkgver) VERSION=${BASH_REMATCH[2]} ;;
+        pkgrel) RELEASE=${BASH_REMATCH[2]} ;;
+        epoch) EPOCH=${BASH_REMATCH[2]} ;;
+        depends) DEPENDENCIES+=("${BASH_REMATCH[2]}") ;;
+      esac
+    fi
+  done <<< "$SRCINFO"
+  if [[ -z "$VERSION" || -z "$RELEASE" ]]; then
+    echo "Cannot refresh: missing version metadata." >&2
+    exit 1
+  fi
+  TARGET_VERSION="${VERSION}-${RELEASE}"
+  [[ -z "$EPOCH" || "$EPOCH" == 0 ]] || TARGET_VERSION="${EPOCH}:${TARGET_VERSION}"
+  INSTALLED=$(pacman -Q "$METAPKG_NAME" 2>/dev/null) || INSTALLED=
+  NEED_BUILD=false
+  [[ "$INSTALLED" == "$METAPKG_NAME $TARGET_VERSION" ]] || NEED_BUILD=true
+  if (( ${#DEPENDENCIES[@]} > 0 )); then
+    pacman -T "${DEPENDENCIES[@]}" >/dev/null || NEED_BUILD=true
+  fi
+  if "$NEED_BUILD"; then
+    (cd "$METAPKG_NAME" && makepkg -sif) || exit $?
+  else
+    echo "$METAPKG_NAME is up to date ($TARGET_VERSION)."
+  fi
+  # Resolve version constraints and virtual dependencies to installed providers.
+  if (( ${#DEPENDENCIES[@]} > 0 )); then
+    INSTALLED_INFO=$(LC_ALL=C pacman -Qi) || exit $?
+    PROVIDERS=$(printf '%s\n' "$INSTALLED_INFO" | python3 -c '
+import re, sys
+records = []
+for block in sys.stdin.read().split("\n\n"):
+    fields = {}
+    key = None
+    for line in block.splitlines():
+        match = re.match(r"^([^ :][^:]*?)\s*:\s*(.*)$", line)
+        if match:
+            key = match[1].strip()
+            fields[key] = match[2]
+        elif key and line.startswith(" "):
+            fields[key] += " " + line.strip()
+    if "Name" in fields:
+        records.append(fields)
+selected = set()
+for dep in sys.argv[1:]:
+    name = re.split(r"[<>=]", dep, maxsplit=1)[0]
+    direct = [r["Name"] for r in records if r["Name"] == name]
+    providers = direct or [r["Name"] for r in records if name in
+        [p.split("=", 1)[0] for p in r.get("Provides", "").split()]]
+    if not providers:
+        sys.exit("Cannot find installed provider for " + dep)
+    selected.update(providers)
+print("\n".join(sorted(selected)))
+' "${DEPENDENCIES[@]}") || exit $?
+    mapfile -t PROVIDER_ARRAY <<< "$PROVIDERS"
+    sudo pacman -D --asdeps "${PROVIDER_ARRAY[@]}" || exit $?
+  fi
+  exit 0
+fi
+
 EDIT_MODE=false
 if [[ "$2" == [+-]* ]]; then
   EDIT_MODE=true
