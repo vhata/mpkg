@@ -1,6 +1,6 @@
 pkgname=vhata-dev
 pkgver=1
-pkgrel=2
+pkgrel=3
 pkgdesc=Development\ utilities
 arch=('any')
 
@@ -9,6 +9,7 @@ depends=(
   claude-code
   git
   github-cli
+  gitstatus
   neovim
   npm
   openai-codex
