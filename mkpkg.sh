@@ -5,8 +5,12 @@ if [ -z "$3" ] ; then
   exit 1
 fi
 
+if [[ ! "$1" =~ ^[a-z0-9][a-z0-9_+-]*$ ]]; then
+  echo "Invalid package name: use lowercase letters, digits, underscores, plus signs, or hyphens; start with a letter or digit." >&2
+  exit 1
+fi
+
 # Should remove "vhata-" if it's already at the beginning
-# Should also not allow dots or slashes or other invalid package name characters
 METAPKG_NAME="vhata-$1"
 DESC="$2"
 shift ; shift
