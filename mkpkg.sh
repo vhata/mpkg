@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+SCRIPT_PATH=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
+SCRIPT_DIR=$(dirname -- "$SCRIPT_PATH") || exit 1
+cd -- "$SCRIPT_DIR" || exit 1
+
 usage() {
   echo "Usage: $0 METAPKG_NAME DESC PKG [ PKG .. ]"
   echo "       $0 METAPKG_NAME +PKG|-PKG [ +PKG|-PKG .. ]"
