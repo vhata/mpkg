@@ -175,6 +175,7 @@ if [[ "$2" == [+-]* ]]; then
     exit 1
   fi
   shift
+  COMMIT_MESSAGE="[pkgs] Update ${METAPKG_NAME} dependencies: $*"
 else
   if (( $# < 3 )); then
     echo "Supply a description and at least one dependency." >&2
@@ -182,6 +183,13 @@ else
   fi
   DESC="$2"
   shift ; shift
+  if [[ -f "${METAPKG_NAME}/PKGBUILD" ]]; then
+    COMMIT_MESSAGE="[pkgs] Redefine ${METAPKG_NAME}: ${DESC}"
+  else
+    COMMIT_MESSAGE="[pkgs] Create ${METAPKG_NAME}: ${DESC}"
+  fi
+  COMMIT_MESSAGE+=$'\n\nDependencies: '
+  COMMIT_MESSAGE+="$*"
 fi
 
 PKGREL=1
@@ -269,5 +277,9 @@ fi
   makepkg -si
 ) || exit $?
 if (( $# > 0 )); then
-  sudo pacman -D --asdeps "$@"
+  sudo pacman -D --asdeps "$@" || exit $?
 fi
+
+# Limit the commit to this package, preserving unrelated staged changes.
+git add -- "${METAPKG_NAME}/PKGBUILD" || exit $?
+git commit --only -m "$COMMIT_MESSAGE" -- "${METAPKG_NAME}/PKGBUILD" || exit $?
