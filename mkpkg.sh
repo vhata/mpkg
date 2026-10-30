@@ -25,10 +25,7 @@ arch=('any')
 
 depends=(
 $(
-  # I wish this could be sorted
-  for p in "$@" ; do
-    printf "  %s\n" "$p"
-  done
+  printf '  %s\n' "$@" | LC_ALL=C sort
 )
 )
 
