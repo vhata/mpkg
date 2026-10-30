@@ -10,8 +10,7 @@ if [[ ! "$1" =~ ^[a-z0-9][a-z0-9_+-]*$ ]]; then
   exit 1
 fi
 
-# Should remove "vhata-" if it's already at the beginning
-METAPKG_NAME="vhata-$1"
+METAPKG_NAME="vhata-${1#vhata-}"
 DESC="$2"
 shift ; shift
 
