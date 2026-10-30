@@ -1,0 +1,16 @@
+pkgname=vhata-archive
+pkgver=1
+pkgrel=1
+pkgdesc='Archive tools I want available'
+arch=('any')
+
+depends=(
+    '7zip'
+    'zip'
+    'unzip'
+    'unrar'
+)
+
+package() {
+    :
+}
