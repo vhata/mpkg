@@ -1,18 +1,20 @@
 pkgname=vhata-cli
 pkgver=1
-pkgrel=1
+pkgrel=2
 pkgdesc="Command line utilities"
 arch=('any')
 
 depends=(
-  ack
-  bash-completion
-  fzf
-  less
-  ripgrep
-  tmux
-  tree
-  yq
+  'ack'
+  'bash-completion'
+  'fzf'
+  'jless'
+  'less'
+  'man-pages'
+  'ripgrep'
+  'tmux'
+  'tree'
+  'yq'
 )
 
 package() {

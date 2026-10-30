@@ -1,6 +1,6 @@
 pkgname=vhata-admin
 pkgver=1
-pkgrel=2
+pkgrel=3
 pkgdesc=Admin\ utilities
 arch=('any')
 
@@ -11,7 +11,9 @@ depends=(
   'lostfiles'
   'man-db'
   'net-tools'
+  'pacman-contrib'
   'pkgfile'
+  'smartmontools'
   'tailscale'
   'yay-bin'
 )
