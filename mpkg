@@ -1,285 +1,251 @@
-#!/usr/bin/env bash
+#!/usr/bin/env python3
+"""Manage the metapackages stored beside this executable."""
 
-SCRIPT_PATH=$(readlink -f -- "${BASH_SOURCE[0]}") || exit 1
-SCRIPT_DIR=$(dirname -- "$SCRIPT_PATH") || exit 1
-cd -- "$SCRIPT_DIR" || exit 1
-
-usage() {
-  echo "Usage: $0 METAPKG_NAME DESC PKG [ PKG .. ]"
-  echo "       $0 METAPKG_NAME +PKG|-PKG [ +PKG|-PKG .. ]"
-  echo "       $0 METAPKG_NAME --refresh"
-  echo "       $0 --list"
-  echo "       $0 --info|--description|--depends METAPKG_NAME [ METAPKG_NAME .. ]"
-}
-
-case "${1-}" in
-  --help|-h)
-    usage
-    exit 0
-    ;;
-  --list)
-    if (( $# != 1 )); then
-      usage >&2
-      exit 1
-    fi
-    for build in vhata-*/PKGBUILD; do
-      [[ -f "$build" ]] || continue
-      printf '%s\n' "${build%/PKGBUILD}"
-    done | LC_ALL=C sort
-    exit 0
-    ;;
-  --info|--description|--depends)
-    QUERY=$1
-    shift
-    if (( $# == 0 )); then
-      usage >&2
-      exit 1
-    fi
-    # Validate every name before invoking makepkg for any of them.
-    for name in "$@"; do
-      if [[ ! "$name" =~ ^[a-z0-9][a-z0-9_+-]*$ ]]; then
-        echo "Invalid package name: $name" >&2
-        exit 1
-      fi
-      if [[ ! -f "vhata-${name#vhata-}/PKGBUILD" ]]; then
-        echo "Unknown metapackage: $name" >&2
-        exit 1
-      fi
-    done
-    FIRST=true
-    for name in "$@"; do
-      name="vhata-${name#vhata-}"
-      SRCINFO=$(cd "$name" && makepkg --printsrcinfo) || exit $?
-      DESCRIPTION=
-      DEPENDENCIES=()
-      while IFS= read -r line; do
-        if [[ "$line" =~ ^[[:space:]]*(pkgdesc|depends|depends_[a-zA-Z0-9_]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-          case "${BASH_REMATCH[1]}" in
-            pkgdesc) DESCRIPTION=${BASH_REMATCH[2]} ;;
-            *) DEPENDENCIES+=("${BASH_REMATCH[2]}") ;;
-          esac
-        fi
-      done <<< "$SRCINFO"
-      if [[ "$QUERY" == --info ]] || (( $# > 1 )); then
-        "$FIRST" || printf '\n'
-        printf '%s:\n' "$name"
-      fi
-      FIRST=false
-      case "$QUERY" in
-        --info)
-          printf '  Description: %s\n' "$DESCRIPTION"
-          printf '  Dependencies:\n'
-          if (( ${#DEPENDENCIES[@]} > 0 )); then
-            printf '    %s\n' "${DEPENDENCIES[@]}"
-          fi
-          ;;
-        --description) printf '%s\n' "$DESCRIPTION" ;;
-        --depends)
-          if (( ${#DEPENDENCIES[@]} > 0 )); then
-            printf '%s\n' "${DEPENDENCIES[@]}"
-          fi
-          ;;
-      esac
-    done
-    exit 0
-    ;;
-esac
-
-if (( $# < 2 )); then
-  usage
-  exit 1
-fi
-
-if [[ ! "$1" =~ ^[a-z0-9][a-z0-9_+-]*$ ]]; then
-  echo "Invalid package name: use lowercase letters, digits, underscores, plus signs, or hyphens; start with a letter or digit." >&2
-  exit 1
-fi
-
-METAPKG_NAME="vhata-${1#vhata-}"
-# Refresh never rewrites the PKGBUILD or increments its release.
-if [[ "$2" == --refresh ]]; then
-  if (( $# != 2 )) || [[ ! -f "${METAPKG_NAME}/PKGBUILD" ]]; then
-    echo "Refresh requires an existing metapackage and no additional arguments." >&2
-    exit 1
-  fi
-  SRCINFO=$(cd "$METAPKG_NAME" && makepkg --printsrcinfo) || exit $?
-  VERSION= RELEASE= EPOCH=
-  DEPENDENCIES=()
-  while IFS= read -r line; do
-    if [[ "$line" =~ ^[[:space:]]*(pkgver|pkgrel|epoch|depends)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
-      case "${BASH_REMATCH[1]}" in
-        pkgver) VERSION=${BASH_REMATCH[2]} ;;
-        pkgrel) RELEASE=${BASH_REMATCH[2]} ;;
-        epoch) EPOCH=${BASH_REMATCH[2]} ;;
-        depends) DEPENDENCIES+=("${BASH_REMATCH[2]}") ;;
-      esac
-    fi
-  done <<< "$SRCINFO"
-  if [[ -z "$VERSION" || -z "$RELEASE" ]]; then
-    echo "Cannot refresh: missing version metadata." >&2
-    exit 1
-  fi
-  TARGET_VERSION="${VERSION}-${RELEASE}"
-  [[ -z "$EPOCH" || "$EPOCH" == 0 ]] || TARGET_VERSION="${EPOCH}:${TARGET_VERSION}"
-  INSTALLED=$(pacman -Q "$METAPKG_NAME" 2>/dev/null) || INSTALLED=
-  NEED_BUILD=false
-  [[ "$INSTALLED" == "$METAPKG_NAME $TARGET_VERSION" ]] || NEED_BUILD=true
-  if (( ${#DEPENDENCIES[@]} > 0 )); then
-    pacman -T "${DEPENDENCIES[@]}" >/dev/null || NEED_BUILD=true
-  fi
-  if "$NEED_BUILD"; then
-    (cd "$METAPKG_NAME" && makepkg -sif) || exit $?
-  else
-    echo "$METAPKG_NAME is up to date ($TARGET_VERSION)."
-  fi
-  # Resolve version constraints and virtual dependencies to installed providers.
-  if (( ${#DEPENDENCIES[@]} > 0 )); then
-    INSTALLED_INFO=$(LC_ALL=C pacman -Qi) || exit $?
-    PROVIDERS=$(printf '%s\n' "$INSTALLED_INFO" | python3 -c '
-import re, sys
-records = []
-for block in sys.stdin.read().split("\n\n"):
-    fields = {}
-    key = None
-    for line in block.splitlines():
-        match = re.match(r"^([^ :][^:]*?)\s*:\s*(.*)$", line)
-        if match:
-            key = match[1].strip()
-            fields[key] = match[2]
-        elif key and line.startswith(" "):
-            fields[key] += " " + line.strip()
-    if "Name" in fields:
-        records.append(fields)
-selected = set()
-for dep in sys.argv[1:]:
-    name = re.split(r"[<>=]", dep, maxsplit=1)[0]
-    direct = [r["Name"] for r in records if r["Name"] == name]
-    providers = direct or [r["Name"] for r in records if name in
-        [p.split("=", 1)[0] for p in r.get("Provides", "").split()]]
-    if not providers:
-        sys.exit("Cannot find installed provider for " + dep)
-    selected.update(providers)
-print("\n".join(sorted(selected)))
-' "${DEPENDENCIES[@]}") || exit $?
-    mapfile -t PROVIDER_ARRAY <<< "$PROVIDERS"
-    sudo pacman -D --asdeps "${PROVIDER_ARRAY[@]}" || exit $?
-  fi
-  exit 0
-fi
-
-EDIT_MODE=false
-if [[ "$2" == [+-]* ]]; then
-  EDIT_MODE=true
-  if [[ ! -f "${METAPKG_NAME}/PKGBUILD" ]]; then
-    echo "Cannot edit: ${METAPKG_NAME}/PKGBUILD does not exist." >&2
-    exit 1
-  fi
-  shift
-  COMMIT_MESSAGE="[pkgs] Update ${METAPKG_NAME} dependencies: $*"
-else
-  if (( $# < 3 )); then
-    echo "Supply a description and at least one dependency." >&2
-    exit 1
-  fi
-  DESC="$2"
-  shift ; shift
-  if [[ -f "${METAPKG_NAME}/PKGBUILD" ]]; then
-    COMMIT_MESSAGE="[pkgs] Redefine ${METAPKG_NAME}: ${DESC}"
-  else
-    COMMIT_MESSAGE="[pkgs] Create ${METAPKG_NAME}: ${DESC}"
-  fi
-  COMMIT_MESSAGE+=$'\n\nDependencies: '
-  COMMIT_MESSAGE+="$*"
-fi
-
-PKGREL=1
-if [[ -f "${METAPKG_NAME}/PKGBUILD" ]]; then
-  PREVIOUS_PKGREL=$(sed -n 's/^pkgrel=\([0-9][0-9]*\)$/\1/p' "${METAPKG_NAME}/PKGBUILD")
-  if [[ ! "$PREVIOUS_PKGREL" =~ ^[0-9]+$ ]]; then
-    echo "Cannot increment pkgrel: expected one integer pkgrel assignment in ${METAPKG_NAME}/PKGBUILD." >&2
-    exit 1
-  fi
-  # ensure base 10 arithmetic
-  PKGREL=$((10#$PREVIOUS_PKGREL + 1))
-  if (( PKGREL <= 0 )); then
-    echo "Cannot increment pkgrel: release number is too large." >&2
-    exit 1
-  fi
-fi
-
-if "$EDIT_MODE"; then
-  DEPENDENCIES=$(python3 - "${METAPKG_NAME}/PKGBUILD" "$PKGREL" "$@" <<'PYEDIT'
-import pathlib
+import os
+from pathlib import Path
 import re
 import shlex
+import subprocess
 import sys
 
-path = pathlib.Path(sys.argv[1])
-text = path.read_text()
-try:
+ROOT = Path(__file__).resolve().parent
+DEPENDENCY = r"[a-zA-Z0-9_+][a-zA-Z0-9@._+:<>=~-]*"
+
+
+def run(*args, cwd=ROOT, capture=False, check=True, **kwargs):
+    return subprocess.run(args, cwd=cwd, text=True, check=check,
+                          stdout=subprocess.PIPE if capture else None, **kwargs)
+
+
+def package_name(value):
+    if not re.fullmatch(r"[a-z0-9][a-z0-9_+-]*", value):
+        raise ValueError(f"Invalid package name: {value}")
+    return "vhata-" + value.removeprefix("vhata-")
+
+
+def build_path(name):
+    return ROOT / name / "PKGBUILD"
+
+
+def require_package(name):
+    if not build_path(name).is_file():
+        raise ValueError(f"Unknown metapackage: {name}")
+
+
+def metadata(name):
+    output = run("makepkg", "--printsrcinfo", cwd=ROOT / name, capture=True).stdout
+    fields = {}
+    for line in output.splitlines():
+        key, separator, value = line.strip().partition(" = ")
+        if separator:
+            fields.setdefault(key, []).append(value)
+    return fields
+
+
+def dependencies(fields, include_arch=False):
+    return [value for key, values in fields.items()
+            if key == "depends" or (include_arch and key.startswith("depends_"))
+            for value in values]
+
+
+def inspect_packages(mode, names):
+    names = [package_name(name) for name in names]
+    if not names:
+        raise ValueError("Supply at least one metapackage name.")
+    for name in names:
+        require_package(name)
+    for index, name in enumerate(names):
+        fields = metadata(name)
+        description = fields.get("pkgdesc", [""])[-1]
+        deps = dependencies(fields, include_arch=True)
+        if mode == "--info" or len(names) > 1:
+            if index:
+                print()
+            print(f"{name}:")
+        if mode == "--info":
+            print(f"  Description: {description}\n  Dependencies:")
+            for dep in deps:
+                print(f"    {dep}")
+        elif mode == "--description":
+            print(description)
+        else:
+            for dep in deps:
+                print(dep)
+
+
+def installed_providers(output, deps):
+    records = []
+    for block in output.split("\n\n"):
+        fields = {}
+        key = None
+        for line in block.splitlines():
+            match = re.match(r"^([^ :][^:]*?)\s*:\s*(.*)$", line)
+            if match:
+                key = match[1].strip()
+                fields[key] = match[2]
+            elif key and line.startswith(" "):
+                fields[key] += " " + line.strip()
+        if "Name" in fields:
+            records.append(fields)
+    selected = set()
+    for dep in deps:
+        name = re.split(r"[<>=]", dep, maxsplit=1)[0]
+        providers = [r["Name"] for r in records if r["Name"] == name]
+        providers = providers or [r["Name"] for r in records if name in
+                                 [p.split("=", 1)[0] for p in r.get("Provides", "").split()]]
+        if not providers:
+            raise ValueError(f"Cannot find installed provider for {dep}")
+        selected.update(providers)
+    return sorted(selected)
+
+
+def refresh(name):
+    require_package(name)
+    fields = metadata(name)
+    if not fields.get("pkgver") or not fields.get("pkgrel"):
+        raise ValueError("Cannot refresh: missing version metadata.")
+    version = f"{fields['pkgver'][-1]}-{fields['pkgrel'][-1]}"
+    epoch = fields.get("epoch", ["0"])[-1]
+    if epoch != "0":
+        version = f"{epoch}:{version}"
+    deps = dependencies(fields)
+    installed = run("pacman", "-Q", name, capture=True, check=False, stderr=subprocess.DEVNULL)
+    need_build = installed.returncode != 0 or installed.stdout.strip() != f"{name} {version}"
+    if deps:
+        missing = run("pacman", "-T", *deps, capture=True, check=False)
+        need_build = need_build or missing.returncode != 0
+    if need_build:
+        run("makepkg", "-sif", cwd=ROOT / name)
+    else:
+        print(f"{name} is up to date ({version}).")
+    if deps:
+        info = run("pacman", "-Qi", capture=True, env=dict(os.environ, LC_ALL="C")).stdout
+        run("sudo", "pacman", "-D", "--asdeps", *installed_providers(info, deps))
+
+
+def literal_dependencies(text):
     blocks = list(re.finditer(r"^depends=\((.*?)\)", text, re.M | re.S))
     if len(blocks) != 1:
-        raise ValueError("expected one literal depends array")
+        raise ValueError("Expected one literal depends array.")
     block = blocks[0]
-    body = block.group(1)
-    # Parse literal shell words only; never execute the existing PKGBUILD.
-    if any(char in body for char in "$`\\"):
-        raise ValueError("depends array must contain literal package names")
-    dependencies = set(shlex.split(body, comments=True))
-    pattern = r"[a-zA-Z0-9_+][a-zA-Z0-9@._+:<>=~-]*"
-    if any(not re.fullmatch(pattern, dep) for dep in dependencies):
-        raise ValueError("unsupported dependency in existing array")
-    for change in sys.argv[3:]:
-        if len(change) < 2 or change[0] not in "+-" or not re.fullmatch(pattern, change[1:]):
-            raise ValueError("each edit must be +PACKAGE or -PACKAGE")
-        if change[0] == "+":
-            dependencies.add(change[1:])
-        else:
-            dependencies.discard(change[1:])
-    ordered = sorted(dependencies)
-    replacement = "depends=(\n" + "".join("  '" + dep + "'\n" for dep in ordered) + ")"
-    updated = text[:block.start()] + replacement + text[block.end():]
-    updated = re.sub(r"^pkgrel=[0-9]+$", "pkgrel=" + sys.argv[2], updated, count=1, flags=re.M)
+    if any(char in block[1] for char in "$`\\"):
+        raise ValueError("Depends array must contain literal package names.")
+    deps = set(shlex.split(block[1], comments=True))
+    validate_dependencies(deps)
+    return block, deps
+
+
+def validate_dependencies(deps):
+    for dep in deps:
+        if not re.fullmatch(DEPENDENCY, dep):
+            raise ValueError(f"Invalid dependency: {dep}")
+
+
+def dependency_array(deps):
+    return "depends=(\n" + "".join(f"  {shlex.quote(dep)}\n" for dep in sorted(deps)) + ")"
+
+
+def commit_message(name, old, new, description=None):
+    if old is None:
+        return f"[pkgs] Create {name}: {description}\n\nDependencies: {' '.join(sorted(new))}"
+    changes = []
+    if new - old:
+        changes.append("add " + ", ".join(sorted(new - old)))
+    if old - new:
+        changes.append("remove " + ", ".join(sorted(old - new)))
+    if description is not None:
+        changes.append("set description to " + description)
+    return f"[pkgs] Update {name}: " + ("; ".join(changes) or "bump release")
+
+
+def update(name, args):
+    path = build_path(name)
+    original = path.read_text() if path.exists() else None
+    release = 1
+    old_deps = None
+    if original is not None:
+        releases = re.findall(r"^pkgrel=([0-9]+)$", original, re.M)
+        if len(releases) != 1:
+            raise ValueError("Cannot increment pkgrel: expected one integer assignment.")
+        release = int(releases[0]) + 1
+        _, old_deps = literal_dependencies(original)
+    description = None
+    if args[0].startswith(("+", "-")):
+        if original is None:
+            raise ValueError(f"Cannot edit: {name}/PKGBUILD does not exist.")
+        block, deps = literal_dependencies(original)
+        for change in args:
+            if len(change) < 2 or change[0] not in "+-":
+                raise ValueError("Each edit must be +PACKAGE or -PACKAGE.")
+            validate_dependencies([change[1:]])
+            if change[0] == "+":
+                deps.add(change[1:])
+            else:
+                deps.discard(change[1:])
+        updated = original[:block.start()] + dependency_array(deps) + original[block.end():]
+        updated = re.sub(r"^pkgrel=[0-9]+$", f"pkgrel={release}", updated, count=1, flags=re.M)
+    else:
+        if len(args) < 2:
+            raise ValueError("Supply a description and at least one dependency.")
+        description, *requested = args
+        validate_dependencies(requested)
+        deps = set(requested)
+        updated = (f"pkgname={name}\npkgver=1\npkgrel={release}\n"
+                   f"pkgdesc={shlex.quote(description)}\narch=('any')\n\n"
+                   f"{dependency_array(deps)}\n\npackage() {{\n  :\n}}\n")
+    path.parent.mkdir(exist_ok=True)
     path.write_text(updated)
-    print("\n".join(ordered), end="")
-except ValueError as error:
-    sys.exit("Cannot edit dependencies: " + str(error))
-PYEDIT
-  ) || exit $?
-  set --
-  if [[ -n "$DEPENDENCIES" ]]; then
-    mapfile -t DEPENDENCY_ARRAY <<< "$DEPENDENCIES"
-    set -- "${DEPENDENCY_ARRAY[@]}"
-  fi
-else
-mkdir -p "$METAPKG_NAME" || exit
-cat <<EOF > "${METAPKG_NAME}/PKGBUILD"
-pkgname=${METAPKG_NAME}
-pkgver=1
-pkgrel=${PKGREL}
-pkgdesc=$(printf '%q' "$DESC")
-arch=('any')
+    try:
+        run("makepkg", "-si", cwd=path.parent)
+        if deps:
+            run("sudo", "pacman", "-D", "--asdeps", *sorted(deps))
+    except (subprocess.CalledProcessError, OSError):
+        print(f"Update failed; {path} retains the edits for correction or retry. No commit created.",
+              file=sys.stderr)
+        raise
+    message = commit_message(name, old_deps, deps, description)
+    # --only excludes unrelated staged files, including for newly created packages.
+    run("git", "add", "--", str(path.relative_to(ROOT)))
+    run("git", "commit", "--only", "-m", message, "--", str(path.relative_to(ROOT)))
 
-depends=(
-$(
-  printf '  %s\n' "$@" | LC_ALL=C sort
-)
-)
 
-package() {
-  :
-}
-EOF
-fi
+def usage():
+    print(f"""Usage: {sys.argv[0]} METAPKG_NAME DESC PKG [ PKG .. ]
+       {sys.argv[0]} METAPKG_NAME +PKG|-PKG [ +PKG|-PKG .. ]
+       {sys.argv[0]} METAPKG_NAME --refresh
+       {sys.argv[0]} --list
+       {sys.argv[0]} --info|--description|--depends METAPKG_NAME [ METAPKG_NAME .. ]""")
 
-(
-  cd "$METAPKG_NAME" || exit
-  makepkg -si
-) || exit $?
-if (( $# > 0 )); then
-  sudo pacman -D --asdeps "$@" || exit $?
-fi
 
-# Limit the commit to this package, preserving unrelated staged changes.
-git add -- "${METAPKG_NAME}/PKGBUILD" || exit $?
-git commit --only -m "$COMMIT_MESSAGE" -- "${METAPKG_NAME}/PKGBUILD" || exit $?
+def main(args):
+    if args and args[0] in ("--help", "-h"):
+        usage()
+    elif args == ["--list"]:
+        for path in sorted(ROOT.glob("vhata-*/PKGBUILD")):
+            if path.is_file():
+                print(path.parent.name)
+    elif args and args[0] in ("--info", "--description", "--depends"):
+        inspect_packages(args[0], args[1:])
+    elif len(args) >= 2:
+        name = package_name(args[0])
+        if args[1] == "--refresh":
+            if len(args) != 2:
+                raise ValueError("Refresh takes no additional arguments.")
+            refresh(name)
+        else:
+            update(name, args[1:])
+    else:
+        usage()
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except subprocess.CalledProcessError as error:
+        print(f"Command failed: {shlex.join(error.cmd)}", file=sys.stderr)
+        sys.exit(error.returncode if error.returncode > 0 else 1)
+    except (ValueError, OSError) as error:
+        print(error, file=sys.stderr)
+        sys.exit(1)
