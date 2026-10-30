@@ -1,0 +1,22 @@
+pkgname=vhata-system
+pkgver=1
+pkgrel=1
+pkgdesc=Base\ system\ packages
+arch=('any')
+
+depends=(
+  base
+  dosfstools
+  e2fsprogs
+  efibootmgr
+  intel-ucode
+  linux
+  linux-firmware
+  mkinitcpio
+  openssh
+  sudo
+)
+
+package() {
+  :
+}

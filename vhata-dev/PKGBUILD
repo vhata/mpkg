@@ -1,0 +1,18 @@
+pkgname=vhata-dev
+pkgver=1
+pkgrel=1
+pkgdesc=Development\ utilities
+arch=('any')
+
+depends=(
+  base-devel
+  git
+  github-cli
+  npm
+  python
+  rust
+)
+
+package() {
+  :
+}
