@@ -83,7 +83,7 @@ or authorize running them on the production host.
   GitHub workflow/template, and the verbatim Docket installation. Venvs,
   package artifacts, captures containing secrets, and local review drafts
   do not belong in commits.
-- `review/README.md` is an empty whole-codebase review index. Independent
+- `review/README.md` indexes whole-codebase review snapshots. Independent
   task review is recorded separately and does not establish that baseline.
 
 ## CI and hosting

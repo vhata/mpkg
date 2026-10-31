@@ -11,7 +11,7 @@ This project is run with docket. Read [docket/CONTRACT.md](docket/CONTRACT.md) b
 - Queue areas: `[DESIGN]`, `[NATIVE]`, `[DOCKER]`, `[TOOLING]`, `[DOCS]`.
 - Concurrency cap: two heavy builds or system runs at once; up to four agents including the coordinator. Use isolated worktrees for concurrent writers.
 - Merging and releases: the user performs final review and landing unless explicitly delegated; no standing merge, release, or deployment delegation.
-- Optional pieces in force: TODO queue, claims and markers, and an empty review ledger are in force. Defer a separate roadmap queue, stacked PRs, and scheduled extended main validation until they have a concrete use. Whole-codebase reviews run when requested.
+- Optional pieces in force: TODO queue, claims and markers, and the review ledger are in force. Defer a separate roadmap queue, stacked PRs, and scheduled extended main validation until they have a concrete use. Whole-codebase reviews run when requested.
 - Environment: Arch Linux is the product host target. Use Bash and a Python 3.12 project venv via scripts/setup.sh for repository checks; never substitute another Python minor. Package and Docker operations on the real server are outside validation scope.
 
 <!-- docket:end -->
