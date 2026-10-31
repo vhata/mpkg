@@ -444,6 +444,18 @@ listings or supporting arbitrary request scripts. Creating the Radarr
 root-folder record is a separate fixture-setup write; later read probes
 must not create it as an observation side effect.
 
+Check routes distinguish host networking from bridge publication. For
+bridge-backed authenticated probes, a fixed installed helper holds the
+accepted container's network-namespace descriptor, verifies current
+engine/container/start/process and in-namespace listener identity, then
+issues the bounded request there. The API key stays in helper memory
+and cannot be sent until that attribution succeeds. Recheck identity
+around the probe; changed or unavailable evidence leaves it unverified.
+A separate anonymous check observes the published route against fresh
+port/network mappings. Docker-proxy ownership or a matching published
+port alone is not application-process attribution, and route reachability
+alone is not the authenticated application check.
+
 Native services use individual systemd unit properties and required
 application checks. Account operations create missing local identities
 or add accepted memberships; conflicting adopted numeric identities
