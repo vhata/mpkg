@@ -2,3 +2,8 @@
 */src/
 */*.pkg.tar.*
 __pycache__/
+.venv/
+.worktrees/
+.docket/
+.cache/
+test-results/

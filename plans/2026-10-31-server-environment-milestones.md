@@ -25,8 +25,9 @@ preferably one using published images with clearly identified
 configuration and data mounts. Select the application after inspecting
 its Compose definition. Codeman is a stretch case, not the initial
 benchmark or a first-release blocker. Its apparent source/build layout
-in the [directory capture](../opt-docker) should inform later work, once
-the actual deployment requirements are understood.
+in the previously supplied `opt-docker` directory listing should inform
+later work, once the actual deployment requirements are understood. The
+raw capture is not retained in this repository.
 
 Shared identities, differing ownership and permissions, persistent
 data, and configuration drift remain in scope: the other captured
