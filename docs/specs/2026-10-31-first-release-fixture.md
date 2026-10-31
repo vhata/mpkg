@@ -424,6 +424,25 @@ Radarr `127.0.0.1:17878:17878`; update Sonarr's mapping to
 and shared-directory predicates. After retirement the Radarr listener
 must remain reachable through its published bridge port, and its
 root-folder API must still discover the shared sentinel.
+
+For authenticated bridge checks, the fixed check helper enters the
+accepted container's network namespace using a held namespace file
+descriptor and connects to its loopback application port. Before any
+credential delivery, bind the engine/container identity, namespace,
+application process and listener ownership from fresh evidence; changes
+or unknown ownership block the check. Keep the API key in the private
+helper's memory. A host published-port PID is a Docker proxy, or may be
+absent under NAT; it is not proof of application listener ownership.
+
+Keep published-route checks separate and credential-free. Use Sonarr's
+anonymous `/ping` before retirement and a plain connection to Radarr's
+published port after retirement, bound to the fresh engine/container
+port map and network identities. These establish routing coverage only;
+the attributed namespace check establishes Radarr's authenticated
+shared-directory behavior. Never send its API key through an unproven
+host NAT/proxy route. Unknown or changed mapping blocks the related
+verification.
+
 For `network-exclusive-delete`, reset without Radarr or another
 attachment and verify the independently authorized network cleanup.
 Record actual network/volume IDs and attachment evidence at assembly.
@@ -501,6 +520,26 @@ configuration, ordinary data and actual readiness, including observed
 database migration effects and the unchanged unmanaged Radarr check.
 The primary current-version adoption and separate older-version update
 restore points have distinct identities and histories.
+
+Run two distinct version-intent cases from separate fresh snapshots:
+
+- `docker-update-allowed-tag`: declare the accepted tag
+  `lscr.io/linuxserver/sonarr:latest` with updates allowed and no exact
+  image constraint. Adopt the prepared older content without converting
+  its observed identity into a pin. The selected explicit update uses
+  the accepted current-version registry resolution. Bind that tag's
+  resolution to the selected target before execution; an unrelated
+  later remote revision requires a revised fixture, not substitution.
+  Status and configuration-only apply preserve accepted older content.
+- `docker-exact-digest`: declare the older registry digest and explicit
+  `linux/amd64` platform as exact intent. Availability of the newer
+  candidate cannot change that declaration. Require a separate
+  deliberate intent change to the target digest before applying it.
+
+The manifest's artifact digests freeze every execution's inputs in both
+cases. They are not themselves a user policy requiring an exact image;
+only the second case puts a digest constraint in wanted intent. Record
+the declaration and resolved execution binding separately in evidence.
 
 ## Assembly and execution evidence
 

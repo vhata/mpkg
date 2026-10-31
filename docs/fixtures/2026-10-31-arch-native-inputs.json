@@ -9844,7 +9844,14 @@
       "This predicate demonstrates application directory discovery, not media-file reading, importing, downloading or post-change writability.",
       "Fixture startup, background activity, credentials, exact response behavior and process/listener attribution still require isolated execution verification.",
       "Timeout bounds the client check, not a guarantee that Radarr background filesystem work stopped."
-    ]
+    ],
+    "supplemental_bridge_attribution": {
+      "authenticated_request_route": "Fixed private helper inside accepted container network namespace, held namespace FD; fresh engine/container/namespace/process/listener ownership before credential delivery",
+      "api_key_delivery": "Private helper memory only; no API key through unproven host NAT/proxy route",
+      "published_route_probes": "Credential-free Sonarr anonymous ping before retirement and plain connection to Radarr published port after retirement; fresh engine/container port map and network identity binding",
+      "published_route_proves": "Routing coverage only, separate from authenticated application and directory-discovery predicates",
+      "unknown_or_changed_identity_policy": "Block related verification"
+    }
   },
   "docker_explicit_update_design": {
     "baseline_manifest": "sha256:6b06eac65225627173c12f049d8b5c55c588cdb0b3faa667553559cbb51e1474",
@@ -9854,6 +9861,22 @@
     "baseline_initialized_fresh_with_older_image": true,
     "downgrade_current_database": false,
     "update_executed": false,
-    "baseline_and_updated_disk_identities": null
+    "baseline_and_updated_disk_identities": null,
+    "version_intent_variants": [
+      {
+        "name": "docker-update-allowed-tag",
+        "wanted_reference": "lscr.io/linuxserver/sonarr:latest",
+        "updates_allowed": true,
+        "wanted_digest_constraint": null,
+        "execution_inputs_frozen_to_recorded_digests": true,
+        "live_tag_resolution_must_match_selected_update_target": true
+      },
+      {
+        "name": "docker-exact-digest",
+        "wanted_registry_digest": "sha256:c19aa4ecdf03d73e1d5c901da33744cb7eb4d921f89bafed1ca264601d7fa224",
+        "wanted_platform": "linux/amd64",
+        "update_requires_deliberate_wanted_digest_change": true
+      }
+    ]
   }
 }
