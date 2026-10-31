@@ -42,6 +42,15 @@ typed `desired` properties, consumer references and required checks.
 Logical IDs aid editing; accepted physical identities live in the host
 store and survive declaration removal or renaming.
 
+A component may also declare typed `requirements` entries containing
+`resource`, `property` and `value`. They constrain a shared resource
+without granting mutation authority. For example, two components can
+reference `media-root` while requiring GID `1001` and `1002`; the
+planner reports both incompatible requirements before proposing any
+effect. A resource's desired value must satisfy every accepted consumer
+requirement, including recorded external consumers. The shared resource
+has one declaration and physical identity; compatible references merge.
+
 This valid TOML fragment illustrates the encoding, not a complete
 Sonarr input bundle or final CLI:
 
