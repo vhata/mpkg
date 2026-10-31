@@ -7,6 +7,8 @@ changes. The existing helper remains usable. The
 [Sonarr baseline](2026-10-31-sonarr-runtime-baseline.md) supplies an
 observed example; the [acceptance scenarios](2026-10-31-first-release-acceptance.md)
 remain the product's completion criteria.
+The [disposable fixture](2026-10-31-first-release-fixture.md) binds
+source metadata and the assembly/check design for the focused proofs.
 
 ## Selected structure
 
@@ -433,6 +435,14 @@ supplementary groups, capabilities and namespace maps before testing
 fixed paths. A read/open or write-permission predicate is not a write
 trial or application workflow. Required functional checks need their
 own supported adapter and fixture evidence, not arbitrary shell hooks.
+
+The fixture selects version-bound `sonarr_ping` and `radarr_rootfolder`
+checks. The latter uses a protected API-key reference and fixed response
+predicates for an accepted root-folder ID/path and synthetic child.
+It reports bounded match/failure evidence rather than exporting media
+listings or supporting arbitrary request scripts. Creating the Radarr
+root-folder record is a separate fixture-setup write; later read probes
+must not create it as an observation side effect.
 
 Native services use individual systemd unit properties and required
 application checks. Account operations create missing local identities

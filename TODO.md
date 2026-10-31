@@ -43,7 +43,7 @@ implementation or live server changes, and no implementation is Ready.
   - Source: [focused mechanism proofs](docs/specs/2026-10-31-first-release-storage-and-execution.md#focused-proofs-before-product-implementation), storage/execution design, 2026-10-31.
   - Test durable action boundaries and worker/daemon recovery, exact libalpm transaction revalidation, protected input replay, Compose no-op/recreation behavior, exclusive-writer XML edits, and bounded retirement. Preserve every acceptance criterion; these proofs do not replace A1–A12.
   - Execution requires separate authorization and an acquired disposable fixture; no live server lifecycle or package change is authorized by this entry.
-  - Related: `define-first-release-acceptance-scenarios`
+  - Depends on: `assemble-first-release-disposable-fixture`
 
 ## Waiting
 
@@ -57,12 +57,12 @@ implementation or live server changes, and no implementation is Ready.
 
 ### Unprioritized
 
-- [DESIGN] `define-first-release-acceptance-scenarios` — **Specify repeatable evidence for every first-release criterion.** Concrete demonstrations must preserve the milestone's full acceptance requirements.
-  - Source: [milestone 1](plans/2026-10-31-server-environment-milestones.md#1-first-useful-release-manage-an-existing-setup-end-to-end), 2026-10-31.
-  - Starting point: [scenario matrix and fixture requirements](docs/specs/2026-10-31-first-release-acceptance.md), drafted 2026-10-31; no demonstrations have run.
-  - Blocked by: a verified current AUR recipe and sources, and an identified disposable Arch image with a coherent frozen package set; candidate names alone are not a reproducible fixture.
-  - Complete the fixture manifest and evidence-backed native/Docker examples, preserving every scenario and milestone acceptance criterion. This task designs the demonstrations; it does not run them or implement the product. Stub results cannot replace required real-tool evidence.
-  - Docker input: [Sonarr source selection](docs/specs/2026-10-31-compose-deployment-evidence.md) and [runtime observations and limits](docs/specs/2026-10-31-sonarr-runtime-baseline.md); bind accepted current inputs and fresh checks in the fixture, with supplemental named-volume and project-network cases absent from this deployment definition.
+- [TOOLING] `assemble-first-release-disposable-fixture` — **Acquire, build and verify the isolated guest baseline from the bound fixture design.** Source metadata and a scenario design are not an assembled or accepted system.
+  - Source: [fixture assembly and execution evidence](docs/specs/2026-10-31-first-release-fixture.md#assembly-and-execution-evidence), first-release design, 2026-10-31.
+  - Blocked by: authorization to prepare the isolated runner and guest, acquire and verify artifacts, and perform fixture-only builds/package/container setup; production server package and lifecycle changes remain outside scope.
+  - Verify signatures and complete image layers, build the pinned AUR chain and Python 3.12, record actual runner/guest/input/identity checks, and create bootstrap restore points with the declared missing dependencies. Preserve exact CLI requests and all A1–A12 scenarios; no stub result can replace real-tool evidence.
+  - Bootstrap does not require the unimplemented product. Prototype/product revision, injection controls and applied restore points are bound later by their actual runs; setup must not fabricate successful product attempts or preinstall prerequisites in the A4 restore point.
+  - Starting point: [scenario matrix](docs/specs/2026-10-31-first-release-acceptance.md) and [frozen source inventory](docs/fixtures/2026-10-31-arch-native-inputs.json).
   - Related: `prove-first-release-execution-boundaries`
 
 ## Ready for separate work

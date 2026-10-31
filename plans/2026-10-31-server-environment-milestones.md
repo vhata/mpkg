@@ -132,8 +132,13 @@ proposes bounded resource behavior and records the remaining design
 gates. The [acceptance scenarios](../docs/specs/2026-10-31-first-release-acceptance.md)
 map every criterion above to starting conditions and pass/fail evidence.
 Neither document claims acceptance execution. The observed Sonarr
-baseline still needs accepted fixture inputs and fresh checks; a
-verified AUR recipe and frozen disposable fixture remain prerequisites.
+baseline still needs accepted fixture inputs and fresh checks. The
+[storage/execution proposal](../docs/specs/2026-10-31-first-release-storage-and-execution.md)
+selects concrete mechanisms, and the
+[fixture design](../docs/specs/2026-10-31-first-release-fixture.md)
+binds source metadata and assembly/check choices. Artifact acquisition,
+guest assembly, mechanism proofs and all acceptance executions remain
+separate gates.
 
 The [architecture direction](../docs/specs/2026-10-31-server-environment-architecture.md)
 selects direct native tooling and excludes Ansible and similar frameworks.

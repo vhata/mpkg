@@ -382,10 +382,11 @@ This contract proposes the behavior; implementation remains gated on:
   access and shared-consumer functionality. Raw secret-bearing inputs
   stay outside Git. Fresh fixture observations and full functional
   checks remain required before acceptance.
-- A frozen disposable Arch fixture manifest with verified repository
-  and AUR packages, a real missing dependency, native service/config
-  checks and the selected Docker example. Candidate names are not
-  acquisition evidence.
+- Acquire and assemble the [bound fixture](2026-10-31-first-release-fixture.md),
+  verifying package/source signatures, builds, complete images and
+  actual guest identities and checks. Its frozen source metadata and
+  concrete missing-dependency cases select inputs; they do not prove
+  acquisition, installation or product acceptance.
 - The storage/execution proposal's focused mechanism proofs: journal
   durability and supervised recovery, exact native transaction
   revalidation, protected input replay, offline configuration edits
