@@ -118,6 +118,13 @@ native AUR installation and dependency-handling demonstration.
 
 ## Next design work
 
+The [first-release contract](../docs/specs/2026-10-31-first-release-contract.md)
+proposes bounded resource behavior and records the remaining design
+gates. The [acceptance scenarios](../docs/specs/2026-10-31-first-release-acceptance.md)
+map every criterion above to starting conditions and pass/fail evidence.
+Neither document claims execution; the Compose inputs, verified AUR
+recipe and frozen disposable fixture are still prerequisites.
+
 The [architecture direction](../docs/specs/2026-10-31-server-environment-architecture.md)
 selects direct native tooling and excludes Ansible and similar frameworks.
 The [minimum resource model](../docs/specs/2026-10-31-server-environment-resources.md)

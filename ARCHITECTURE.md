@@ -5,6 +5,9 @@ This file maps the current implementation. The
 and
 [resource model](docs/specs/2026-10-31-server-environment-resources.md)
 describe future work; the redesign remains in planning.
+The [first-release contract](docs/specs/2026-10-31-first-release-contract.md)
+and [acceptance scenarios](docs/specs/2026-10-31-first-release-acceptance.md)
+refine that proposal without changing the current implementation.
 
 ## Current boundaries
 
