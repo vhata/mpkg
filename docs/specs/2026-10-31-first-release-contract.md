@@ -4,6 +4,8 @@ This is the proposed behavioral contract for
 [milestone 1](../../plans/2026-10-31-server-environment-milestones.md).
 It refines the [resource model](2026-10-31-server-environment-resources.md)
 and [architecture](2026-10-31-server-environment-architecture.md).
+The [Sonarr evidence](2026-10-31-compose-deployment-evidence.md) supplies
+the selected deployment's source facts and a worked resource lifecycle.
 It describes future work. The existing `mpkg` helper does not implement
 these behaviors, and this specification does not authorize implementation
 or operations on a live server.
@@ -368,9 +370,12 @@ Recovery must explicitly reestablish management facts and unknowns.
 
 This contract proposes the behavior; implementation remains gated on:
 
-- The actual selected Compose inputs and an evidence-backed resource
-  mapping, including existing identity, networks, data and secret
-  references. The repository does not contain those inputs.
+- Complete runtime binding for the inspected Sonarr example: actual
+  engine/project identity, effective overrides/interpolation, resolved
+  image and mounts, credentials and functional/access checks. Nonsecret
+  source-file evidence and a resource mapping are recorded; runtime
+  state remains unverified and raw secret-bearing inputs stay outside
+  Git.
 - A frozen disposable Arch fixture manifest with verified repository
   and AUR packages, a real missing dependency, native service/config
   checks and the selected Docker example. Candidate names are not

@@ -91,11 +91,12 @@ data. Never treat these choices as observations of the user's server.
 
 ## Docker example prerequisite
 
-Select one of the existing conventional Compose applications only after
-reading its actual files and relevant referenced inputs. Candidate
-names in the current queue include homepage, plex, prowlarr, radarr,
-sabnzbd and sonarr; the repository retains none of their definitions.
-Codeman is not the first-release benchmark.
+Use Sonarr, selected after inspecting the six conventional applications'
+actual Compose files and adjacent identity inputs. The
+[evidence and resource walkthrough](2026-10-31-compose-deployment-evidence.md)
+records nonsecret source facts, selected filesystem/configuration
+observations and the remaining runtime gaps. Raw secret-bearing inputs
+remain outside Git. Codeman is not the first-release benchmark.
 
 Reproduce the selected definition's relevant resource relationships in
 the disposable VM with fixture data and credentials, then adopt that
@@ -105,12 +106,13 @@ identity and an application probe before calling it an executable
 scenario. A synthetic Compose application can add edge-case coverage;
 it cannot replace this evidence-backed existing-deployment example.
 
-The selected example must exercise configuration, runtime identity,
-permissions, data and a resource shared with an unmanaged consumer.
-Use supplemental named-volume/network fixtures when the actual example
-does not exercise them. Preserve coverage of retained bind-mounted data
-and retained named volumes without claiming both were observed in the
-existing deployment.
+Sonarr's declared relationships include configuration, runtime identity,
+permissions, data and a media path also declared by Radarr, SABnzbd and
+Plex. Establish actual shared-consumer/access evidence and keep at least
+one such consumer outside management in the fixture. Sonarr uses bind
+mounts and host networking; add supplemental fixtures for named volumes
+and project networks. Preserve their retention coverage without claiming
+those resources were observed in the existing deployment.
 
 ## Scenario matrix
 
@@ -317,11 +319,11 @@ demonstrations above remain mandatory. The first release is complete
 only when every milestone criterion and its applicable variants pass,
 and independent review has no unresolved actionable findings.
 
-Before this plan becomes an executable acceptance manifest, the actual
-Compose inputs and current AUR recipe must be supplied/verified, a VM
-image and coherent package set frozen, and exact probes/injection points
-bound to the implementation. These remain explicit queue work; no
-existing acceptance condition is waived by this document.
+Before this plan becomes an executable acceptance manifest, complete
+Sonarr's effective-input/runtime evidence, verify the current AUR
+recipe, freeze a VM image and coherent package set, and bind exact
+probes/injection points to the implementation. These remain explicit
+queue work; no existing acceptance condition is waived by this document.
 
 ## Candidate-selection sources
 

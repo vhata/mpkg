@@ -130,6 +130,12 @@ resources are not silently swept into a deletion.
 
 ## One concrete example
 
+The [Sonarr evidence and worked example](2026-10-31-compose-deployment-evidence.md)
+now grounds these relationships in inspected Compose files, identity
+inputs and selected path metadata. It records observed facts separately
+from proposed behavior and outstanding runtime/fixture evidence. The
+generic example below remains illustrative.
+
 Suppose an adopted `media` component runs a Docker application. It uses
 the `compose` account, a managed configuration file, an application-data
 directory, and a media directory also used by a known external consumer.
