@@ -9,6 +9,15 @@ and disposable-environment execution require their own authorization.
 
 ## Fixture and evidence prerequisites
 
+The [fixture design](2026-10-31-first-release-fixture.md) now binds an
+official Arch ISO, one dated repository snapshot, complete native
+package resolutions, Python 3.12 sources, pinned AUR recipes and
+Sonarr/Radarr registry metadata. Its
+[source inventory](../fixtures/2026-10-31-arch-native-inputs.json)
+distinguishes published digests from verified downloaded metadata.
+Archive/build verification, assembled input bundles and runtime checks
+remain necessary before these scenarios are executable.
+
 Use a disposable x86_64 Arch VM with a working systemd system manager,
 independent console access, snapshots and a local Docker engine. Use
 fixture-only data and credentials. Do not validate on the production
@@ -64,22 +73,25 @@ not conflict with the requirement to install something newly requested:
 | Restore point | Starting condition and proposed evidence |
 | --- | --- |
 | Native adoption | All selected collection requests already satisfied; accepted service/configuration/data already present; capture provider and installation-reason facts separately |
-| Native change | A fixture collection derived from those requests deliberately omits the additions; `tmux`, `ripgrep`, candidate AUR package and chosen missing dependency are absent; remaining packages form a coherent system |
+| Native change | A fixture collection derived from those requests deliberately omits the additions; `tmux`, `ripgrep`, selected `gitstatus` and chosen missing dependencies are absent; remaining packages form a coherent system |
 | Native retirement | Applied component has a real service, exclusive fixture data and a shared resource also used by an unmanaged consumer; independent retention reasons are recorded |
 
-Candidate repository additions are `tmux` and `ripgrep`, both requested
-by `vhata-cli`. Current official metadata lists `libutempter` and
-`libevent` as dependencies of `tmux`; `libutempter` is a candidate
-initially missing dependency. Verify this against the frozen package
-set and ensure no baseline package needs the removed dependency. The
-candidate AUR addition is `gitstatus`, requested by
-[vhata-dev](../../vhata-dev/PKGBUILD). Its current AUR recipe, source and
-dependencies have not been verified; this is a blocking fixture input.
-Choose an actual declared build/runtime dependency of that reviewed
-recipe that can coherently be absent at the AUR-change restore point.
-If `gitstatus` cannot exercise this, select another verified AUR request
-from the collections and record the substitution and evidence. The
-`tmux` case alone cannot satisfy the AUR dependency demonstration.
+The frozen repository additions are `tmux` and `ripgrep`, both requested
+by `vhata-cli`. Native resolution establishes `libutempter` as absent
+from the change set and included by the applied set; `libevent` is
+already a baseline dependency. Verify actual guest absence before
+running the scenario. The selected AUR addition is `gitstatus`,
+requested by [vhata-dev](../../vhata-dev/PKGBUILD), at the pinned recipe
+in the fixture design. Its declared build prerequisites `cmake` and
+`zsh` are absent from the resolved change set. Preserve those absences
+until its real prerequisite-resolution operation.
+
+Exact CLI adoption also needs AUR `ack` and `perl-file-next`. Their
+recipes and source checksums are pinned. The fixture explicitly selects
+a coherent ack revision preceding a HEAD whose PKGBUILD and metadata
+disagree; it preserves the unrestricted collection request. Source
+inspection is not evidence of a successful build. The `tmux` case
+alone cannot satisfy the AUR dependency demonstration.
 
 For a native service and package-owned configuration, `openssh` from
 [vhata-system](../../vhata-system/PKGBUILD) supplies `sshd.service` and
@@ -120,8 +132,10 @@ Sonarr's declared relationships include configuration, runtime identity,
 permissions, data and a media path also declared by Radarr, SABnzbd and
 Plex. Their runtime attachments and root access are now observed;
 establish functional shared-consumer checks and keep at least one such
-consumer outside management in the fixture. Sonarr uses bind
-mounts and host networking; add supplemental fixtures for named volumes
+consumer outside management in the fixture. The fixture design selects
+an actual Radarr deployment with its own config and shared-media
+operation; a synthetic process is insufficient for this variant.
+Sonarr uses bind mounts and host networking; add supplemental fixtures for named volumes
 and project networks. Preserve their retention coverage without claiming
 those resources were observed in the existing deployment.
 
@@ -230,14 +244,20 @@ Do not infer rollback from a failed exit code or reverted Git content.
 
 ### A7: interrupted action and journal failure
 
-Terminate the coordinator after a real native/Docker action has taken
-effect but before its completion record is durable. Restart inspection:
-the started action is uncertain, actual effects are rediscovered and
-retry does not blindly replay it. Test this independently for each
-integration; package transaction and Compose failure surfaces differ.
-Include a case where the original child/daemon operation continues
-after coordinator death; a new apply must wait for verified completion
-or report a block rather than overlap it.
+First terminate the initiating CLI while its durable attempt worker is
+still running. The worker must continue owning the attempt and may
+finish and durably record success; caller disconnection alone must not
+invent an interrupted action or erase its result. Reconnecting status
+must identify that same attempt and its actual outcome.
+
+Separately terminate the durable worker after a real native/Docker
+action takes effect but before its completion record is durable.
+Restart inspection: the started action is uncertain, actual effects
+are rediscovered and retry does not blindly replay it. Test this
+independently for each integration; package transaction and Compose
+failure surfaces differ. Include a case where the original child or
+daemon operation continues after worker death; a new apply must wait
+for verified completion or report a block rather than overlap it.
 
 Separately deny durable recording before an action starts. No mutation
 may begin. Remove/corrupt a copy of management history and verify that
@@ -262,7 +282,8 @@ frozen coherent package set and a Docker digest/platform pin. Reject an
 unavailable request and an incompatible native request without changing
 their declared requirements or silently selecting another version.
 
-Publish or select a newer candidate in the isolated fixture. Status
+Use the fixture's October 30 to October 31 coherent native sets and
+bound Docker image transition in the isolated fixture. Status
 and a configuration-only apply must not install/pull it merely because
 updates are allowed. An explicit update records its resolved content
 and verifies the selected change. If native installation/update needs
@@ -330,13 +351,15 @@ demonstrations above remain mandatory. The first release is complete
 only when every milestone criterion and its applicable variants pass,
 and independent review has no unresolved actionable findings.
 
-Before this plan becomes an executable acceptance manifest, bind the
-accepted Sonarr inputs to an obtainable image and fresh fixture checks,
-verify the current AUR recipe, freeze a VM image and coherent package
-set, and bind exact probes/injection points to the implementation.
-The runtime baseline does not establish historical input provenance or
-replace fixture evidence. These remain explicit queue work; no existing
-acceptance condition is waived by this document.
+Before this plan becomes an executable acceptance manifest, settle the
+[remaining fixture gates](2026-10-31-first-release-fixture.md#gates-before-an-executable-manifest):
+actual archive/build verification, assembled guest and accepted
+Sonarr/Radarr inputs, supplemental resources and update candidates, and
+exact probes/injection points bound to an implementation. Registry
+metadata availability does not establish layer acquisition or runtime
+compatibility. The runtime baseline does not establish historical input
+provenance or replace fixture evidence. These remain explicit queue
+work; no acceptance condition is waived by this document.
 
 ## Candidate-selection sources
 
