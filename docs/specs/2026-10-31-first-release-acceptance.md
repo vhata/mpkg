@@ -23,9 +23,11 @@ Before executing, commit a nonsecret fixture manifest identifying:
   be coherently updated; record any unavailable historical inputs.
 - Selected repository packages and hashes; AUR package base, reviewed
   recipe revision, source provenance/checksums, build/runtime dependency
-  graph and built artifacts. Establish at least one real missing
-  dependency before application. Resolve recursive AUR dependencies
-  with real evidence if the selected recipe needs them.
+  graph and built artifacts. Establish an initially missing repository
+  package dependency and an initially missing build/runtime dependency
+  of the selected AUR recipe before their application scenarios.
+  Resolve recursive AUR dependencies with real evidence if the selected
+  recipe needs them.
 - Actual selected Compose definition provenance, ordered files,
   project name/directory, profiles, engine identity, resolved images
   and platforms, mounts, networks, volumes, identities and consumers.
@@ -71,6 +73,11 @@ set and ensure no baseline package needs the removed dependency. The
 candidate AUR addition is `gitstatus`, requested by
 [vhata-dev](../../vhata-dev/PKGBUILD). Its current AUR recipe, source and
 dependencies have not been verified; this is a blocking fixture input.
+Choose an actual declared build/runtime dependency of that reviewed
+recipe that can coherently be absent at the AUR-change restore point.
+If `gitstatus` cannot exercise this, select another verified AUR request
+from the collections and record the substitution and evidence. The
+`tmux` case alone cannot satisfy the AUR dependency demonstration.
 
 For a native service and package-owned configuration, `openssh` from
 [vhata-system](../../vhata-system/PKGBUILD) supplies `sshd.service` and
@@ -116,7 +123,7 @@ required variant prevents milestone completion.
 | A1 | 1. Adopt without disruption | Native collection/service; selected existing Compose deployment |
 | A2 | 1, 7. Preserve adoption through declaration removal | Both; no prior application or Git commit |
 | A3 | 2. Explain responsibility | Native package files and Docker/config/runtime paths |
-| A4 | 3. Record separately, then apply | Repository and AUR additions with missing dependency; Docker configuration |
+| A4 | 3. Record separately, then apply | Repository and AUR additions, each with an initially missing dependency; Docker configuration |
 | A5 | 3, 4. Shared authority and changing inputs | Both, including one unmanaged consumer |
 | A6 | 4. Explain partial results and retry | Native and Docker failures after a real effect |
 | A7 | 4. Recover uncertain attempts | Native and Docker interruption at a journal boundary |
@@ -172,9 +179,12 @@ recording must leave packages, services, configuration and containers
 unchanged while describing pending work.
 
 Apply the two changes separately. Capture actual native resolution,
-AUR acquisition/build/installation and the initially missing dependency
-becoming installed. Show expected Docker configuration and application
-behavior, plus shared-consumer checks. No stubbed package or Docker
+AUR acquisition/build/installation and each initially missing dependency
+becoming installed. Both the repository and AUR cases must demonstrate
+their own prerequisite resolution; preinstalling the AUR recipe's
+dependencies cannot satisfy that case. Show expected Docker
+configuration and application behavior, plus shared-consumer checks.
+No stubbed package or Docker
 command counts as this evidence. Reapply satisfied intent: relevant
 checks pass without needless rebuild, install, file rewrite or restart.
 
