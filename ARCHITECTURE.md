@@ -8,6 +8,9 @@ describe future work; the redesign remains in planning.
 The [first-release contract](docs/specs/2026-10-31-first-release-contract.md)
 and [acceptance scenarios](docs/specs/2026-10-31-first-release-acceptance.md)
 refine that proposal without changing the current implementation.
+The [storage and execution design](docs/specs/2026-10-31-first-release-storage-and-execution.md)
+selects proposed encoding, persistence and native operation boundaries;
+its mechanism proofs remain prerequisites to implementation.
 
 ## Current boundaries
 

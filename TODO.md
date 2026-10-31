@@ -19,12 +19,6 @@ implementation or live server changes, and no implementation is Ready.
 
 ### Unprioritized
 
-- [DESIGN] `design-first-release-persistence-and-execution` — **Choose the concrete representation and native execution boundaries for the first release.** Turn the behavioral contract into a bounded implementation design before authorizing product work.
-  - Source: [remaining design gates](docs/specs/2026-10-31-first-release-contract.md#9-remaining-design-and-evidence-gates), design task, 2026-10-31.
-  - Specify declaration encoding, host-store location/format and crash consistency, input/secret capture, privilege boundaries, and native source preparation, planning and application interfaces. Demonstrate how real tool semantics can satisfy the contract; do not create a general task language or select a framework.
-  - Starting point: [inspected Sonarr resource example](docs/specs/2026-10-31-compose-deployment-evidence.md) and [runtime baseline](docs/specs/2026-10-31-sonarr-runtime-baseline.md), including shared identity/media, measured credentials and mixed configuration/data.
-  - Related: `define-first-release-acceptance-scenarios`
-
 - [DESIGN] `refine-later-server-milestones` — **Define concrete scenarios for the later milestones.** Extend accountability, replacement-host recreation, and reusable application knowledge without weakening the first release.
   - Source: [later milestones](plans/2026-10-31-server-environment-milestones.md#later-milestones), 2026-10-31.
   - Clarify dependencies and evidence, then split into bounded planning tasks before implementation. Recreation needs an identified Arch baseline and explicit external data and secret prerequisites.
@@ -45,6 +39,12 @@ implementation or live server changes, and no implementation is Ready.
 
 ### Unprioritized
 
+- [DESIGN] `prove-first-release-execution-boundaries` — **Prove the selected storage and native execution mechanisms in a disposable fixture.** The concrete design is a proposal whose failure and concurrency boundaries need real evidence before broader product implementation.
+  - Source: [focused mechanism proofs](docs/specs/2026-10-31-first-release-storage-and-execution.md#focused-proofs-before-product-implementation), storage/execution design, 2026-10-31.
+  - Test durable action boundaries and worker/daemon recovery, exact libalpm transaction revalidation, protected input replay, Compose no-op/recreation behavior, exclusive-writer XML edits, and bounded retirement. Preserve every acceptance criterion; these proofs do not replace A1–A12.
+  - Execution requires separate authorization and an acquired disposable fixture; no live server lifecycle or package change is authorized by this entry.
+  - Related: `define-first-release-acceptance-scenarios`
+
 ## Waiting
 
 ### P0 Critical
@@ -63,7 +63,7 @@ implementation or live server changes, and no implementation is Ready.
   - Blocked by: a verified current AUR recipe and sources, and an identified disposable Arch image with a coherent frozen package set; candidate names alone are not a reproducible fixture.
   - Complete the fixture manifest and evidence-backed native/Docker examples, preserving every scenario and milestone acceptance criterion. This task designs the demonstrations; it does not run them or implement the product. Stub results cannot replace required real-tool evidence.
   - Docker input: [Sonarr source selection](docs/specs/2026-10-31-compose-deployment-evidence.md) and [runtime observations and limits](docs/specs/2026-10-31-sonarr-runtime-baseline.md); bind accepted current inputs and fresh checks in the fixture, with supplemental named-volume and project-network cases absent from this deployment definition.
-  - Related: `design-first-release-persistence-and-execution`
+  - Related: `prove-first-release-execution-boundaries`
 
 ## Ready for separate work
 

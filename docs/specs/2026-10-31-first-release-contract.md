@@ -8,6 +8,8 @@ The [Sonarr evidence](2026-10-31-compose-deployment-evidence.md) supplies
 the selected deployment's source facts and a worked resource lifecycle.
 The [runtime baseline](2026-10-31-sonarr-runtime-baseline.md) adds dated
 engine, image, mount, credential and bounded probe observations.
+The [storage and execution design](2026-10-31-first-release-storage-and-execution.md)
+proposes concrete encoding and native operation boundaries.
 It describes future work. The existing `mpkg` helper does not implement
 these behaviors, and this specification does not authorize implementation
 or operations on a live server.
@@ -384,11 +386,12 @@ This contract proposes the behavior; implementation remains gated on:
   and AUR packages, a real missing dependency, native service/config
   checks and the selected Docker example. Candidate names are not
   acquisition evidence.
-- A small implementation design choosing declaration syntax, durable
-  host-store format/location and crash consistency, bounded native
-  integration interfaces, privilege/secret handling and input capture.
-  It must show how the plan and source-refresh boundaries above work
-  with actual tools before product implementation is authorized.
+- The storage/execution proposal's focused mechanism proofs: journal
+  durability and supervised recovery, exact native transaction
+  revalidation, protected input replay, offline configuration edits
+  and bounded retirement. These must substantiate the selected
+  boundaries with actual tools before broader product implementation
+  is authorized; paper design and source documentation are not passes.
 
 The architecture remains direct native integration. These gates do not
 reopen a framework comparison or move AUR handling, shared resources,

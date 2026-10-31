@@ -175,7 +175,8 @@ last exit code, and it distinguishes unknown state from verified state.
   keeping or recreating the deployment that previously used it.
 
 The first-release contract develops these checks into proposed behavior
-and logical records. Concrete encoding, native integration and durable
-storage choices remain a subsequent implementation-design step, after
-the evidence gates named in that contract. No general task language,
-framework dependency, or plugin system is needed for those decisions.
+and logical records. The [storage and execution design](2026-10-31-first-release-storage-and-execution.md)
+selects concrete encoding, persistence and native boundaries, with
+focused mechanism proofs and fixture evidence still required. No
+general task language, framework dependency or repository plugin system
+is introduced by those choices.

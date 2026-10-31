@@ -126,7 +126,10 @@ design check is: adopt without applying, remove the uncommitted
 declaration, and still identify the formerly managed deployment and its
 resources for a retirement plan, separately from unrelated discoveries.
 
-The storage format and location of these records remain undecided.
+The [storage and execution design](2026-10-31-first-release-storage-and-execution.md)
+proposes TOML declarations and a protected local SQLite store, with
+typed native operations and supervised attempts. These choices remain
+subject to its focused mechanism proofs before implementation.
 Ordinary status is observation and comparison; no background reconciler
 is required. Sensitive values must not leak into status or attempt logs.
 
