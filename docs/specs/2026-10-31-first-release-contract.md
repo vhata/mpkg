@@ -6,6 +6,8 @@ It refines the [resource model](2026-10-31-server-environment-resources.md)
 and [architecture](2026-10-31-server-environment-architecture.md).
 The [Sonarr evidence](2026-10-31-compose-deployment-evidence.md) supplies
 the selected deployment's source facts and a worked resource lifecycle.
+The [runtime baseline](2026-10-31-sonarr-runtime-baseline.md) adds dated
+engine, image, mount, credential and bounded probe observations.
 It describes future work. The existing `mpkg` helper does not implement
 these behaviors, and this specification does not authorize implementation
 or operations on a live server.
@@ -370,12 +372,14 @@ Recovery must explicitly reestablish management facts and unknowns.
 
 This contract proposes the behavior; implementation remains gated on:
 
-- Complete runtime binding for the inspected Sonarr example: actual
-  engine/project identity, effective overrides/interpolation, resolved
-  image and mounts, credentials and functional/access checks. Nonsecret
-  source-file evidence and a resource mapping are recorded; runtime
-  state remains unverified and raw secret-bearing inputs stay outside
-  Git.
+- Accept a complete current input bundle for the inspected Sonarr
+  example and recheck it against live state at adoption. The runtime
+  baseline supplies time-specific engine/project, image, mount,
+  credential and bounded endpoint/root-access observations; it cannot
+  reconstruct historical shell inputs or prove writes, descendant
+  access and shared-consumer functionality. Raw secret-bearing inputs
+  stay outside Git. Fresh fixture observations and full functional
+  checks remain required before acceptance.
 - A frozen disposable Arch fixture manifest with verified repository
   and AUR packages, a real missing dependency, native service/config
   checks and the selected Docker example. Candidate names are not

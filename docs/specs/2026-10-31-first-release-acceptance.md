@@ -31,6 +31,8 @@ Before executing, commit a nonsecret fixture manifest identifying:
 - Actual selected Compose definition provenance, ordered files,
   project name/directory, profiles, engine identity, resolved images
   and platforms, mounts, networks, volumes, identities and consumers.
+  Distinguish configured users from measured application credentials,
+  including supplementary groups, capabilities and namespace mappings.
   Record every adaptation made to run its shape with fixture data.
 - Secret references and fixture credential delivery prerequisites,
   without values, rendered environment dumps or public secret hashes.
@@ -95,21 +97,30 @@ Use Sonarr, selected after inspecting the six conventional applications'
 actual Compose files and adjacent identity inputs. The
 [evidence and resource walkthrough](2026-10-31-compose-deployment-evidence.md)
 records nonsecret source facts, selected filesystem/configuration
-observations and the remaining runtime gaps. Raw secret-bearing inputs
-remain outside Git. Codeman is not the first-release benchmark.
+observations and a proposed lifecycle. The
+[runtime baseline](2026-10-31-sonarr-runtime-baseline.md) records actual
+engine/project binding, local image identity/platform, mounts, process
+credentials, Sonarr's HTTP 200/OK probe and credential-matched access to
+the four applications' config/media roots. Those checks did not write
+data, inspect descendants or exercise media workflows. Raw
+secret-bearing inputs remain outside Git. Codeman is not the
+first-release benchmark.
 
 Reproduce the selected definition's relevant resource relationships in
 the disposable VM with fixture data and credentials, then adopt that
 already working deployment. Record differences from the supplied
-definition, including paths and identities. Obtain stable engine/project
-identity and an application probe before calling it an executable
-scenario. A synthetic Compose application can add edge-case coverage;
+definition, including paths and identities. Accept the complete current
+input bundle and establish fixture engine/project identity and fresh
+functional checks before calling it an executable scenario. Live
+observations are inputs to that fixture, not its acceptance results.
+A synthetic Compose application can add edge-case coverage;
 it cannot replace this evidence-backed existing-deployment example.
 
 Sonarr's declared relationships include configuration, runtime identity,
 permissions, data and a media path also declared by Radarr, SABnzbd and
-Plex. Establish actual shared-consumer/access evidence and keep at least
-one such consumer outside management in the fixture. Sonarr uses bind
+Plex. Their runtime attachments and root access are now observed;
+establish functional shared-consumer checks and keep at least one such
+consumer outside management in the fixture. Sonarr uses bind
 mounts and host networking; add supplemental fixtures for named volumes
 and project networks. Preserve their retention coverage without claiming
 those resources were observed in the existing deployment.
@@ -319,11 +330,13 @@ demonstrations above remain mandatory. The first release is complete
 only when every milestone criterion and its applicable variants pass,
 and independent review has no unresolved actionable findings.
 
-Before this plan becomes an executable acceptance manifest, complete
-Sonarr's effective-input/runtime evidence, verify the current AUR
-recipe, freeze a VM image and coherent package set, and bind exact
-probes/injection points to the implementation. These remain explicit
-queue work; no existing acceptance condition is waived by this document.
+Before this plan becomes an executable acceptance manifest, bind the
+accepted Sonarr inputs to an obtainable image and fresh fixture checks,
+verify the current AUR recipe, freeze a VM image and coherent package
+set, and bind exact probes/injection points to the implementation.
+The runtime baseline does not establish historical input provenance or
+replace fixture evidence. These remain explicit queue work; no existing
+acceptance condition is waived by this document.
 
 ## Candidate-selection sources
 

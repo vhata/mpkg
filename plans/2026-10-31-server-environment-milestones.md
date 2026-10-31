@@ -23,8 +23,11 @@ and verification checks will be selected during detailed design.
 The [Compose inspection and Sonarr example](../docs/specs/2026-10-31-compose-deployment-evidence.md)
 selects Sonarr from the actual definitions as the first Docker case.
 It records declared shared media consumers and observed identity/path
-facts. Effective runtime identity, probes and the disposable fixture
-still need verification before this becomes an executable demonstration.
+facts. The [runtime baseline](../docs/specs/2026-10-31-sonarr-runtime-baseline.md)
+adds engine/project binding, image identity, actual mounts and
+credentials, and bounded endpoint/root-access results. Accepted fixture
+inputs and full functional checks still need verification before this
+becomes an executable demonstration.
 
 Use a conventional Compose deployment as the first Docker example,
 preferably one using published images with clearly identified
@@ -128,8 +131,9 @@ The [first-release contract](../docs/specs/2026-10-31-first-release-contract.md)
 proposes bounded resource behavior and records the remaining design
 gates. The [acceptance scenarios](../docs/specs/2026-10-31-first-release-acceptance.md)
 map every criterion above to starting conditions and pass/fail evidence.
-Neither document claims execution; Sonarr's effective runtime inputs,
-a verified AUR recipe and frozen disposable fixture remain prerequisites.
+Neither document claims acceptance execution. The observed Sonarr
+baseline still needs accepted fixture inputs and fresh checks; a
+verified AUR recipe and frozen disposable fixture remain prerequisites.
 
 The [architecture direction](../docs/specs/2026-10-31-server-environment-architecture.md)
 selects direct native tooling and excludes Ansible and similar frameworks.

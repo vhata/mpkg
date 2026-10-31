@@ -7,6 +7,9 @@ one selected application. It supports the
 [first-release milestone](../../plans/2026-10-31-server-environment-milestones.md).
 The worked lifecycle below is proposed behavior, not an executed
 adoption, application or retirement.
+The subsequent [runtime baseline](2026-10-31-sonarr-runtime-baseline.md)
+records a separately authorized engine/process inventory and bounded
+probes; it does not change this source inspection's scope.
 
 ## Inspection boundary
 
@@ -201,36 +204,42 @@ This is an information example, not a committed CLI or storage format.
 
 ## Verification and remaining evidence
 
-Sonarr's upstream `/ping` implementation is a candidate bounded
-application probe. It checks configuration-database responsiveness with
-a five-second cache; it does not establish media access or external
-integration health. Match the probe to the deployed version and effective
-port/URL base before relying on it. No request was made during this
-inspection. Separate access checks are needed for the application and
-the known shared consumers.
-[Upstream probe implementation](https://raw.githubusercontent.com/Sonarr/Sonarr/main/src/Sonarr.Http/Ping/PingController.cs)
+Source inspection alone did not establish runtime facts. The subsequent
+[runtime baseline](2026-10-31-sonarr-runtime-baseline.md) records the local
+engine/project, resolved image/platform, mounts, running application
+credentials and observed start/restart fields. Its version-matched
+Sonarr `/ping` check returned HTTP 200/OK; credential-matched probes
+established access to the config/media directory roots for Sonarr,
+Radarr, SABnzbd and Plex. Sonarr has no configured Docker healthcheck.
+
+The HTTP check establishes bounded application/configuration-database
+responsiveness, not media or integration functionality. Directory-root
+checks did not test writes or descendants. Those runtime observations
+are dated evidence, not a complete acceptance result.
 
 Before an executable adoption or acceptance manifest, establish:
 
-- Actual local Docker engine/project identity, invocation and all
-  override/interpolation sources. The adjacent `.env` is not proof of
-  effective values, and the configured container name is not a project
-  name. Confirm the actual resolved bind sources and boundaries.
-- Running image digest/platform, image-provided health checks, process
-  credentials, observed restart behavior, listeners and application
-  checks. Source-file inspection provides none of these runtime facts.
+- A complete accepted current input bundle, including every
+  override/interpolation source and protected input reference, bound to
+  fresh observations. Current labels and values cannot reconstruct the
+  original invocation or historical source bytes. Preserve unknown
+  provenance rather than inferring it from an adjacent `.env`.
+- An obtainable image/platform and fresh fixture checks. A locally
+  observed digest does not prove future acquisition; root access and a
+  successful endpoint do not prove the required application workflows.
 - The complete managed/nonmanaged file classification and protected
   secret input mechanism for `config.xml` and other relevant inputs;
   data and credentials must remain outside ordinary versioned intent.
-- Actual shared-consumer/access evidence and a named, bounded exclusive
-  data-retirement scope. Shared declarations establish reasons to
-  preserve resources without proving current access or exhaustiveness.
+- Functional shared-consumer checks and a named, bounded exclusive
+  data-retirement scope. Observed attachments and root access are not
+  an exhaustive consumer inventory or proof of descendant access and
+  path/mount boundaries.
 - The reproducible disposable Arch fixture and real native/AUR package
   evidence required by the milestone. Sonarr uses bind mounts and host
   networking, so supplemental fixtures must exercise named-volume and
   project-network retention without pretending they exist here.
 
-File access and primary application selection are now established.
-These runtime and fixture gaps remain separate evidence requirements;
-they do not justify treating the server as verified or running live
-changes as a documentation check.
+File access, primary application selection and a bounded runtime
+baseline are now established. The remaining input, scope and fixture
+requirements do not justify treating the server as fully verified or
+running live changes as a documentation check.
