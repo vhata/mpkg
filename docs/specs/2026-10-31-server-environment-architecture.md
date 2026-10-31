@@ -233,10 +233,11 @@ Refine the minimum resource contract and validate the hardest
 milestone-1 operations with native tooling: nondisruptive adoption,
 actual repository/AUR installation, and a failed Docker change with
 truthful subsequent status. Identify concrete resource scope, success
-checks, version support, and retention of attempt history. Language,
-file formats, state storage, privilege boundaries, and the exact role of
-metapackages remain
-open. Validation must include adoption without an apply followed by
+checks, version support, and retention of attempt history. The linked
+storage/execution proposal now selects language, file encoding,
+persistence and privilege boundaries without requiring generated
+metapackages for collection intent. Its mechanism proofs remain open.
+Validation must include adoption without an apply followed by
 declaration removal, to verify that management history survives this
 path. Any implementation experiment must use the milestone's disposable
 Arch environment; none has been performed as part of this comparison.
