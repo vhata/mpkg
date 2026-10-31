@@ -5034,7 +5034,72 @@
     ],
     "image_layer_requests_performed": false,
     "docker_daemon_calls_performed": false,
-    "publisher_signatures_verified": false
+    "publisher_signatures_verified": false,
+    "older_sonarr_update_baseline": {
+      "proposed_fixture_role": "Separate A9 older baseline, updated explicitly to the already observed Sonarr target; this fixture has not been executed",
+      "metadata_observation_started_utc": "2026-10-31T23:39:12.911430+00:00",
+      "requested_tag": "lscr.io/linuxserver/sonarr:4.0.19.2979-ls322",
+      "pinned_reference": "lscr.io/linuxserver/sonarr@sha256:c19aa4ecdf03d73e1d5c901da33744cb7eb4d921f89bafed1ca264601d7fa224",
+      "tag_resolution": {
+        "url": "https://lscr.io/v2/linuxserver/sonarr/manifests/4.0.19.2979-ls322",
+        "http_status": 200,
+        "computed_digest": "sha256:c19aa4ecdf03d73e1d5c901da33744cb7eb4d921f89bafed1ca264601d7fa224",
+        "docker_content_digest_header_matches_computed_digest": true
+      },
+      "index": {
+        "url": "https://lscr.io/v2/linuxserver/sonarr/manifests/sha256:c19aa4ecdf03d73e1d5c901da33744cb7eb4d921f89bafed1ca264601d7fa224",
+        "http_status": 200,
+        "schema_version": 2,
+        "media_type": "application/vnd.oci.image.index.v1+json",
+        "size_bytes": 1610,
+        "digest": "sha256:c19aa4ecdf03d73e1d5c901da33744cb7eb4d921f89bafed1ca264601d7fa224",
+        "computed_sha256_matches_requested_digest": true,
+        "docker_content_digest_header_matches_computed_digest": true,
+        "linux_amd64_child_selection_unique": true
+      },
+      "selected_manifest": {
+        "url": "https://lscr.io/v2/linuxserver/sonarr/manifests/sha256:6b06eac65225627173c12f049d8b5c55c588cdb0b3faa667553559cbb51e1474",
+        "http_status": 200,
+        "schema_version": 2,
+        "media_type": "application/vnd.oci.image.manifest.v1+json",
+        "size_bytes": 1998,
+        "digest": "sha256:6b06eac65225627173c12f049d8b5c55c588cdb0b3faa667553559cbb51e1474",
+        "computed_sha256_matches_index_descriptor_digest": true,
+        "docker_content_digest_header_matches_computed_digest": true,
+        "platform_from_index_descriptor": {
+          "os": "linux",
+          "architecture": "amd64"
+        },
+        "layer_descriptor_count": 9
+      },
+      "config": {
+        "url": "https://lscr.io/v2/linuxserver/sonarr/blobs/sha256:8df16ac7fd59767b1fc4f15243578695ea6f8de7d4f2873a091364535e752aa3",
+        "registry_http_status": 307,
+        "redirect_hostname": "pkg-containers.githubusercontent.com",
+        "final_http_status": 200,
+        "descriptor_media_type": "application/vnd.oci.image.config.v1+json",
+        "response_content_type": "application/octet-stream",
+        "size_bytes": 9195,
+        "digest": "sha256:8df16ac7fd59767b1fc4f15243578695ea6f8de7d4f2873a091364535e752aa3",
+        "computed_sha256_matches_manifest_descriptor_digest": true,
+        "downloaded_size_matches_manifest_descriptor_size": true,
+        "docker_content_digest_header_observed": false,
+        "platform_from_verified_config": {
+          "os": "linux",
+          "architecture": "amd64"
+        },
+        "version_substrings_extracted_from_allowlisted_labels": {
+          "org.opencontainers.image.version": "4.0.19.2979-ls322",
+          "build_version": "4.0.19.2979-ls322"
+        }
+      },
+      "limitations": [
+        "A mutable tag was used only for discovery; the fixture must bind the verified index and linux/amd64 child digest.",
+        "Metadata verification did not acquire any image layers or run the older application.",
+        "Prepare fresh older-version configuration and database in a separate baseline; do not downgrade an already initialized newer database.",
+        "The proposed older-to-target upgrade and database compatibility remain unexecuted fixture checks."
+      ]
+    }
   },
   "native_update_target": {
     "repository_snapshot_date": "2026-10-31",
@@ -9571,5 +9636,224 @@
     "scenario_total": 7200,
     "timeout_implies_child_or_daemon_stopped": false,
     "failure_policy": "Record failure or blocked state; preserve attempt ownership; never replay an uncertain action or force cleanup merely because its observer timed out."
+  },
+  "native_incompatible_requests": {
+    "repository_snapshot_date": "2026-10-30",
+    "independently_wanted_exact_requests": [
+      "pulseaudio=17.0+r134+g77d25a1e6-1",
+      "pipewire-pulse=1:1.6.10-1"
+    ],
+    "candidates": [
+      {
+        "name": "pulseaudio",
+        "version": "17.0+r134+g77d25a1e6-1",
+        "url": "https://archive.archlinux.org/repos/2026/10/30/extra/os/x86_64/pulseaudio-17.0+r134+g77d25a1e6-1-x86_64.pkg.tar.zst",
+        "package_sha256_published_in_database": "53c8acbb126f78a20f189ea5287d5d72969d82b0efbfcb064dd39864470be046",
+        "archive_bytes_downloaded": false,
+        "archive_signature_verified": false,
+        "depends": [
+          "libpulse=17.0+r134+g77d25a1e6-1",
+          "alsa-lib",
+          "bash",
+          "dbus",
+          "fftw",
+          "glib2",
+          "glibc",
+          "libcap",
+          "libgcc",
+          "libice",
+          "libltdl",
+          "libsm",
+          "libsndfile",
+          "libsoxr",
+          "libx11",
+          "libxcb",
+          "libxtst",
+          "orc",
+          "rtkit",
+          "speexdsp",
+          "systemd",
+          "systemd-libs",
+          "tdb",
+          "webrtc-audio-processing-1"
+        ],
+        "conflicts": [
+          "pipewire-pulse"
+        ],
+        "provides": [
+          "pulse-native-provider"
+        ],
+        "replaces": [
+          "pulseaudio-gconf<=11.1",
+          "pulseaudio-xen<=9.0"
+        ]
+      },
+      {
+        "name": "pipewire-pulse",
+        "version": "1:1.6.10-1",
+        "url": "https://archive.archlinux.org/repos/2026/10/30/extra/os/x86_64/pipewire-pulse-1:1.6.10-1-x86_64.pkg.tar.zst",
+        "package_sha256_published_in_database": "271dd90d4b8f3b95fd41472c96e45d75174fffef49bbd4c4f882e6a99baf1ebd",
+        "archive_bytes_downloaded": false,
+        "archive_signature_verified": false,
+        "depends": [
+          "libpipewire=1:1.6.10-1",
+          "libpipewire-0.3.so=0-64",
+          "pipewire-audio=1:1.6.10-1",
+          "pipewire=1:1.6.10-1",
+          "avahi",
+          "libavahi-client.so=3-64",
+          "libavahi-common.so=3-64",
+          "dbus",
+          "libdbus-1.so=3-64",
+          "dconf",
+          "glib2",
+          "libglib-2.0.so=0-64",
+          "libgobject-2.0.so=0-64",
+          "libgio-2.0.so=0-64",
+          "glibc",
+          "libgcc",
+          "libpulse",
+          "libpulse.so=0-64",
+          "pipewire-session-manager"
+        ],
+        "conflicts": [
+          "pulseaudio"
+        ],
+        "provides": [
+          "pulse-native-provider"
+        ],
+        "replaces": []
+      }
+    ],
+    "readonly_native_resolution": {
+      "arguments": [
+        "--sync",
+        "--print",
+        "--noconfirm",
+        "--print-format",
+        "%r %n %v %l",
+        "pulseaudio=17.0+r134+g77d25a1e6-1",
+        "pipewire-pulse=1:1.6.10-1"
+      ],
+      "configuration": "same isolated empty-local-database October 30 configuration",
+      "exit_code": 0,
+      "stdout_sha256_computed": "8d244c01ded92845bca5ffd757b77377d1cd182c6f2434ca0a4118cc54bcff26",
+      "stderr_sha256_computed": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "diagnostic": "",
+      "no_download_or_install": true,
+      "checks_native_conflicts": false,
+      "limitation": "pacman --print returned a candidate closure without rejecting the package conflict; it is not native conflict-preparation proof."
+    },
+    "actual_product_preparation_executed": false,
+    "readonly_native_preparation": {
+      "libalpm_version": "16.0.1",
+      "root": "isolated empty scratch root",
+      "database": "isolated scratch database with frozen October 30 sync metadata and empty local database",
+      "repository_signature_checks": "disabled for already downloaded metadata inspection only; no artifact trust claimed",
+      "transaction_flags": [
+        "NOLOCK"
+      ],
+      "all_resolved_targets_added": 167,
+      "prepare_result": -1,
+      "errno": 46,
+      "error": "conflicting dependencies",
+      "commit_function_bound_or_called": false,
+      "database_refresh_performed": false,
+      "package_download_or_install_performed": false,
+      "host_package_database_used": false,
+      "local_probe_source_sha256_computed": "b463511a6ce5a012117f11fa2a49dea1253ef3c569e8d1cbe894a40b40527fa5"
+    }
+  },
+  "radarr_shared_directory_probe_design": {
+    "status": "Source-derived fixture design only; no application request or fixture setup executed",
+    "source_tag": "v6.4.4.10685",
+    "source_tag_resolution": {
+      "observed_utc": "2026-10-31T23:40:46.393440+00:00",
+      "reference_url": "https://api.github.com/repos/Radarr/Radarr/git/ref/tags/v6.4.4.10685",
+      "object_type": "commit",
+      "commit": "a96bf7c3ecb23cb76993770727285dc17a613fbc",
+      "limitation": "GitHub tag resolution was checked independently; no claim of reproducing or verifying the executable image build from this source commit"
+    },
+    "versioned_source_urls_read": [
+      "https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/Radarr.Api.V3/RootFolders/RootFolderController.cs",
+      "https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/Radarr.Api.V3/RootFolders/RootFolderResource.cs",
+      "https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/NzbDrone.Core/RootFolders/RootFolderService.cs",
+      "https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/NzbDrone.Common/Disk/DiskProviderBase.cs",
+      "https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/NzbDrone.Core/Organizer/NamingConfig.cs",
+      "https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/Radarr.Api.V3/Config/NamingConfigController.cs",
+      "https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/Radarr.Http/Authentication/AuthenticationBuilderExtensions.cs",
+      "https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/Radarr.Http/Authentication/ApiKeyAuthenticationHandler.cs",
+      "https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/Radarr.Http/VersionedApiControllerAttribute.cs",
+      "https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/Radarr.Http/REST/RestController.cs",
+      "https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/Radarr.Http/REST/Attributes/RestGetByIdAttribute.cs",
+      "https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/Radarr.Api.V3/openapi.json"
+    ],
+    "proposed_fixture_inputs": {
+      "loopback_base_url": "http://127.0.0.1:17878",
+      "url_base": "",
+      "root_path": "/mnt/media/mpkg-fixture-shared/radarr-root",
+      "sentinel_directory_name": "Mpkg Sentinel (2000)",
+      "sentinel_directory_path": "/mnt/media/mpkg-fixture-shared/radarr-root/Mpkg Sentinel (2000)",
+      "sentinel_movie_record": "Absent",
+      "sentinel_media_file_required": false,
+      "credential_reference": "fixture-radarr-api-key; private fixture-only value, not a production credential",
+      "authentication_header": "X-Api-Key"
+    },
+    "proposed_setup": {
+      "naming_check": "GET /api/v3/config/naming must return movieFolderFormat equal to {Movie Title} ({Release Year})",
+      "root_folder_create": {
+        "method": "POST",
+        "route": "/api/v3/rootfolder",
+        "content_type": "application/json",
+        "body": {
+          "path": "/mnt/media/mpkg-fixture-shared/radarr-root"
+        }
+      },
+      "expected_create_status_from_controller_source": 201,
+      "capture": "Positive returned root-folder id, then verify the read predicate",
+      "writes": [
+        "Inserts a root-folder database record",
+        "Validates writability by creating and deleting radarr_write_test.txt inside the root; reserve this filename in the empty fixture root"
+      ],
+      "source_openapi_discrepancy": "Generated OpenAPI lists POST 200, while controller uses CreatedAtAction; fixture assembly must verify actual 201 behavior rather than treating the generated response list as runtime proof"
+    },
+    "proposed_repeated_check": {
+      "method": "GET",
+      "route_template": "/api/v3/rootfolder/{saved_positive_id}?timeout=true",
+      "expected_status": 200,
+      "predicates": [
+        "Returned id equals saved root-folder id",
+        "Returned path equals the fixture root path",
+        "accessible is true",
+        "unmappedFolders contains an entry with the exact sentinel name and full path"
+      ],
+      "max_elapsed_seconds": 10,
+      "max_response_bytes": 65536,
+      "follow_redirects": false,
+      "use_proxy": false,
+      "on_timeout_missing_sentinel_or_other_failure": "Fail and stop the scenario; do not issue overlapping retries"
+    },
+    "source_findings": [
+      "Each id GET invokes RootFolderService.Get, GetDetails, GetUnmappedFolders, DiskProviderBase.GetDirectories and Directory.EnumerateDirectories.",
+      "MovieFolderFormat slash count controls traversal depth; require the specified no-slash naming format.",
+      "The enumeration ignores inaccessible entries, so accessible alone is insufficient; require the exact sentinel.",
+      "timeout=true bounds Task.Wait to 5000 milliseconds but does not cancel its underlying task.",
+      "The selected path performs local repository and filesystem operations; no movie lookup, import or download operation is requested."
+    ],
+    "limitations": [
+      "This predicate demonstrates application directory discovery, not media-file reading, importing, downloading or post-change writability.",
+      "Fixture startup, background activity, credentials, exact response behavior and process/listener attribution still require isolated execution verification.",
+      "Timeout bounds the client check, not a guarantee that Radarr background filesystem work stopped."
+    ]
+  },
+  "docker_explicit_update_design": {
+    "baseline_manifest": "sha256:6b06eac65225627173c12f049d8b5c55c588cdb0b3faa667553559cbb51e1474",
+    "target_manifest": "sha256:a674ae620ca7ce1246b377bcac13a7500567196cf2207059e68146fa4dc169f7",
+    "baseline_version": "4.0.19.2979-ls322",
+    "target_version": "4.0.20.3014-ls1",
+    "baseline_initialized_fresh_with_older_image": true,
+    "downgrade_current_database": false,
+    "update_executed": false,
+    "baseline_and_updated_disk_identities": null
   }
 }

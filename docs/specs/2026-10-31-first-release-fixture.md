@@ -248,9 +248,16 @@ Declare exclusive native data at `/srv/mpkg-fixture/native-data` and
 shared media at `/mnt/media/mpkg-fixture-shared`. Proposed guest-only
 accounts are `fixture-native` (UID/GID 1500) and `fixture-external`
 (UID/GID 1501), with supplementary GID 1001 (`media`). Record exact
-memberships, modes, ACLs and sentinels. Confirm IDs are available before
-creation; collisions require an explicit fixture revision instead of
-renumbering an existing account.
+memberships, modes, ACLs and sentinels. Use owner/group 1500:1500 and
+mode 0700 for exclusive native data, with a 0600 sentinel. Use group
+1001 and setgid mode 2770 for the shared media root and shared test
+directories, with 0640 nonsecret file sentinels; parent traversal must
+also permit each measured consumer. Use fixture owner 963:1001 and
+mode 2770 for each application config root. Begin without extended
+ACLs; introduce explicit named ACLs only in their access-control test
+variant and preserve those independent changes when relevant. Confirm
+IDs are available before creation; collisions require an explicit
+fixture revision instead of renumbering an existing account.
 
 The external native consumer uses a separate unmanaged SFTP service
 instance on loopback port 22223, its own keys and startup policy. It
@@ -339,14 +346,57 @@ supplementary groups, namespace mappings and capabilities; initialization
 root processes and configured PUID/PGID alone do not establish access.
 Preserve secrets and unrelated XML fields during the port change.
 
-Prepare a legal synthetic media fixture and a separate Radarr config
-bind. Before adoption, establish its application-level access to that
-media using a version-matched operation, then repeat that same check
-after Sonarr changes/retirement. Record the exact operation, result,
-credential reference and affected fixture paths. A permission predicate
-or merely a healthy Radarr process is insufficient. The final Radarr
-image/input binding and functional operation are recorded before any
-scenario that depends on them executes.
+### Radarr's functional shared-directory check
+
+Use Radarr 6.4.4.10685's actual root-folder API and fresh fixture-only
+credentials, with an empty URL base and port 17878. During assembly,
+create `/mnt/media/mpkg-fixture-shared/radarr-root/` and its child
+`Mpkg Sentinel (2000)` with the declared shared permissions. No movie
+record, remote lookup, downloaded media or production data is needed.
+
+Read `GET /api/v3/config/naming` and require `movieFolderFormat` equal
+to `{Movie Title} ({Release Year})`, with no slash. Register the root
+once by posting this JSON to `POST /api/v3/rootfolder`:
+
+```json
+{"path":"/mnt/media/mpkg-fixture-shared/radarr-root"}
+```
+
+Require HTTP 201 and save the returned positive root-folder ID. The
+controller returns `CreatedAtAction`, while its generated OpenAPI lists
+200; verify the source-predicted 201 against the actual fixture rather
+than treating either source as runtime proof. This
+assembly action intentionally creates a Radarr database record and its
+writability check creates/deletes `radarr_write_test.txt`; reserve that
+name under the root. The setup authorization must cover those writes.
+
+Before adoption and after each managed Sonarr change or retirement,
+request `GET /api/v3/rootfolder/{id}?timeout=true`. Require HTTP 200,
+the same ID and path, `accessible=true`, and an `unmappedFolders` entry
+with exact name `Mpkg Sentinel (2000)` and the expected full child path.
+Require the sentinel itself: the application's directory enumeration
+ignores inaccessible entries. This invokes the unmanaged application's
+own live directory-discovery path, rather than substituting a separate
+process with copied credentials. It establishes shared-directory
+discovery only; it does not establish movie import or media-file reads.
+
+Send `X-Api-Key` from a protected fixture credential reference, never
+in a URL or recorded output. Disable proxies and redirects; allow a
+maximum 64 KiB response and 10 seconds per request. The API's internal
+five-second wait does not cancel its task. A timeout or missing sentinel
+fails the check and stops the scenario without overlapping retries.
+Record only allowlisted response fields and actual listener attribution.
+
+These choices follow the versioned
+[root-folder controller](https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/Radarr.Api.V3/RootFolders/RootFolderController.cs),
+[root-folder service](https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/NzbDrone.Core/RootFolders/RootFolderService.cs),
+[disk implementation](https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/NzbDrone.Common/Disk/DiskProviderBase.cs)
+and [API authentication](https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/Radarr.Http/Authentication/AuthenticationBuilderExtensions.cs).
+The source release tag resolved to commit
+`a96bf7c3ecb23cb76993770727285dc17a613fbc`; the inventory records that
+observation. This does not verify the image build against that commit.
+These remain source-derived expectations until the assembled fixture
+passes them against the pinned image.
 
 ### Supplemental volume and network variants
 
@@ -368,7 +418,12 @@ Sonarr and unmanaged Radarr attachments, and separate project names.
 Create/adopt the network with sharing declared, use explicit external
 references for the unmanaged project, and preserve it after managed
 Sonarr retirement while Radarr remains attached. Publish fixture-only
-listeners to guest loopback and use the same HTTP and media predicates.
+listeners to guest loopback: Sonarr `127.0.0.1:18989:18989` and
+Radarr `127.0.0.1:17878:17878`; update Sonarr's mapping to
+`127.0.0.1:18990:18990` with its managed port change. Use the same HTTP
+and shared-directory predicates. After retirement the Radarr listener
+must remain reachable through its published bridge port, and its
+root-folder API must still discover the shared sentinel.
 For `network-exclusive-delete`, reset without Radarr or another
 attachment and verify the independently authorized network cleanup.
 Record actual network/volume IDs and attachment evidence at assembly.
@@ -394,31 +449,83 @@ installed upgrade transaction. Resolve again against the assembled
 local database and explicit package reasons; review any removals,
 replacements or AUR compatibility requirements before execution. Never
 mix individual newer packages into the October 30 repository state.
-Demonstrate a supported exact request with `tmux=3.8-1`; an unavailable
-`tmux=0` and incompatible `tmux=3.8-1` plus `tmux=0` must block before
-mutation. Neither a failed request nor a wider-scope refusal may silently
-relax intent.
+Demonstrate a supported exact request with `tmux=3.8-1`, and keep
+`tmux=0` as the distinct unavailable-artifact case. For native
+incompatibility, independently request the available exact packages
+`pulseaudio=17.0+r134+g77d25a1e6-1` and
+`pipewire-pulse=1:1.6.10-1` from October 30. Their frozen metadata
+explicitly declares mutual conflicts and the shared virtual provider
+`pulse-native-provider`. The inventory binds both artifact hashes,
+versions, dependencies, conflicts, replacements and provides. Native
+preparation must reject the pair without replacing either independently
+wanted package or weakening either requirement.
 
-## Gates before an executable manifest
+A metadata-only libalpm 16.0.1 probe confirmed this conflict: with an
+empty scratch root/local database and frozen sync databases, it added
+the 167-package candidate closure, initialized with `NOLOCK` only and
+called `alpm_trans_prepare`. Preparation returned -1, errno 46,
+`conflicting dependencies`; no commit function was bound or called.
+The initial pacman `--print` resolution alone did not reject the
+conflict and is explicitly not counted as preparation proof. This is
+native-library evidence, not execution of the future product adapter.
+Neither a failed request nor a wider-scope refusal may relax intent.
 
-The identified ISO, dated complete package resolution, coherent pinned
-AUR chain and Python source close those earlier selection gaps. The
-following remain gates, not acceptance passes:
+### A9 explicit Docker update
+
+Use a separate `docker-update-before` restore point initialized from
+fresh configuration/database state by Sonarr `4.0.19.2979-ls322`.
+Its registry metadata was checked at
+2026-10-31T23:39:12.911430Z:
+
+```text
+OCI index: sha256:c19aa4ecdf03d73e1d5c901da33744cb7eb4d921f89bafed1ca264601d7fa224
+linux/amd64 manifest: sha256:6b06eac65225627173c12f049d8b5c55c588cdb0b3faa667553559cbb51e1474
+Image config: sha256:8df16ac7fd59767b1fc4f15243578695ea6f8de7d4f2873a091364535e752aa3
+```
+
+The index/manifest/config sizes were 1,610/1,998/9,195 bytes. Index and
+manifest digests matched headers and computed bytes; config digest,
+size, platform and public version labels matched. Nine layers were
+referenced; no layers were fetched. Discovery used the version tag,
+but the fixture binds the digests and platform association.
+
+Initialize the same fixture-only identity/path/config shape and
+functional checks using this older image. Never downgrade the primary
+adoption fixture's current-version database. Make the accepted current
+`4.0.20.3014-ls1` index and amd64 manifest available as the update
+candidate. Status and configuration-only apply must keep the older
+running identity; an explicit update may select and acquire the bound
+newer identity. A missing bound artifact blocks instead of falling back
+to a tag. Verify the final running content/platform, preserved intended
+configuration, ordinary data and actual readiness, including observed
+database migration effects and the unchanged unmanaged Radarr check.
+The primary current-version adoption and separate older-version update
+restore points have distinct identities and histories.
+
+## Assembly and execution evidence
+
+The design selects source artifacts, restore-point roles, functional
+oracles and time limits. Assembly must produce actual output identities
+and successful checks; those are measurements, not values invented in
+advance. The following remain separate work, not acceptance passes:
 
 1. Acquire archives and verify digests/signatures; prepare and build
    every AUR input and Python; retain actual artifacts and inventory.
-2. Bind hypervisor/firmware, assembled disks, identities, nonsecret
-   input bundles, credential references, product revision, snapshots,
-   operation timeouts and failure injection controls.
+2. Assemble the selected runner/firmware and guest; record actual disk,
+   identity, nonsecret input-bundle and credential-reference bindings.
+   Produce bootstrap restore points without product adoption/history.
 3. Acquire the complete Sonarr/Radarr images, initialize fixture data,
    and establish measured identities and exact functional checks,
-   including Radarr's media workflow and managed XML update inputs.
+   including Radarr's directory-discovery operation and XML inputs.
 4. Assemble the named-volume/network variants and both update restore
    points; verify their observed transaction/input bindings and results.
-5. Execute all A1-A12 variants after authorization. Caller disconnect,
-   durable-worker death, continuing subprocess/daemon activity and
-   journal failure require the implementation's actual boundaries.
+5. Bind a prototype/product revision and its actual injection controls
+   when that implementation exists, then execute all A1-A12 variants
+   after authorization. Product attempts produce the applied snapshots
+   and attempt evidence; these are not bootstrap prerequisites. Caller
+   disconnect, worker death, continuing subprocess/daemon activity and
+   journal failure must exercise the implementation's real boundaries.
 
-Keep outstanding design inputs in the acceptance queue. Guest assembly
-and product execution are separate work; this document establishes
-neither a complete runtime manifest nor a working first release.
+Guest assembly and product execution are separate tasks. This document
+establishes neither an assembled runtime manifest nor a working first
+release; every mandatory native and Docker variant remains required.
