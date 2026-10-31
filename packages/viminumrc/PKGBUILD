@@ -1,0 +1,40 @@
+pkgname=viminumrc
+pkgver=1
+pkgrel=1
+pkgdesc='Shared Vim configuration and system-wide login environment'
+arch=('any')
+depends=('vim')
+backup=(
+  'usr/local/etc/vimrc/vimrc'
+  'etc/profile.d/viminumrc.sh'
+)
+source=(
+  'vimrc'
+  'README.vimrc'
+  'surround.vim'
+  'repeat.vim'
+  'bundle-README.md'
+  'LICENSE.txt'
+  'viminumrc.sh'
+)
+
+package() {
+  install -Dm644 "$srcdir/vimrc" "$pkgdir/usr/local/etc/vimrc/vimrc"
+  install -Dm644 "$srcdir/README.vimrc" "$pkgdir/usr/local/etc/vimrc/README.md"
+  install -Dm644 "$srcdir/surround.vim" \
+    "$pkgdir/usr/local/etc/vimrc/bundle/surround.vim"
+  install -Dm644 "$srcdir/repeat.vim" \
+    "$pkgdir/usr/local/etc/vimrc/bundle/autoload/repeat.vim"
+  install -Dm644 "$srcdir/bundle-README.md" \
+    "$pkgdir/usr/local/etc/vimrc/bundle/README.md"
+  install -Dm644 "$srcdir/LICENSE.txt" \
+    "$pkgdir/usr/local/etc/vimrc/bundle/LICENSE.txt"
+  install -Dm644 "$srcdir/viminumrc.sh" "$pkgdir/etc/profile.d/viminumrc.sh"
+}
+sha256sums=('a197dbdf23c1c11c33d1ee585ba1d618fe96cb83bba2a1d59d89e248a21e928b'
+            'f908b4be7abe93e260e1a86c716a102366d90e649f3948872dedce510031b624'
+            'e9eef560966b185c0c79ebb3d861c049c7461329845a70fefea0381b1275cabb'
+            '00c4547c798bd58181e63325bc41986ba2432892e745dd26cb0eaf4a977cb1da'
+            '19f292f58251946cbaddcc68c4088d30f0034a9f16fc39dc9a1205bbf543cb7a'
+            '491379b59a1e6a0796ce2ecba72ef0bc1a22d447213c0aa87b270b40f7fde027'
+            '11381f218ddf4d053f89af643d637132de37966e46c463edd38c2064a61e9d24')

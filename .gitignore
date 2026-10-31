@@ -1,6 +1,9 @@
 */pkg/
 */src/
 */*.pkg.tar.*
+packages/*/pkg/
+packages/*/src/
+packages/*/*.pkg.tar.*
 __pycache__/
 .venv/
 .worktrees/

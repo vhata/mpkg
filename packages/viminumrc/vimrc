@@ -1,0 +1,232 @@
+" Portable editing defaults. Copy vimrc and bundle/ together to ~/.vim/.
+" Requires a normal Vim 8+ build (not vi/vim-tiny), or Neovim.
+set nocompatible
+set encoding=utf-8
+let mapleader = ' '
+" Fixed local copies: no package manager, runtimepath changes or downloads.
+let s:config_dir = fnamemodify(resolve(expand('<sfile>:p')), ':h')
+let g:surround_no_insert_mappings = 1
+execute 'source ' . fnameescape(s:config_dir . '/bundle/autoload/repeat.vim')
+execute 'source ' . fnameescape(s:config_dir . '/bundle/surround.vim')
+filetype plugin indent on
+syntax enable
+
+" Editing: filetype rules can override the two-space default (e.g. Makefiles).
+set hidden confirm backspace=indent,eol,start
+set autoindent expandtab tabstop=2 shiftwidth=2 softtabstop=2 shiftround
+set noautowrite noautowriteall
+set splitbelow splitright
+set scrolloff=4 sidescrolloff=8
+set mouse=
+
+" Readable in an ordinary terminal; no special fonts or colour scheme needed.
+set number relativenumber cursorline
+set nowrap linebreak
+set showmode showcmd ruler laststatus=2
+set statusline=%<%f\ %h%m%r%=%y\ %l:%c\ %p%%
+set listchars=tab:>-,trail:.,extends:>,precedes:<
+if exists('&conceallevel')
+  set conceallevel=0
+endif
+
+" Search and completion stay entirely inside Vim; completion is manual.
+set ignorecase smartcase incsearch hlsearch
+set wildmenu wildmode=longest:full,full
+set complete=.,w,b completeopt=menuone,noinsert
+set pumheight=10
+inoremap <C-Space> <C-n>
+inoremap <C-@> <C-n>
+inoremap <expr> <Tab> pumvisible() ? "\<C-y>" : "\<Tab>"
+
+" Useful for system accounts: don't load per-directory config or modelines.
+" Keep crash recovery and temporary write backups, but no persistent history.
+set nomodeline noexrc
+set swapfile nobackup writebackup backupcopy=yes
+if has('persistent_undo')
+  set noundofile
+endif
+if has('nvim')
+  set shada=
+else
+  set viminfo=
+endif
+
+" Built-in directory browser. No directory-history files.
+let g:netrw_banner = 0
+let g:netrw_liststyle = 0
+let g:netrw_dirhistmax = 0
+nnoremap <silent> - :execute 'Explore ' . fnameescape(expand('%:p:h'))<CR>
+nnoremap <silent> <leader>e :Explore<CR>
+nnoremap <leader><Space> :edit<Space>
+nnoremap <leader>ff :edit<Space>
+nnoremap <silent> <leader>fn :enew<CR>
+
+" Save, quit and buffers. No forced writes or discarding changed buffers.
+nnoremap <silent> <leader>w :write<CR>
+nnoremap <silent> <leader>qq :confirm qall<CR>
+nnoremap <silent> H :bprevious<CR>
+nnoremap <silent> L :bnext<CR>
+nnoremap <silent> <leader>` :buffer #<CR>
+nnoremap <silent> <leader>bd :confirm bdelete<CR>
+nnoremap <leader>, :buffers<CR>:buffer<Space>
+nnoremap <leader>fb :buffers<CR>:buffer<Space>
+
+" Splits and window movement.
+nnoremap <silent> <leader>- :split<CR>
+nnoremap <silent> <leader>\| :vsplit<CR>
+nnoremap <silent> <leader>wd :close<CR>
+nnoremap <C-h> <C-w>h
+nnoremap <C-j> <C-w>j
+nnoremap <C-k> <C-w>k
+nnoremap <C-l> <C-w>l
+
+" Literal directory search. rg is optional; nothing is installed or downloaded.
+function! s:Search(pattern) abort
+  let l:title = 'Search: ' . a:pattern
+  try
+    if executable('rg')
+      " JSON preserves filenames containing colons, spaces or newlines.
+      let l:output = systemlist('rg --no-config --json --fixed-strings --smart-case -- ' . shellescape(a:pattern) . ' .')
+      let l:status = v:shell_error
+      if l:status > 1
+        throw 'Search: rg failed (exit ' . l:status . '); previous results kept.'
+      endif
+      let l:items = []
+      for l:line in l:output
+        let l:record = json_decode(l:line)
+        if l:record.type ==# 'match'
+          let l:data = l:record.data
+          if !has_key(l:data.path, 'text') || !has_key(l:data.lines, 'text')
+            throw 'Search: non-UTF-8 result; use :vimgrep for this file.'
+          endif
+          for l:match in l:data.submatches
+            call add(l:items, {'filename': l:data.path.text,
+                  \ 'lnum': l:data.line_number, 'col': l:match.start + 1,
+                  \ 'text': substitute(l:data.lines.text, '[\r\n]\+$', '', '')})
+          endfor
+        endif
+      endfor
+      call setqflist([], ' ', {'title': l:title, 'items': l:items})
+    else
+      let l:previous = getqflist({'items': 1, 'title': 1, 'idx': 1, 'context': 1})
+      let l:search = @/
+      let l:highlight = v:hlsearch
+      try
+        " Supply the pattern through the search register, never as Ex commands.
+        " NFA matching keeps Unicode case folding working in a C locale in Vim.
+        let @/ = '\%#=2\V' . (a:pattern !=# tolower(a:pattern) ? '\C' : '\c') . escape(a:pattern, '\')
+        silent noautocmd vimgrep //gj **/*
+        call setqflist([], 'a', {'title': l:title})
+      catch /\<E480:/
+        call setqflist([], 'r', {'title': l:title, 'items': []})
+      catch
+        call setqflist([], 'r', l:previous)
+        throw 'Search: built-in search failed; previous results kept.'
+      finally
+        let @/ = l:search
+        let v:hlsearch = l:highlight
+      endtry
+    endif
+  catch
+    echohl ErrorMsg
+    echomsg v:exception
+    echohl None
+    return
+  endtry
+  if empty(getqflist())
+    cclose
+    echomsg 'Search: no matches.'
+  else
+    botright copen
+  endif
+endfunction
+command! -nargs=+ Search call <SID>Search(<q-args>)
+
+" Search and quickfix. Native :vimgrep remains available for regexes and globs.
+nnoremap <silent> <Esc> :nohlsearch<CR>
+nnoremap <silent> n nzzzv
+nnoremap <silent> N Nzzzv
+nnoremap <leader>sg :Search<Space>
+nnoremap <leader>/ :Search<Space>
+nnoremap <silent> <leader>xq :copen<CR>
+nnoremap <silent> <leader>xc :cclose<CR>
+nnoremap <silent> [q :cprevious<CR>
+nnoremap <silent> ]q :cnext<CR>
+
+" Small editing conveniences and familiar toggles.
+xnoremap < <gv
+xnoremap > >gv
+nnoremap <expr> j v:count == 0 ? 'gj' : 'j'
+nnoremap <expr> k v:count == 0 ? 'gk' : 'k'
+nnoremap <silent> <leader>uw :setlocal wrap! wrap?<CR>
+nnoremap <silent> <leader>ul :setlocal number! number?<CR>
+nnoremap <silent> <leader>uL :setlocal relativenumber! relativenumber?<CR>
+nnoremap <silent> <leader>us :setlocal spell! spell?<CR>
+nnoremap <silent> <leader>uW :setlocal list! list?<CR>
+nnoremap <silent> <leader>tp :set paste! paste?<CR>
+
+" Move whole lines without changing their indentation or clobbering registers.
+function! s:MoveLines(first, last, amount, visual) abort
+  let l:start = max([1, min([a:first + a:amount, line('$') - a:last + a:first])])
+  let l:delta = l:start - a:first
+  let l:cursor = getpos('.')
+  let l:left = getpos("'<")
+  let l:right = getpos("'>")
+  if l:delta != 0
+    let l:target = l:delta > 0 ? a:last + l:delta : l:start - 1
+    execute 'keepjumps ' . a:first . ',' . a:last . 'move ' . l:target
+    let l:cursor[1] += l:delta
+    call setpos('.', l:cursor)
+  endif
+  if a:visual
+    let l:left[1] += l:delta
+    let l:right[1] += l:delta
+    call setpos("'<", l:left)
+    call setpos("'>", l:right)
+    normal! gv
+  endif
+endfunction
+nnoremap <silent> ]e :<C-U>call <SID>MoveLines(line('.'), line('.'), v:count1, 0)<CR>
+nnoremap <silent> [e :<C-U>call <SID>MoveLines(line('.'), line('.'), -v:count1, 0)<CR>
+xnoremap <silent> ]e :<C-U>call <SID>MoveLines(line("'<"), line("'>"), v:count1, 1)<CR>
+xnoremap <silent> [e :<C-U>call <SID>MoveLines(line("'<"), line("'>"), -v:count1, 1)<CR>
+nmap <A-j> ]e
+nmap <A-k> [e
+xmap <A-j> ]e
+xmap <A-k> [e
+
+" Explicit reindent only: use the filetype's built-in rules and restore the view.
+function! s:Reindent(first, last) abort
+  let l:view = winsaveview()
+  try
+    execute 'keepjumps normal! ' . a:first . 'G' . (a:last - a:first + 1) . '=='
+  finally
+    call winrestview(l:view)
+  endtry
+endfunction
+nnoremap <silent> <leader>cf :<C-U>call <SID>Reindent(1, line('$'))<CR>
+xnoremap <silent> <leader>cf :<C-U>call <SID>Reindent(line("'<"), line("'>"))<CR>
+
+" Keep a short reference available even when only the runtime files are copied.
+command! VimrcKeys echo join([
+      \ 'Space is the leader; most keys below are in normal mode.',
+      \ 'Files: Space ff / Space Space edit; - / Space e browse; Space fn new',
+      \ 'Buffers: H / L previous/next; Space , list; Space ` alternate; Space bd close',
+      \ 'Save/quit: Space w save; Space qq quit (asks about unsaved changes)',
+      \ 'Windows: Space - / | split; Ctrl-h/j/k/l navigate; Space wd close',
+      \ 'Search: / in file; Space sg / Space / searches literal text below cwd (rg optional)',
+      \ 'Results: Space xq / xc quickfix open/close; [q / ]q previous/next',
+      \ 'Surround: ysiw" quote word; yss) wrap line; cs"'' change quotes; ds" remove; visual S wrap',
+      \ 'Edit: ]e / [e or Alt-j/k move lines (counts work); visual mode moves whole selected lines',
+      \ 'Indent: Space cf reindent file / visual range, preserving view (no external formatter)',
+      \ 'Toggles: Space uw wrap, ul numbers, uL relative numbers, us spelling, uW whitespace, tp paste',
+      \ 'Insert: Ctrl-Space / Ctrl-n complete; Ctrl-n/p choose; Tab accept; Ctrl-e cancel',
+      \ 'Space ? shows this reference; press Enter to dismiss.'
+      \ ], "\n")
+nnoremap <silent> <leader>? :VimrcKeys<CR>
+
+" Don't auto-wrap text or continue comments; gq and = remain available manually.
+augroup portable_vimrc
+  autocmd!
+  autocmd FileType * setlocal formatoptions-=t formatoptions-=c formatoptions-=r formatoptions-=o
+augroup END
