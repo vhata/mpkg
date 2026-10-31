@@ -201,6 +201,15 @@ descriptors/owners and imports no modules from the checkout. Operator
 identity comes from the trusted privilege launcher, not a JSON field.
 Root remains trusted; this is not containment against a hostile root.
 
+The worker captures child stdout/stderr through bounded pipes; they
+are never inherited by the terminal or systemd journal. Emit only
+allowlisted structured outcomes and fixed diagnostics, suppressing
+unknown raw errors rather than relying on regex secret removal. Use
+private temporary files for secret-bearing adapter inputs, avoid secret
+argv values, disable core dumps, and test sentinel leakage through
+exception, timeout and daemon error paths. Application-owned container
+logs remain outside ordinary attempt history.
+
 On apply, the helper loads a protected, immutable plan ID, revalidates
 its authority and input bindings, and creates a system-manager service
 `mpkg-attempt-<uuid>.service` running the fixed installed worker with
