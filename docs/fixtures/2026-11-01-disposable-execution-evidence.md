@@ -460,6 +460,26 @@ ID `14`, with no memory state and firmware variables SHA-256
 Restoring `image-ready` for the first supplemental variant preserved it
 again as `before-restore-1a33f6a4e0fd40e0`.
 
+The first `volume-keep` assembly stopped with exit 73 at
+`docker_variant_config_credential_check_failed`. A separate read-only
+diagnostic reproduced `ENOENT` from the verifier's namespace lookup after
+entering each container's mount namespace. A namespace directory held by
+the child before entry still verified the intended namespace. Copied
+credentials, sentinel contents/metadata, database metadata and empty
+extended attributes passed for both applications. Radarr's bind-backed
+config directory matched mode `2770`; Sonarr's named-volume root instead
+had mode `0770`, exposing a second, independent unmet predicate.
+
+The diagnostic preserved one unknown setup attempt, its sole start event,
+ten protected records and the existing baseline bytes. It established
+the observed metadata, rather than which initialization step omitted or
+removed setgid. No successful volume assembly is claimed. After orderly
+shutdown, this state was saved as `failed-volume-keep-credentials`,
+offline snapshot ID `16`, with no memory state and firmware variables
+SHA-256
+`36b4ee16785f54cc2424a9632ef217725a5cb2c5e172384f857be24444168361`.
+Independent review verified the diagnostic and preserved checkpoint.
+
 The six supplemental resource/update variants remain runtime gates.
 Applied product restore points remain unavailable until actual product
 operations create them.
