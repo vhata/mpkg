@@ -405,6 +405,25 @@ discovery survive. Original assembly evidence remains intact, and a
 timeout leaves the separate attempt unresolved. These helpers establish
 only observed mechanism results; retirement is still a distinct attempt.
 
+`docker_variant_retire.py --variant <resource-case> --guest-id <UUID>`
+requires a completed port experiment and preserves both earlier journals
+and manifests. Four fixed `guest-<case>-retire.sh` wrappers select the
+resource cases. A fresh retirement journal precedes Sonarr stop/removal.
+It verifies all containers, including stopped consumers, and exact
+resource identities before deleting an exclusive volume or network.
+The shared network remains with Radarr attached. Kept-volume inspection
+uses only a fixed offline metadata shell and bounded Docker-cp reads;
+it never restarts Sonarr or reads the database contents. Its source,
+accounts and shared native data are explicitly retained.
+
+After resource disposition, checks require closed Sonarr routes,
+unchanged source/sentinel metadata, the same unmanaged Radarr process,
+attributed shared-directory discovery and credential-free bridge routing.
+Final container/volume/network inventories must match the selected
+disposition. An uncertain outcome remains unresolved and blocks another
+probe or cleanup attempt. These are disposable resource mechanisms,
+not a product retirement implementation or an A1–A12 acceptance claim.
+
 ### Native service baseline
 
 `native_service.py setup --guest-id <UUID>` assembles only the fixed

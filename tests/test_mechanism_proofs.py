@@ -45,6 +45,7 @@ import docker_variant_plan
 import docker_diagnostic_resume
 import docker_variants
 import docker_variant_experiment
+import docker_variant_retire
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -131,6 +132,49 @@ class GuestGuardTests(unittest.TestCase):
 
 
 class DockerVariantPrimitiveTests(unittest.TestCase):
+    def test_retirement_entrypoint_refuses_host_before_removal_or_prior_history_reads(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            result = subprocess.run([sys.executable, '-I', str(PROOFS / 'docker_variant_retire.py'),
+                                     '--variant', 'network-exclusive-delete', '--guest-id', str(uuid.uuid4())],
+                                    cwd=temporary, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 73)
+            self.assertEqual(json.loads(result.stdout)['status'], 'refused')
+            self.assertEqual(result.stderr, '')
+            self.assertEqual(list(Path(temporary).iterdir()), [])
+
+    def test_retirement_refuses_an_unexpected_stopped_consumer(self):
+        fixture = object.__new__(docker_variant_retire.Retirement)
+        fixture.specs = {'sonarr': {}, 'radarr': {}}
+        fixture.manifest = {'resources': {'container_ids': {'sonarr': 'retired-id', 'radarr': 'accepted-radarr'}}}
+        with mock.patch.object(fixture, 'docker', return_value=b'accepted-radarr\nstopped-other-consumer\n') as docker, \
+                mock.patch.object(fixture, 'container') as container:
+            with self.assertRaisesRegex(docker_variant_retire.Refused, 'remaining_consumer_scope_changed'):
+                fixture.remaining()
+            docker.assert_called_once_with('ps', '--all', '--quiet', '--no-trunc')
+            container.assert_not_called()
+
+    def test_empty_declared_network_requires_empty_actual_attachments(self):
+        fixture = object.__new__(docker_variant_retire.Retirement)
+        network = {'Id': 'accepted-id', 'Name': docker_variant_plan.NETWORK, 'Driver': 'bridge',
+                   'Scope': 'local', 'Labels': {}, 'Options': {}, 'IPAM': {'Driver': 'default'}}
+        fixture.manifest = {'resources': {'network': dict(network, consumers=['retired-sonarr'])}}
+        current = dict(network, Internal=False, EnableIPv6=False, Containers={'unexpected-consumer': {}})
+        with mock.patch.object(fixture, 'remaining', return_value=set()), \
+                mock.patch.object(fixture, 'docker', return_value=json.dumps([current]).encode()) as docker:
+            with self.assertRaisesRegex(docker_variant_retire.Refused, 'network_identity_or_consumers_changed'):
+                fixture.network_identity()
+            docker.assert_called_once_with('network', 'inspect', docker_variant_plan.NETWORK)
+
+    def test_unresolved_retirement_blocks_another_probe_or_cleanup(self):
+        fixture = object.__new__(docker_variant_retire.Retirement)
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture.directory = Path(temporary)
+            with mock.patch.object(fixture, 'inspect') as inspect, mock.patch.object(fixture, 'docker') as docker:
+                with self.assertRaisesRegex(docker_variant_retire.Refused, 'fresh_attempt_required'):
+                    fixture.execute()
+                inspect.assert_not_called()
+                docker.assert_not_called()
+
     def test_experiment_entrypoint_rejects_host_before_opening_assembly_history(self):
         with tempfile.TemporaryDirectory() as temporary:
             result = subprocess.run([sys.executable, '-I', str(PROOFS / 'docker_variant_experiment.py'),
