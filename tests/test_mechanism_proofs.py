@@ -442,6 +442,72 @@ class DockerBaselineTests(unittest.TestCase):
             install.assert_not_called()
 
 
+class DockerVolumeInitializationTests(unittest.TestCase):
+    def test_child_uses_held_own_proc_view_and_still_rejects_namespace_drift(self):
+        class ReachedRoot(BaseException):
+            pass
+        class ChildExit(BaseException):
+            pass
+        for observed in (42, 43):
+            with self.subTest(namespace=observed):
+                calls = []
+                def fork():
+                    calls.append('fork')
+                    return 0
+                def opened(path, flags):
+                    self.assertEqual(path, '/proc/self/ns')
+                    calls.append('open_own_proc')
+                    return 91
+                def inspected(path, *, dir_fd):
+                    self.assertEqual((path, dir_fd), ('mnt', 91))
+                    calls.append('inspect_held_view')
+                    return SimpleNamespace(st_ino=observed)
+                def entered(descriptor):
+                    calls.append('enter_root')
+                    raise ReachedRoot()
+                def exited(status):
+                    raise ChildExit(status)
+                operations = SimpleNamespace(fork=fork, open=opened, O_RDONLY=0, O_DIRECTORY=1, O_CLOEXEC=2,
+                    CLONE_NEWNS=3, setns=lambda *_: calls.append('setns'), stat=inspected,
+                    close=lambda _: calls.append('close_own_proc'), fchdir=entered, _exit=exited)
+                with mock.patch.object(docker_variants, 'os', operations):
+                    if observed == 42:
+                        with self.assertRaises(ReachedRoot):
+                            docker_variants.config_credential_check(10, 11, 42, {}, b'synthetic', 'sonarr')
+                        self.assertEqual(calls, ['fork', 'open_own_proc', 'setns', 'inspect_held_view', 'close_own_proc', 'enter_root'])
+                    else:
+                        with self.assertRaises(ChildExit) as caught:
+                            docker_variants.config_credential_check(10, 11, 42, {}, b'synthetic', 'sonarr')
+                        self.assertEqual(caught.exception.args, (1,))
+                        self.assertNotIn('enter_root', calls)
+
+    def test_initializer_exit_zero_requires_actual_setgid_metadata_before_removal(self):
+        identifier = 'a' * 64
+        value = {'Id': identifier, 'Image': 'sha256:' + 'b' * 64, 'Config': {'User': '0:1001'},
+                 'State': {'Running': False, 'ExitCode': 0}, 'HostConfig': {'NetworkMode': 'none'},
+                 'Mounts': [{'Name': docker_variant_plan.VOLUME, 'Destination': '/config'}]}
+        for reported in (b'963:1001:770\n', b'963:1001:2770\n'):
+            with self.subTest(metadata=reported):
+                calls = []
+                def docker(*args, **kwargs):
+                    calls.append(args)
+                    return {'volume': b'created\n', 'create': identifier.encode(), 'start': b'', 'wait': b'0\n',
+                            'logs': reported, 'inspect': json.dumps([value]).encode(), 'rm': b''}[args[0]]
+                fixture = SimpleNamespace(docker=docker, guest='guest', plan={'variant': 'volume-keep'},
+                    specs={'sonarr': {'image': compose_proof.SONARR}}, image_ids={'sonarr': {'image_id': value['Image']}})
+                if reported == b'963:1001:2770\n':
+                    docker_variants.Variant.prepare_volume(fixture)
+                    self.assertIn(('rm', identifier), calls)
+                else:
+                    with self.assertRaisesRegex(docker_variants.Refused, 'initialization_metadata_mismatch'):
+                        docker_variants.Variant.prepare_volume(fixture)
+                    self.assertFalse(any(call[0] == 'rm' for call in calls))
+                created = next(call for call in calls if call[0] == 'create')
+                self.assertEqual(created[created.index('--user') + 1], '0:1001')
+                self.assertEqual([created[index + 1] for index, item in enumerate(created) if item == '--cap-add'], ['CHOWN', 'FOWNER'])
+                self.assertIn("stat -c '%u:%g:%a' /config", created[-1])
+
+
 class VolumeKeepDiagnosticTests(unittest.TestCase):
     def functions(self, **extra):
         script = (PROOFS / 'guest-volume-keep-diagnostic.sh').read_text()

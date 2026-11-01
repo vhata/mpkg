@@ -47,9 +47,13 @@ def config_credential_check(root_descriptor, namespace_descriptor, namespace_ino
     child = os.fork()
     if child == 0:
         try:
+            # The target procfs may not expose this child from the host PID
+            # namespace. Hold this child's own proc view before setns.
+            own_namespaces = os.open('/proc/self/ns', os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
             os.setns(namespace_descriptor, os.CLONE_NEWNS)
-            if os.stat('/proc/self/ns/mnt').st_ino != namespace_inode:
+            if os.stat('mnt', dir_fd=own_namespaces).st_ino != namespace_inode:
                 os._exit(1)
+            os.close(own_namespaces)
             os.fchdir(root_descriptor)
             os.chroot('.')
             os.chdir('/')
@@ -336,19 +340,24 @@ class Variant(Baseline):
                     '--label', 'mpkg.variant=' + self.plan['variant'], VOLUME)
         name = 'mpkg-fixture-' + self.plan['variant'] + '-volume-init'
         identifier = self.docker('create', '--pull', 'never', '--platform', 'linux/amd64', '--name', name,
-                                  '--network', 'none', '--read-only', '--user', '0:0', '--cap-drop', 'ALL',
+                                  '--network', 'none', '--read-only', '--user', '0:1001', '--cap-drop', 'ALL',
                                   '--cap-add', 'CHOWN', '--cap-add', 'FOWNER', '--security-opt', 'no-new-privileges',
                                   '--mount', 'type=volume,source=' + VOLUME + ',target=/config,volume-nocopy',
                                   '--entrypoint', '/bin/sh', self.specs['sonarr']['image'], '-c',
-                                  'chown 963:1001 /config && chmod 2770 /config').decode().strip()
+                                  "chown 963:1001 /config && chmod 2770 /config && stat -c '%u:%g:%a' /config").decode().strip()
         if len(identifier) != 64 or any(char not in '0123456789abcdef' for char in identifier):
             raise Refused('docker_variant_initializer_identity_invalid')
         self.docker('start', identifier)
         if self.docker('wait', identifier, timeout=30).strip() != b'0':
             raise Refused('docker_variant_volume_initialization_failed')
+        # chmod can silently clear SGID without a matching process group or
+        # CAP_FSETID. Require actual metadata before any application starts.
+        if self.docker('logs', identifier) != b'963:1001:2770\n':
+            raise Refused('docker_variant_volume_initialization_metadata_mismatch')
         value = json.loads(self.docker('inspect', identifier))[0]
         mounts = value.get('Mounts', [])
         if (value.get('Id') != identifier or value.get('Image') != self.image_ids['sonarr']['image_id']
+                or value['Config']['User'] != '0:1001'
                 or value['State']['Running'] or value['State']['ExitCode'] != 0
                 or value['HostConfig']['NetworkMode'] != 'none' or len(mounts) != 1
                 or mounts[0].get('Name') != VOLUME or mounts[0].get('Destination') != '/config'):

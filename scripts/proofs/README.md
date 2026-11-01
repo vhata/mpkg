@@ -379,6 +379,13 @@ No installed proof module is replaced by this additive helper.
 Named-volume cases initialize only the named local volume using a fixed
 offline container; they seed generated XML and a sentinel through the
 Docker API before normal application startup creates the database.
+The initializer uses UID 0/GID 1001 with only `CHOWN` and `FOWNER`, and
+requires its actual `stat` output to report owner/group/mode
+`963:1001:2770` before application startup. A successful initializer exit
+alone is insufficient. Matching the group avoids the
+[documented silent removal of setgid](https://man7.org/linux/man-pages/man2/chmod.2.html)
+when `FSETID` is absent and the file group is not one of the process's
+groups. The required mode remains `2770` throughout later checks.
 The helper never opens Docker's volume mountpoint on the guest host.
 It uses [Compose create](https://docs.docker.com/reference/cli/docker/compose/create/)
 with builds and pulls disabled. Bridge cases bind exact network IDs,
@@ -389,6 +396,12 @@ Published-route probes carry no key. A separate five-second child enters
 the held mount namespace/root, drops to the application's full measured
 credentials, and checks only config-root metadata, the sentinel and
 database metadata. It never reads database contents.
+That child holds its own proc namespace directory after fork and before
+entering the mount namespace, then verifies the target through the held
+view. This preserves attribution when the container's
+[procfs PID visibility](https://man7.org/linux/man-pages/man7/pid_namespaces.7.html)
+does not include the child. No PID namespace entry or broader capabilities
+are needed.
 
 Checks preserve protected/unmanaged XML fields, source/rendered inputs,
 resource identities and the real Radarr directory-discovery predicate.
