@@ -297,8 +297,48 @@ Offline harvest revalidated the actual artifact and provenance, then
 created a read-only 128 MiB return disk with SHA-256
 `aaa56edcc9bb459412080854e846c212fb2a3392ab236bd1bc5ef2aa2919e3ba`.
 Restoring `native-change` also preserved the prior state as
-`before-restore-b3ba14330a1d4cc0`. Guest artifact import and the subsequent
-native transaction proof remain separate observations.
+`before-restore-b3ba14330a1d4cc0`.
+
+The restored guest imported that exact artifact with exit zero and
+`installed: false`. The native manifest then bound 218 artifacts, and
+the real libalpm 16.0.1 preparation proof completed with exit zero. Its
+five prepared additions matched between staged and live preparation;
+the live local and sync databases remained unchanged. Missing dependency,
+unavailable exact pin, synthetic conflict, partial coordinated upgrade
+and scope mismatch all blocked. No installation, hook or upgrade commit
+was performed. The earlier frozen audio-package conflict remains separate
+from this explicitly synthetic conflict case.
+
+Native adoption subsequently completed with exactly 212 packages and all
+prior installation reasons preserved. Only `tmux` and `ripgrep` became new
+explicit packages, with `libutempter` recorded as a dependency.
+The job's authenticated SSH reads passed before and after installation;
+a later read-only collector separately verified current account, data,
+unit and listener metadata. Completion UUID and exit zero matched, both
+manager PIDs were zero and its cgroup was absent. No product state existed.
+The result SHA-256 is
+`0d73e3b28258697d535f7a8bb8205f91ee1bfa38a94a0c3ebc01d27db8fc0b46`;
+the 212-package inventory SHA-256 is
+`bd1c456728854e3cabaab43d7d93249818d2fa7aa01c65f5b31e4eb3fe3ed60c`.
+After orderly shutdown, `native-adoption` was saved as offline snapshot
+ID `8`, with firmware variables SHA-256
+`51d177a74e45bc0faa2c6433ec69813827e25a6092db039fdf4b5e5700c44a46`.
+
+The separate native-update starting state then completed with 220 packages:
+all 217 frozen repository packages and the three actual AUR builds. It
+preserved the 212 prior reasons, marked the seven added repository packages
+as dependencies and gitstatus as explicit, and retained GnuPG 2.4.9-3.
+Its authenticated before/after checks, later metadata/listener observations,
+completion UUID, exit zero and worker quiescence passed. Product state
+remained absent. The result SHA-256 is
+`a942120a3d61a8029b98074cab6a2f0e6f090378c1baaa522457d65476f4d642`;
+the 220-package inventory SHA-256 is
+`4b0663619c190f5de83823f6571707cfa5fa900f08a6ca321d65ef181a8f7b2e`.
+After orderly shutdown, `native-update-before` was saved as offline snapshot
+ID `9`, with firmware variables SHA-256
+`36b4ee16785f54cc2424a9632ef217725a5cb2c5e172384f857be24444168361`.
+Restoring `native-change` for the Docker work preserved this prior state
+again as `before-restore-de247b4245a24884`.
 
 Complete image bindings remain unverified. Applied product restore points
 remain unavailable until actual product operations create them.
