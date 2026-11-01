@@ -416,6 +416,78 @@ desired={mode=493}
         self.assertEqual(current["definition"]["consumers"], ["original", "external:other"])
         self.assertEqual(current["requirements"], [{"consumer": "original", "property": "mode", "value": 448}])
 
+    def test_retained_package_constraints_are_contextually_revalidated(self):
+        store = self.create()
+        old = load_declaration(b'''schema=1
+[[components]]
+id="original"
+purpose="Use AUR package"
+resources=["app"]
+requirements=[{resource="app",property="source",value="aur"}]
+[[resources]]
+id="app"
+kind="package"
+identity={name="app"}
+''')
+        store.adopt(old, 0, ["app"])
+        new = load_declaration(b'''schema=1
+components=[]
+[[resources]]
+id="app"
+kind="package"
+identity={name="app"}
+desired={version={policy="exact",value="1-1"}}
+''')
+        before = store.current()
+        self.assert_error("consumer_requirement_conflict", lambda: store.adopt(new, 1, ["app"]))
+        self.assertEqual(store.current(), before)
+        self.assertEqual(len(store.history()), 1)
+        # A new declaration may restate the source and provide its recipe.
+        valid = load_declaration(new.source_bytes.replace(
+            b'version={policy="exact",value="1-1"}',
+            b'source="aur",version={policy="exact",value="1-1",recipe_revision="' + b"a" * 40 + b'"}'))
+        store.adopt(valid, 1, ["app"])
+        self.assertEqual(store.current()["resources"][0]["requirements"],
+                         [{"consumer": "original", "property": "source", "value": "aur"}])
+
+    def test_retained_file_input_constraints_require_valid_current_context(self):
+        store = self.create()
+        old = load_declaration(b'''schema=1
+[[inputs]]
+id="config"
+base_directory="/fixture"
+files=[{path="input",classification="nonsecret"}]
+[[components]]
+id="original"
+purpose="Read configuration"
+resources=["config-file"]
+requirements=[{resource="config-file",property="content_input",value="config"}]
+[[resources]]
+id="config-file"
+kind="file"
+identity={path="/fixture/config"}
+''')
+        store.adopt(old, 0, ["config-file"])
+        new = b'''schema=1
+components=[]
+[[resources]]
+id="config-file"
+kind="file"
+identity={path="/fixture/config"}
+'''
+        inputs = b'''\n[[inputs]]
+id="config"
+base_directory="/fixture"
+files=[{path="input",classification="nonsecret"}]
+'''
+        for invalid in (new, new + inputs.replace(b'files=[', b'files=[{path="extra",classification="nonsecret"},'),
+                        new + b'desired={content="inline"}\n' + inputs):
+            self.assert_error("consumer_requirement_conflict", lambda: store.adopt(
+                load_declaration(invalid), 1, ["config-file"]))
+        self.assertEqual(len(store.history()), 1)
+        store.adopt(load_declaration(new + inputs), 1, ["config-file"])
+        self.assertEqual(store.current()["resources"][0]["definition"]["consumers"], ["original"])
+
 
 if __name__ == "__main__":
     unittest.main()

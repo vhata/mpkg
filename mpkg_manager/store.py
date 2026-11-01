@@ -18,7 +18,8 @@ import sqlite3
 import stat
 import uuid
 
-from .declarations import Declaration, DeclarationError, canonical_json, load_declaration, physical_key
+from .declarations import (Declaration, DeclarationError, canonical_json,
+                           load_declaration, physical_key, validate_model)
 
 
 SCHEMA_VERSION = 1
@@ -537,6 +538,34 @@ class HostStore:
                 _fail("resource_identity_conflict")
             keys.add(key)
 
+    def _validate_retained(self, model, resource, requirements):
+        # Build a validation-only context. Historical consumer identities stay
+        # intact; synthetic components assert constraints, never authority.
+        context = _decode(_json(model))
+        context["resources"] = [resource if item["id"] == resource["id"] else item
+                                for item in context["resources"]]
+        components = {item["id"]: item for item in context["components"]}
+        for consumer in resource["consumers"]:
+            if consumer.startswith("external:"):
+                continue
+            if consumer not in components:
+                component = {"id": consumer, "purpose": "Retained consumer constraint",
+                             "resources": [], "requirements": []}
+                context["components"].append(component)
+                components[consumer] = component
+            if resource["id"] not in components[consumer]["resources"]:
+                components[consumer]["resources"].append(resource["id"])
+        for item in requirements:
+            requirement = {"resource": resource["id"], "property": item["property"],
+                           "value": item["value"]}
+            component = components[item["consumer"]]
+            if requirement not in component["requirements"]:
+                component["requirements"].append(requirement)
+        try:
+            validate_model(context)
+        except DeclarationError:
+            raise StoreError("consumer_requirement_conflict") from None
+
     def adopt(self, declaration, expected_revision, resource_ids, *, protected_inputs=()):
         """Explicitly accept selected identities/authority; observations stay unknown."""
         declaration, captures = _declaration(declaration), _captures(protected_inputs)
@@ -587,6 +616,7 @@ class HostStore:
                 if matching:
                     resource = resource | {"consumers": list(dict.fromkeys(
                         matching["definition"]["consumers"] + resource["consumers"]))}
+                self._validate_retained(model, resource, requirements)
                 stable_id = matching["stable_id"] if matching else str(uuid.uuid4())
                 self._db.execute("INSERT INTO resources VALUES(?,?,?,?,?,?,1)",
                                  (stable_id, result["revision"], resource["id"], _json(key),

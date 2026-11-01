@@ -78,6 +78,10 @@ deletion. Existing consumers and their accepted requirements remain
 recorded. Re-adoption cannot silently upgrade authority, change an
 active logical identity or discard a consumer constraint. A dedicated
 authority/consumer-change decision API remains future work.
+The combined retained and new constraints pass the same contextual
+validation as declarations, including AUR recipe bindings and file-input
+references. Validation-only component entries preserve historical
+consumer identities without granting additional management authority.
 
 Snapshots retain both the original nonsecret TOML and normalized model.
 Their identity binds both source and canonical digests plus schema and
