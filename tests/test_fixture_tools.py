@@ -328,8 +328,9 @@ class FixtureImageDiagnosticTests(unittest.TestCase):
         # Test the pure output/query functions without importing guest entrypoints.
         program=ast.parse(path.read_text())
         nodes=[n for n in program.body if isinstance(n,ast.FunctionDef)
-               and n.name in ('identity_view','expected_queries')]
-        namespace={'re':re,'Refused':ValueError,
+               and n.name in ('identity_view','expected_queries','daemon_error_summary')]
+        import json
+        namespace={'re':re,'json':json,'Refused':ValueError,
                    'IMAGES':(('fixture','linuxserver/sonarr','a'*64,'b'*64,'c'*64,'version'),)}
         exec(compile(ast.Module(body=nodes,type_ignores=[]),'image-diagnostic-functions','exec'),namespace)
         return namespace
@@ -351,6 +352,18 @@ class FixtureImageDiagnosticTests(unittest.TestCase):
         self.assertEqual(diagnostic['expected_queries'](),[
             {'fixture_name':'fixture','kind':'repository-index','reference':'lscr.io/linuxserver/sonarr@sha256:'+'a'*64},
             {'fixture_name':'fixture','kind':'config-digest','reference':'sha256:'+'c'*64}])
+
+    def test_daemon_summary_emits_only_fixed_categories_and_digest_candidates(self):
+        import json
+        diagnostic=self.load()
+        raw='\n'.join(json.dumps({'MESSAGE':message,'__REALTIME_TIMESTAMP':'123'}) for message in (
+            'unrelated environment PRIVATE=must-not-emit',
+            'failed to import content digest sha256:'+'a'*64+' not found PRIVATE=must-not-emit'))
+        result=diagnostic['daemon_error_summary'](raw.encode())
+        self.assertEqual(result['matching_events'],1)
+        self.assertEqual(result['events'][0]['categories'],['missing_content_digest','import_failure'])
+        self.assertEqual(result['events'][0]['content_digest_candidates'],['sha256:'+'a'*64])
+        self.assertNotIn('must-not-emit',str(result))
 
 
 class FixtureImageIndexPreparationTests(unittest.TestCase):
