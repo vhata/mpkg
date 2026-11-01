@@ -574,6 +574,15 @@ safe HTTP status/type when available. It retains no raw response or
 exception message and adds no retry or lifecycle action. These changes
 improve future observations without reclassifying the old failure.
 
+On a fresh restore of original `image-ready`, the reviewed replacement
+completed with exit zero, preserved all 27 history/input hashes and
+recorded `executed: false` with supplemental resumption still unused.
+After orderly shutdown, `image-ready-variants-v3` was saved as offline
+snapshot ID `22`, with no memory state and firmware variables SHA-256
+`36b4ee16785f54cc2424a9632ef217725a5cb2c5e172384f857be24444168361`.
+Independent review verified the replacement receipt, serial interval,
+shutdown and saved checkpoint before a fresh variant branch began.
+
 The six supplemental resource/update variants remain runtime gates.
 Applied product restore points remain unavailable until actual product
 operations create them.
@@ -582,7 +591,7 @@ operations create them.
 
 Repository setup selected Python 3.12 and enabled the tracked hooks via
 the authorized elevated Git configuration operation. At checkpoint
-`5edaffb`, the coordinator's combined checks passed 180 tests, syntax,
+`11307d5`, the coordinator's combined checks passed 188 tests, syntax,
 eight queue entries and relative links. Subsequent edits require final
 checks and independent integration review. Host tests
 exercise isolated primitives and refusal paths; they do not establish
