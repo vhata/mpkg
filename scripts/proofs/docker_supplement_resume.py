@@ -257,7 +257,9 @@ def preparation_evidence(guest):
     if (result.get('engine_id') != ENGINE or result.get('load_command_completed') is not True
             or result.get('original_source_archive_sha256') != SOURCE_SHA256
             or result.get('prior_prepared_archive_sha256') != PREPARED_SHA256
-            or result.get('network_acquisition') is not False or result.get('explicit_tag_operations') is not False):
+            or result.get('filesystem_layers_acquired') is not False
+            or result.get('guest_metadata_acquired_and_verified') is not True
+            or result.get('explicit_tag_operations') is not False):
         raise Refused('docker_supplement_successful_preparation_required')
     captured = result.get('capture', {})
     if (captured.get('capture_status') != 'exited' or captured.get('command_completed') is not True
