@@ -110,14 +110,43 @@ def installed_providers(output, deps):
             records.append(fields)
     selected = set()
     for dep in deps:
-        name = re.split(r"[<>=]", dep, maxsplit=1)[0]
-        providers = [r["Name"] for r in records if r["Name"] == name]
-        providers = providers or [r["Name"] for r in records if name in
-                                 [p.split("=", 1)[0] for p in r.get("Provides", "").split()]]
+        requirement = re.fullmatch(r"([^<>=]+)(?:(>=|<=|=|>|<)([^<>=]+))?", dep)
+        if requirement is None:
+            raise ValueError(f"Invalid dependency: {dep}")
+        name, operator, wanted = requirement.groups()
+
+        def satisfies(version):
+            if operator is None:
+                return True
+            if not version:
+                return False
+            # Use pacman's comparator, including epochs and optional pkgrel.
+            comparison = int(run("vercmp", version, wanted, capture=True).stdout.strip())
+            return {"=": comparison == 0, ">": comparison > 0, "<": comparison < 0,
+                    ">=": comparison >= 0, "<=": comparison <= 0}[operator]
+
+        providers = [r["Name"] for r in records
+                     if r["Name"] == name and satisfies(r.get("Version"))]
+        if not providers:
+            for record in records:
+                provides = record.get("Provides", "")
+                if provides == "None":
+                    continue
+                for provided in provides.split():
+                    provided_name, _, version = provided.partition("=")
+                    if provided_name == name and satisfies(version):
+                        providers.append(record["Name"])
+                        break
         if not providers:
             raise ValueError(f"Cannot find installed provider for {dep}")
         selected.update(providers)
     return sorted(selected)
+
+
+def mark_dependencies(deps):
+    if deps:
+        info = run("pacman", "-Qi", capture=True, env=dict(os.environ, LC_ALL="C")).stdout
+        run("sudo", "pacman", "-D", "--asdeps", *installed_providers(info, deps))
 
 
 def refresh(name):
@@ -140,9 +169,7 @@ def refresh(name):
         install(name, force=True)
     else:
         print(f"{name} is up to date ({version}).")
-    if deps:
-        info = run("pacman", "-Qi", capture=True, env=dict(os.environ, LC_ALL="C")).stdout
-        run("sudo", "pacman", "-D", "--asdeps", *installed_providers(info, deps))
+    mark_dependencies(deps)
 
 
 def literal_dependencies(text):
@@ -220,9 +247,8 @@ def update(name, args):
     path.write_text(updated)
     try:
         install(name)
-        if deps:
-            run("sudo", "pacman", "-D", "--asdeps", *sorted(deps))
-    except (subprocess.CalledProcessError, OSError):
+        mark_dependencies(deps)
+    except (subprocess.CalledProcessError, OSError, ValueError):
         print(f"Update failed; {path} retains the edits for correction or retry. No commit created.",
               file=sys.stderr)
         raise

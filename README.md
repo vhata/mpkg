@@ -5,6 +5,13 @@ five `vhata-*` package groups. `mpkg` is a Python executable; its
 existing mutation commands edit package definitions, install software,
 and commit changes. Run `./mpkg --help` for the current interface.
 
+Create, edit and refresh resolve dependency requirements to satisfying
+installed package names before changing installation reasons. Version
+constraints use pacman's `vercmp`, including epoch and package-release
+semantics. A satisfying direct-name package takes priority; otherwise,
+only compatible virtual providers are marked as dependencies. Unresolved
+requirements prevent marking and prevent an update's success commit.
+
 The standalone [viminumrc package](packages/viminumrc/README.md)
 supplies the shared Vim configuration and its system-wide login
 environment. Its build and migration instructions preserve an existing
