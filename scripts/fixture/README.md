@@ -256,3 +256,11 @@ and listener observations. Authenticated before/after checks are validated
 from the completed jobs' results; it does not create another check, read
 private keys, modify journals or run package/service mutations. A live
 observation is not a stopped checkpoint.
+
+`install-docker-variant-plan` then `install-docker-variants` deliver only
+the two fixed reviewed supplemental helpers. Each requires exact hashes
+for every direct installed proof-module dependency, including the
+corrected baseline and native service helpers. Existing files are never
+overwritten and neither installer executes the added code. The separate
+variant setup/check wrappers still require their observed image and
+checkpoint prerequisites before runtime use.

@@ -235,6 +235,8 @@ def proof_install_payload(name):
         'docker-baseline':('docker_baseline.py','f6af324e2d0844a6159f0e6dcf1e72c766679953dc4e4ec5c093ff42271bbeca'),
         'docker-resume':('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05'),
         'docker-diagnostic-resume':('docker_diagnostic_resume.py','4966aaa9d517ba4e4a7e5104f6a31e202bfecaa0f1a3636e5b2bb22f9b3e9a2e'),
+        'docker-variant-plan':('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
+        'docker-variants':('docker_variants.py','fb67486f1bbcce48855cf05ebf70768726161d5965c5d7e224b20fc9a390c6dc'),
         'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b'),
     }
     if name not in additions:
@@ -284,6 +286,22 @@ def install():
     guest=require_guest(os.environ.get('MPKG_GUEST_ID'))
     os.umask(0o077)
     dependencies={
+        'docker_variant_plan.py':[
+            ('compose_proof.py','da844883e9060a8a5f91ea14a560c5f76b26400cfb2dbe113221ea18f3eacbad'),
+            ('core.py','0b13e3dc39d3a985ff7b8b3fd9885f3b09c75444854b41f775dd953b42d0167a'),
+            ('oci_acquire.py','b6e25a460319dcf29a9800d7cd1160dffc8e929b8e141c142ef1d0964c8ff763'),
+        ],
+        'docker_variants.py':[
+            ('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
+            ('compose_proof.py','da844883e9060a8a5f91ea14a560c5f76b26400cfb2dbe113221ea18f3eacbad'),
+            ('core.py','0b13e3dc39d3a985ff7b8b3fd9885f3b09c75444854b41f775dd953b42d0167a'),
+            ('docker_baseline.py','f6af324e2d0844a6159f0e6dcf1e72c766679953dc4e4ec5c093ff42271bbeca'),
+            ('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
+            ('image_import.py','474fedcd6bf0925fbcbc1a5317fd0ef9ee7ebb0650e20ce8a30603ea04a6cca6'),
+            ('native_manifest.py','ecac092012fcaebb2c7ff4bff43a236716d8b9a570b7d6567119574cf7ae5d2d'),
+            ('native_service.py','d4183fa9a7251b1b0b97d5f09701bfeb1cbd52819aba143896de9eb14918e675'),
+            ('run.py','adcd36404cb43e8bcdc0189eab6c98997ef8ea281461e54ba5aa3524dba8674e'),
+        ],
         'docker_diagnostic_resume.py':[('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05')],
         'docker_ready.py':[('service_environment.py','91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502')],
         'docker_baseline.py':[('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532')],
@@ -435,7 +453,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','install-docker-diagnostic-resume','replace-native-service','replace-docker-baseline','replace-native-verifier'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','install-docker-diagnostic-resume','install-docker-variant-plan','install-docker-variants','replace-native-service','replace-docker-baseline','replace-native-verifier'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -461,6 +479,8 @@ def main():
     elif args.operation=='install-native-service-observe':console(seconds=args.seconds,addition='native-service-observe')
     elif args.operation=='install-docker-resume':console(seconds=args.seconds,addition='docker-resume')
     elif args.operation=='install-docker-diagnostic-resume':console(seconds=args.seconds,addition='docker-diagnostic-resume')
+    elif args.operation=='install-docker-variant-plan':console(seconds=args.seconds,addition='docker-variant-plan')
+    elif args.operation=='install-docker-variants':console(seconds=args.seconds,addition='docker-variants')
     elif args.operation=='replace-native-service':console(seconds=args.seconds,replacement='native-service')
     elif args.operation=='replace-docker-baseline':console(seconds=args.seconds,replacement='docker-baseline')
     elif args.operation=='replace-native-verifier':console(seconds=args.seconds,replacement='native-verifier')

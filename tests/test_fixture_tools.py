@@ -516,7 +516,8 @@ class FixtureProofAdditionTests(unittest.TestCase):
             root=Path(tmp);(root/'scripts/proofs').mkdir(parents=True)
             for name,filename in [('docker-ready','docker_ready.py'),('docker-baseline','docker_baseline.py'),
                                   ('native-conflict','native_conflict.py'),('service-environment','service_environment.py'),
-                                  ('docker-resume','docker_resume.py'),('docker-diagnostic-resume','docker_diagnostic_resume.py'),('account-defaults','account_defaults.py'),
+                                  ('docker-resume','docker_resume.py'),('docker-diagnostic-resume','docker_diagnostic_resume.py'),
+                                  ('docker-variant-plan','docker_variant_plan.py'),('docker-variants','docker_variants.py'),('account-defaults','account_defaults.py'),
                                   ('native-service-recover','native_service_recover.py'),('native-service-observe','native_service_observe.py')]:
                 (root/'scripts/proofs'/filename).write_bytes(b'changed reviewed source')
                 with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(module,'qmp_query') as qmp:
@@ -529,6 +530,8 @@ class FixtureProofAdditionTests(unittest.TestCase):
                   'native-service-observe':('native_service_observe.py','6f519fbc6a2fe4da2b558653cc86e9e813ad54e6586656bfd620ba1c229df5c7'),
                   'native-service-recover':('native_service_recover.py','f8e55069f53055d89c1603db90b5259e87b47129747d0bccf831053544828b3e'),
                   'account-defaults':('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
+                  'docker-variant-plan':('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
+                  'docker-variants':('docker_variants.py','fb67486f1bbcce48855cf05ebf70768726161d5965c5d7e224b20fc9a390c6dc'),
                   'docker-diagnostic-resume':('docker_diagnostic_resume.py','4966aaa9d517ba4e4a7e5104f6a31e202bfecaa0f1a3636e5b2bb22f9b3e9a2e'),
                   'docker-resume':('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05'),
                   'docker-ready':('docker_ready.py','5efbc61753dbf873d26801f760c3e47f5a48831b1c3c0b02ba43a3c7c7e08a07'),
@@ -562,6 +565,20 @@ class FixtureProofAdditionTests(unittest.TestCase):
                           and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='dependencies')
         self.assertEqual(ast.literal_eval(dependencies)['docker_diagnostic_resume.py'],[
             ('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05')])
+
+    def test_variant_additions_bind_every_direct_installed_module_dependency(self):
+        vm=self.load();root=Path(__file__).resolve().parents[1]/'scripts/proofs'
+        for name,filename in [('docker-variant-plan','docker_variant_plan.py'),('docker-variants','docker_variants.py')]:
+            program=ast.parse(vm.proof_install_payload(name))
+            dependencies=next(n.value for n in ast.walk(program) if isinstance(n,ast.Assign)
+                              and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='dependencies')
+            actual=dict(ast.literal_eval(dependencies)[filename])
+            source=ast.parse((root/filename).read_text())
+            direct={n.module+'.py' for n in ast.walk(source) if isinstance(n,ast.ImportFrom)
+                    and n.module and (root/(n.module+'.py')).is_file()}
+            self.assertEqual(set(actual),direct)
+            for module,digest in actual.items():
+                self.assertEqual(digest,hashlib.sha256((root/module).read_bytes()).hexdigest())
 
     def test_generated_installer_publishes_once_without_following_existing_target(self):
         module=self.load()
