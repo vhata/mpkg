@@ -44,6 +44,7 @@ import native_service_observe
 import docker_variant_plan
 import docker_diagnostic_resume
 import docker_variants
+import docker_variant_experiment
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -130,6 +131,93 @@ class GuestGuardTests(unittest.TestCase):
 
 
 class DockerVariantPrimitiveTests(unittest.TestCase):
+    def test_experiment_entrypoint_rejects_host_before_opening_assembly_history(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            result = subprocess.run([sys.executable, '-I', str(PROOFS / 'docker_variant_experiment.py'),
+                                     '--variant', 'volume-delete', '--guest-id', str(uuid.uuid4())],
+                                    cwd=temporary, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 73)
+            self.assertEqual(json.loads(result.stdout)['status'], 'refused')
+            self.assertEqual(result.stderr, '')
+            self.assertEqual(list(Path(temporary).iterdir()), [])
+
+    def test_atomic_source_change_refuses_intervening_bytes_without_overwriting(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'compose.yaml'
+            core.write_new(path, b'accepted')
+            raw, evidence = core.read_regular(path)
+            path.write_bytes(b'intervening edit')
+            with self.assertRaisesRegex(docker_variant_experiment.Refused, 'file_drift'):
+                docker_variant_experiment.atomic_bytes(path, raw, evidence, b'candidate')
+            self.assertEqual(path.read_bytes(), b'intervening edit')
+            self.assertEqual({item.name for item in Path(temporary).iterdir()}, {'compose.yaml'})
+
+    def test_selected_container_replacement_cannot_authorize_resource_or_consumer_drift(self):
+        before = {'container_ids': {'sonarr': 'old-sonarr', 'radarr': 'same-radarr'},
+                  'network': {'Id': 'accepted-network', 'consumers': ['old-sonarr', 'same-radarr']}}
+        after = {'container_ids': {'sonarr': 'new-sonarr', 'radarr': 'same-radarr'},
+                 'network': {'Id': 'accepted-network', 'consumers': ['new-sonarr', 'same-radarr']}}
+        docker_variant_experiment.preserved_resources(before, after, replacement=True)
+        with self.assertRaisesRegex(docker_variant_experiment.Refused, 'unselected_container_changed'):
+            docker_variant_experiment.preserved_resources(before, after, replacement=False)
+        after['network']['Id'] = 'replacement-network'
+        with self.assertRaisesRegex(docker_variant_experiment.Refused, 'resource_identity_changed'):
+            docker_variant_experiment.preserved_resources(before, after, replacement=True)
+        after['network']['Id'] = 'accepted-network'
+        after['container_ids']['radarr'] = 'restarted-radarr'
+        with self.assertRaisesRegex(docker_variant_experiment.Refused, 'unselected_container_changed'):
+            docker_variant_experiment.preserved_resources(before, after, replacement=True)
+
+    def test_protected_experiment_references_do_not_modify_assembly_history(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            baseline = core.Journal(root / 'baseline')
+            changes = core.Journal(root / 'changes')
+            before = baseline.path.read_bytes()
+            path = root / 'input'
+            core.write_new(path, b'fixture-private-bytes')
+            reference = changes.capture(path)
+            view = docker_variant_experiment.JournalView(baseline, changes)
+            self.assertTrue(view.unchanged({'experiment': reference}, path))
+            self.assertEqual(baseline.path.read_bytes(), before)
+            with self.assertRaisesRegex(docker_variant_experiment.Refused, 'reference_shape'):
+                view.resolve({'experiment': reference, 'baseline': reference})
+            changes.close()
+            baseline.close()
+
+    def test_unknown_experiment_blocks_even_another_application_check(self):
+        fixture = object.__new__(docker_variant_experiment.Experiment)
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture.directory = Path(temporary)
+            fixture.manifest = {}
+            with mock.patch.object(fixture, 'inspect') as inspect:
+                with self.assertRaisesRegex(docker_variant_experiment.Refused, 'fresh_attempt_required'):
+                    fixture.start()
+                inspect.assert_not_called()
+
+    def test_exact_digest_candidate_cannot_reach_lifecycle_or_source_mutation(self):
+        fixture = object.__new__(docker_variant_experiment.Experiment)
+        fixture.plan = docker_variant_plan.variant_plan('docker-exact-digest')
+        fixture.specs = fixture.plan['applications']
+        fixture.manifest = {}
+        fixture.before = {'applications': {'sonarr': 'same'}, 'resources': {'volume': 'same'}}
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture.directory = Path(temporary)
+            fixture.changes = core.Journal(fixture.directory)
+            with mock.patch.object(fixture, 'images', return_value={}), \
+                    mock.patch.object(fixture, 'histories_unchanged'), \
+                    mock.patch.object(fixture, 'inspect', return_value=fixture.before), \
+                    mock.patch.object(fixture, 'stop_sonarr') as stop, \
+                    mock.patch.object(fixture, 'compose') as compose, \
+                    mock.patch.object(docker_variant_experiment, 'atomic_bytes') as replace:
+                result = fixture.update()
+                self.assertTrue(result['candidate_blocked_by_exact_intent'])
+                self.assertFalse(result['image_change_requested'])
+                stop.assert_not_called()
+                compose.assert_not_called()
+                replace.assert_not_called()
+            fixture.changes.close()
+
     def test_all_variant_entrypoints_reject_host_before_fixture_or_docker_work(self):
         for variant in docker_variant_plan.VARIANTS:
             with self.subTest(variant=variant), tempfile.TemporaryDirectory() as temporary:

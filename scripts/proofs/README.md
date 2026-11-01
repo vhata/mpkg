@@ -379,6 +379,32 @@ database names follow the versioned
 and [Radarr](https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/NzbDrone.Common/Extensions/PathExtensions.cs)
 sources; actual initialization and compatibility remain guest checks.
 
+`docker_variant_experiment.py --variant <case> --guest-id <UUID>` performs
+a separate one-shot mechanism experiment after that case's completed
+assembly. The fixed `guest-<case>-experiment.sh` wrapper selects the case.
+It keeps the assembly journal/manifest byte-for-byte unchanged, stores
+before-copies and protected replacement references in its own journal,
+and blocks any repeated invocation before another application request.
+The four resource cases stop only Sonarr, prove its process has exited,
+change port 18989 to 18990, and rerun full readiness/resource/shared-data
+checks. Bridge publication changes are explicit. A volume update uses a
+fixed offline unprivileged helper with no network, a read-only root and
+private comparison inputs; it creates a fresh candidate without clobber,
+compares the stopped XML immediately before rename, then syncs the file.
+Bind/source updates compare captured bytes and identity before atomic
+publication. These rely on the disposable fixture's exclusive-writer
+assumption and do not claim a general lock against privileged outsiders.
+
+The allowed-tag case verifies the acquired candidate before changing
+the frozen execution input from older to observed Sonarr, with no pull,
+build or retag. Wanted policy stays unchanged. The exact-digest case
+records the blocked candidate and requires unchanged applications and
+resources; it cannot reach lifecycle/source mutation. Every change
+checks that Radarr's container/process identity and actual shared-folder
+discovery survive. Original assembly evidence remains intact, and a
+timeout leaves the separate attempt unresolved. These helpers establish
+only observed mechanism results; retirement is still a distinct attempt.
+
 ### Native service baseline
 
 `native_service.py setup --guest-id <UUID>` assembles only the fixed
