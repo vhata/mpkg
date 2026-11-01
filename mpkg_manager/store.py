@@ -432,9 +432,17 @@ class HostStore:
                     raise
                 try:
                     self._commit()
-                except (OSError, sqlite3.Error):
+                except BaseException as error:
                     uncertain = True
-                    raise StoreError("commit_outcome_unknown") from None
+                    # Close the transaction while flock still protects it.
+                    # Cancellation is preserved but can never return a usable
+                    # handle with an uncertain commit or a live transaction.
+                    self._closed = True
+                    self._db.close()
+                    self._db = None
+                    if isinstance(error, (OSError, sqlite3.Error)):
+                        raise StoreError("commit_outcome_unknown") from None
+                    raise
         except StoreError:
             raise
         except (OSError, sqlite3.Error):

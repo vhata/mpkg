@@ -113,7 +113,9 @@ controls, not encryption at rest.
 Public failures contain fixed `StoreError.code` values, never raw SQLite
 or filesystem errors. A failed commit reports `commit_outcome_unknown`
 and closes the handle: the commit may have persisted before its error
-was observed. Reopen and inspect the revision/history before deciding
+was observed. Cancellation during commit preserves the original
+interrupt and also closes the transaction before releasing the store
+lock. Reopen and inspect the revision/history before deciding
 what to do next; do not blindly retry. No external effect is invoked.
 
 The focused tests cover real temporary SQLite transactions, competing

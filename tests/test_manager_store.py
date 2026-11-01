@@ -348,6 +348,36 @@ identity={engine="second",project="media"}
         self.assert_error("resource_identity_unbound", lambda: store.adopt(unknown, 0, ["one"]))
         self.assertEqual(store.history(), [])
 
+    def test_commit_cancellation_closes_transaction_before_unlock_and_preserves_interrupt(self):
+        for interruption in (KeyboardInterrupt, SystemExit):
+            for committed in (False, True):
+                with self.subTest(interruption=interruption, committed=committed):
+                    self.directory = self.root / (interruption.__name__ + str(committed))
+                    store = self.create()
+                    real_commit, real_flock = store._commit, fcntl.flock
+                    failure = interruption("fixture cancellation")
+                    unlocked = []
+                    def interrupt():
+                        if committed:
+                            real_commit()
+                        raise failure
+                    def checked_unlock(descriptor, operation):
+                        if operation == fcntl.LOCK_UN:
+                            self.assertIsNone(store._db)
+                            self.assertTrue(store._closed)
+                            self.assertFalse((self.directory / "state.sqlite3-journal").exists())
+                            unlocked.append(True)
+                        return real_flock(descriptor, operation)
+                    with patch.object(store, "_commit", interrupt), patch(
+                            "mpkg_manager.store.fcntl.flock", checked_unlock):
+                        with self.assertRaises(interruption) as caught:
+                            store.record_intent(self.declaration, 0, protected_inputs=[self.capture()])
+                    self.assertIs(caught.exception, failure)
+                    self.assertEqual(unlocked, [True])
+                    self.assertIsNone(store._lockfd)
+                    self.assert_error("store_closed", store.current)
+                    self.assertEqual(self.open(readonly=True).current()["revision"], int(committed))
+
     def test_returned_engine_aliases_cannot_change_accepted_bindings(self):
         store = self.create(engine_aliases={"local": "accepted-engine"})
         projection = store.engine_aliases
