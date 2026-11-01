@@ -88,6 +88,14 @@ class HostStoreTests(unittest.TestCase):
             self.assert_error("store_owner_required", lambda: HostStore.create(self.directory, self.host))
         self.assertFalse(self.directory.exists())
 
+    def test_invalid_store_paths_and_host_identifiers_are_fixed_errors(self):
+        for path in ("relative/private", "/", "/tmp/../private", "/tmp/invalid\0path", b"PRIVATE"):
+            self.assert_error("invalid_store_path", lambda: HostStore.create(path, self.host, owner_uid=self.owner))
+        for host in ("PRIVATE-host", 7, "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"):
+            self.assert_error("invalid_host_id", lambda: HostStore.open_readonly(
+                self.directory, host, owner_uid=self.owner))
+        self.assertFalse(self.directory.exists())
+
     def test_missing_reads_and_existing_opens_create_nothing(self):
         for readonly in (False, True):
             self.assert_error("store_missing", lambda: self.open(readonly))
@@ -335,6 +343,41 @@ identity={engine="second",project="media"}
         first_only = "[[resources]]".join(raw.split("[[resources]]")[:2])
         unknown = load_declaration(first_only.replace('"first"', '"unknown"').encode())
         self.assert_error("resource_identity_unbound", lambda: store.adopt(unknown, 0, ["one"]))
+        self.assertEqual(store.history(), [])
+
+    def test_returned_engine_aliases_cannot_change_accepted_bindings(self):
+        store = self.create(engine_aliases={"local": "accepted-engine"})
+        projection = store.engine_aliases
+        projection["local"] = "different-engine"
+        projection["extra"] = "another-engine"
+        self.assertEqual(store.engine_aliases, {"local": "accepted-engine"})
+        declaration = load_declaration(b'''schema=1
+components=[]
+[[resources]]
+id="app"
+kind="compose"
+identity={engine="local",project="media"}
+''')
+        store.adopt(declaration, 0, ["app"])
+        self.assertIn("accepted-engine", store.current()["resources"][0]["physical_key"])
+
+    def test_invalid_protected_capture_is_refused_before_any_record(self):
+        store = self.create()
+        valid = self.capture()
+        cases = [
+            replace(valid, raw="PRIVATE"),
+            replace(valid, purpose="invalid-\ud800"),
+            replace(valid, source_identity=valid.source_identity | {"links": 2}),
+            replace(valid, source_identity=valid.source_identity | {"size": 0}),
+            replace(valid, source_identity=valid.source_identity | {"mode": stat.S_IFDIR | 0o700}),
+            replace(valid, source_identity=valid.source_identity | {"path": "relative"}),
+            replace(valid, raw=b"x" * (16 * 1024 * 1024 + 1)),
+        ]
+        for invalid in cases:
+            self.assert_error("invalid_protected_input", lambda: store.record_intent(
+                self.declaration, 0, protected_inputs=[invalid]))
+        self.assert_error("invalid_protected_input", lambda: store.record_intent(
+            self.declaration, 0, protected_inputs=[valid, valid]))
         self.assertEqual(store.history(), [])
 
     def test_existing_consumers_and_requirements_are_not_erased_by_new_declaration(self):

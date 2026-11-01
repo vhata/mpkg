@@ -193,6 +193,16 @@ def _directory(path, owner_uid):
         raise
 
 
+def _store_path(value):
+    if not isinstance(value, (str, Path)):
+        _fail("invalid_store_path")
+    path = Path(value)
+    if (not path.is_absolute() or not path.name or "\0" in str(path)
+            or str(path) != os.path.normpath(path)):
+        _fail("invalid_store_path")
+    return path
+
+
 def _file_info(info, owner_uid):
     if (not stat.S_ISREG(info.st_mode) or info.st_uid != owner_uid
             or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1):
@@ -218,7 +228,7 @@ class HostStore:
         aliases = _aliases({} if engine_aliases is None else engine_aliases)
         if owner_uid != os.geteuid():
             _fail("store_owner_required")
-        path = Path(directory)
+        path = _store_path(directory)
         parentfd = None
         store = cls()
         try:
@@ -256,7 +266,7 @@ class HostStore:
                     raise
                 os.fsync(store._dirfd)
                 store._verify_schema()
-                store.engine_aliases = aliases
+                store._engine_aliases = aliases
             return store
         except FileExistsError:
             store.close()
@@ -284,7 +294,7 @@ class HostStore:
         _host_id(host_id)
         store = cls()
         try:
-            store._attach(Path(directory), host_id, owner_uid, readonly)
+            store._attach(_store_path(directory), host_id, owner_uid, readonly)
             return store
         except StoreError:
             store.close()
@@ -352,7 +362,12 @@ class HostStore:
             _fail("store_host_mismatch")
         if rows[0][1] != SCHEMA_VERSION or rows[0][3] != 32:
             _fail("store_corrupt")
-        self.engine_aliases = _aliases(_decode(rows[0][2]))
+        self._engine_aliases = _aliases(_decode(rows[0][2]))
+
+    @property
+    def engine_aliases(self):
+        """Return a copy of accepted bindings, never mutable authority state."""
+        return dict(self._engine_aliases)
 
     @contextmanager
     def _locked(self, *, exclusive=False):
