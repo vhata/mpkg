@@ -113,6 +113,16 @@ then creates a separate read-only return disk. Restore `native-change`
 before running `guest_import_build.py`; this imports the artifact without
 installing it or retaining build dependencies in the baseline.
 
+The returned input disk also carries the host-validated `native-change`
+checkpoint authorization. `guest_native_adoption.py` requires that record,
+the exact native-change versions and functioning fixture SSH/data checks
+before adding only frozen `tmux`, `ripgrep` and `libutempter` archives.
+It retains every existing installation reason, marks the new runtime
+dependency appropriately and verifies all ten exact `vhata-cli` requests.
+Its durable result describes a separate bootstrap-only adoption baseline;
+it creates no product state or product attempt. The ack build likewise
+marks `perl-file-next` as the dependency of the explicit ack request.
+
 Each build has durable `started`, `exit`, `complete` and private log
 evidence. Manager timeouts can interrupt before an exit marker is written;
 missing completion is not proof of success. A running build blocks another

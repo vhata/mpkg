@@ -46,6 +46,18 @@ for kind in ack gitstatus; do
         fi
     fi
 done
+if [[ -f /var/lib/mpkg-fixture/native-adoption/started && ! -L /var/lib/mpkg-fixture/native-adoption/started ]]; then
+    printf 'NATIVE_ADOPTION_STATUS\n'
+    SYSTEMD_COLORS=0 systemctl --no-pager --plain show --property=ActiveState,SubState,Result,ExecMainStatus mpkg-fixture-native-adoption.service
+    for name in exit complete; do
+        if [[ -f /var/lib/mpkg-fixture/native-adoption/$name && ! -L /var/lib/mpkg-fixture/native-adoption/$name ]]; then
+            printf 'present native-adoption/%s\n' "$name"
+        fi
+    done
+    if [[ -f /var/lib/mpkg-fixture/native-adoption/build.log && ! -L /var/lib/mpkg-fixture/native-adoption/build.log ]]; then
+        tail -n 8 /var/lib/mpkg-fixture/native-adoption/build.log
+    fi
+fi
 ps -eo pid=,comm= | awk '$2 ~ /^(pacstrap|pacman|gpg|gpg-agent|make|cc1|ld|ldconfig|mkinitcpio)$/ {print}'
 lsblk -o NAME,SIZE,TYPE,SERIAL,MOUNTPOINTS
 if [[ -f /var/lib/mpkg-fixture/bootstrap-complete ]]; then

@@ -109,6 +109,7 @@ def harvest(identity):
     tree.mkdir(mode=0o700)
     inputs.copy_new(archive, tree/(artifact['sha256']+'.pkg.tar.zst'))
     inputs.copy_new(record_path, tree/'gitstatus-build.json')
+    inputs.copy_new(destination/'authorization.json', tree/'native-change-checkpoint.json')
     runner.write_new(tree/'identity.json', (json.dumps(identity, indent=2)+'\n').encode())
     paths = sorted(tree.iterdir())
     runner.write_new(tree/'SHA256SUMS', ''.join(f'{runner.sha256(p)}  {p.name}\n' for p in paths).encode())

@@ -205,6 +205,7 @@ def worker(mode, guest, state):
         for package in ('perl-file-next', 'ack'):
             artifact = build_one(source, package, guest, state)
             run(['/usr/bin/pacman', '--config', str(config), '-U', '--noconfirm', str(artifact)])
+        run(['/usr/bin/pacman', '-D', '--asdeps', 'perl-file-next'])
         verify_baseline(source, with_ack=True)
 
 

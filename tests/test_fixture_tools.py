@@ -1,6 +1,9 @@
 """Host boundary tests for disposable-fixture acquisition and extraction."""
 import importlib.util
 import ast
+import copy
+import hashlib
+import re
 import base64
 import io
 from pathlib import Path
@@ -297,6 +300,39 @@ class FixtureProofAdditionTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):publish(alias,b'follow symlink')
             self.assertTrue(alias.is_symlink())
             self.assertEqual(target.read_bytes(),b'reviewed bytes')
+
+
+class FixtureNativeAdoptionTests(unittest.TestCase):
+    def load(self):
+        root=Path(__file__).resolve().parents[1]
+        spec=importlib.util.spec_from_file_location('core',root/'scripts/proofs/core.py')
+        core=importlib.util.module_from_spec(spec);spec.loader.exec_module(core)
+        with mock.patch.dict(sys.modules,{'core':core,'native_service':SimpleNamespace(check=None,trusted_path=None)}):
+            spec=importlib.util.spec_from_file_location('fixture_native_adoption',root/'scripts/fixture/guest_native_adoption.py')
+            module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        return module
+
+    def test_adoption_preserves_existing_reasons_and_adds_only_the_cli_closure(self):
+        module=self.load()
+        before={name:{'version':'bound','reason':'explicit'} for name in module.CLI_REQUESTS
+                if name not in {'tmux','ripgrep'}}
+        before['existing-dependency']={'version':'1','reason':'dependency'}
+        selected=[{'name':name,'version':'frozen'} for name in sorted(module.ADDITIONS)]
+        after=copy.deepcopy(before)
+        after.update({p['name']:{'version':p['version'],'reason':'dependency' if p['name']=='libutempter' else 'explicit'} for p in selected})
+        module.verify_result(before,after,selected)
+        for name,change in [('existing-dependency',{'reason':'explicit'}),
+                            ('tmux',{'version':'unfrozen'}),('libutempter',{'reason':'explicit'})]:
+            altered=copy.deepcopy(after);altered[name].update(change)
+            with self.subTest(name=name),self.assertRaises(module.Refused):module.verify_result(before,altered,selected)
+        with self.assertRaises(module.Refused):module.verify_result(before,after|{'cmake':{'version':'extra','reason':'explicit'}},selected)
+
+    def test_adoption_request_set_matches_the_bound_collection_without_executing_it(self):
+        module=self.load();root=Path(__file__).resolve().parents[1]
+        raw=(root/'vhata-cli/PKGBUILD').read_bytes()
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),module.CLI_RECIPE_SHA256)
+        body=re.search(r'depends=\((.*?)\)',raw.decode(),re.S).group(1)
+        self.assertEqual(tuple(re.findall(r"'([^']+)'",body)),module.CLI_REQUESTS)
 
 
 if __name__ == '__main__':unittest.main()

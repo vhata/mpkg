@@ -39,6 +39,11 @@ def main():
     subprocess.run(['/usr/bin/sha256sum', '--strict', '--check', 'SHA256SUMS'], cwd=mount,
                    env=env, check=True, stdout=subprocess.DEVNULL, timeout=30)
     record_bytes = checked_file(mount/'gitstatus-build.json')
+    checkpoint_bytes = checked_file(mount/'native-change-checkpoint.json')
+    checkpoint = json.loads(checkpoint_bytes)
+    if (checkpoint.get('schema') != 1 or checkpoint.get('guest_id') != guest
+            or checkpoint.get('checkpoint') != 'native-change'):
+        raise Refused('native_change_checkpoint_binding_changed')
     record = json.loads(record_bytes)
     artifact = validate_build(record, source, guest)
     filename = artifact['sha256']+'.pkg.tar.zst'
@@ -47,6 +52,7 @@ def main():
         raise Refused('built_artifact_size_changed')
     write_new(inputs/'artifacts'/filename, data)
     write_new(inputs/'gitstatus-build.json', record_bytes)
+    write_new(inputs/'native-change-checkpoint.json', checkpoint_bytes)
     write_new(Path('/var/lib/mpkg-fixture/gitstatus-artifact-imported'), (guest+'\n').encode())
     print(json.dumps({'status': 'imported', 'guest_id': guest,
                       'artifact_sha256': artifact['sha256'], 'installed': False}))
