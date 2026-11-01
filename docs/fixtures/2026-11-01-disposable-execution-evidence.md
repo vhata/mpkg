@@ -437,9 +437,32 @@ snapshot has not been performed. Restoring `image-ready` for the distinct
 Compose proof preserved the application state again as
 `before-restore-36e63e5d95ef4abe`.
 
-The separate Compose mechanism proof and supplemental resource/update
-variants remain runtime gates. Applied product restore points remain
-unavailable until actual product operations create them.
+The separate Compose proof then passed with exit zero on a fresh,
+successfully resumed `image-ready` branch. Captured rendering, runtime
+environment and dollar literals matched. The harness kept the container
+by skipping mutation for satisfied state and for a tag-to-digest change
+resolving to the same image; this does not establish Compose's own
+reconciliation behavior if `up` is invoked after that string change.
+Stopping Sonarr before its port edit preserved the container and checked
+protected/unmanaged values after restart. Serialization did not change
+after this edit/restart, unlike the initial ordinary-baseline observation.
+
+The proof retained Sonarr data after retirement and verified Radarr's
+actual shared-directory discovery. Intervening configuration and protected
+input changes blocked. An actual daemon-owned container survived a killed
+worker, and its unknown attempt blocked overlap. Scoped container cleanup
+did not complete that attempt. All ten asserted mechanism checks passed;
+independent review matched the source and complete serial evidence.
+
+After orderly shutdown, `compose-mechanism` was saved as offline snapshot
+ID `14`, with no memory state and firmware variables SHA-256
+`36b4ee16785f54cc2424a9632ef217725a5cb2c5e172384f857be24444168361`.
+Restoring `image-ready` for the first supplemental variant preserved it
+again as `before-restore-1a33f6a4e0fd40e0`.
+
+The six supplemental resource/update variants remain runtime gates.
+Applied product restore points remain unavailable until actual product
+operations create them.
 
 ## Verification and limits
 
