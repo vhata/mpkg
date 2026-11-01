@@ -103,16 +103,18 @@ hygiene. Superseded PR runs are cancelled; main runs are not. Failed
 project checks upload their log for seven days. The Linux runner exercises
 the mocked suite; using Ubuntu for it does not expand product host support.
 
-There is no Git remote configured in this checkout. Hosted CI execution,
-PR checks, and branch protection therefore remain unverified. Local-only
-work keeps its prepared PR body and independent review under `.docket/`.
+With a PR-capable remote, publish a draft PR and verify its hosted checks
+before marking it ready. Keep independent review in a PR comment and
+preparation evidence under `.docket/`. Without a PR-capable remote, use
+the local review and landing procedure in
+[the Docket contract](../docket/CONTRACT.md#review-mode).
 
 Scheduled extended main validation is deferred until a substantive system
 suite exists. The review cadence report remains available on demand. When
 hosted CI exists, a red main is reverted or filed as P1 (P0 if release
 blocking) the same day; recovery requires a green subsequent main run.
 
-Recommended hosting settings, for the user to apply after adding a remote:
+Recommended hosting settings, for the user to apply:
 require `Project checks` and `Queue and PR hygiene`, linear history, and
 squash merges using the PR title and body. Delete merged head branches.
 Require neither current-base freshness nor a forge approval count by
