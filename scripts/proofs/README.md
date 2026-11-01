@@ -343,6 +343,42 @@ retirement outcome. Docker documents copying files from
 and Python 3.12 provides the
 [setns interface](https://docs.python.org/3.12/library/os.html#os.setns).
 
+`docker_variants.py setup --variant <case> --guest-id <UUID>` assembles
+one of those six closed cases after an independent image-only restore.
+The matching `guest-<case>-setup.sh` and `guest-<case>-check.sh` wrappers
+select fixed arguments for console transport. Setup requires verified
+native identities/shared data, fresh Compose identities/directories,
+zero containers/volumes and only default networks. It journals before
+creating identities or Docker resources and refuses a repeated attempt.
+No installed proof module is replaced by this additive helper.
+
+Named-volume cases initialize only the named local volume using a fixed
+offline container; they seed generated XML and a sentinel through the
+Docker API before normal application startup creates the database.
+The helper never opens Docker's volume mountpoint on the guest host.
+It uses [Compose create](https://docs.docker.com/reference/cli/docker/compose/create/)
+with builds and pulls disabled. Bridge cases bind exact network IDs,
+all container attachments and loopback publications. Authenticated
+requests bind the engine, container, process and every covering listener,
+then enter a held application network namespace in a bounded child.
+Published-route probes carry no key. A separate five-second child enters
+the held mount namespace/root, drops to the application's full measured
+credentials, and checks only config-root metadata, the sentinel and
+database metadata. It never reads database contents.
+
+Checks preserve protected/unmanaged XML fields, source/rendered inputs,
+resource identities and the real Radarr directory-discovery predicate.
+The older-image cases use separate fresh data, with wanted tag/exact-digest
+policy recorded separately from the acquired older execution reference.
+Assembly success leaves applications running and enables only Docker's
+startup for a stopped checkpoint. It does not perform a port change,
+update or retirement, and does not manufacture product-applied history.
+Those require distinct reviewed attempts and observed results. The fixed
+database names follow the versioned
+[Sonarr](https://raw.githubusercontent.com/Sonarr/Sonarr/v4.0.19.2979/src/NzbDrone.Common/Extensions/PathExtensions.cs)
+and [Radarr](https://raw.githubusercontent.com/Radarr/Radarr/v6.4.4.10685/src/NzbDrone.Common/Extensions/PathExtensions.cs)
+sources; actual initialization and compatibility remain guest checks.
+
 ### Native service baseline
 
 `native_service.py setup --guest-id <UUID>` assembles only the fixed

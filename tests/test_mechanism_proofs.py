@@ -43,6 +43,7 @@ import native_service_recover
 import native_service_observe
 import docker_variant_plan
 import docker_diagnostic_resume
+import docker_variants
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -129,6 +130,63 @@ class GuestGuardTests(unittest.TestCase):
 
 
 class DockerVariantPrimitiveTests(unittest.TestCase):
+    def test_all_variant_entrypoints_reject_host_before_fixture_or_docker_work(self):
+        for variant in docker_variant_plan.VARIANTS:
+            with self.subTest(variant=variant), tempfile.TemporaryDirectory() as temporary:
+                result = subprocess.run([sys.executable, '-I', str(PROOFS / 'docker_variants.py'), 'setup',
+                                         '--variant', variant, '--guest-id', str(uuid.uuid4())],
+                                        cwd=temporary, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 73)
+                self.assertEqual(json.loads(result.stdout)['status'], 'refused')
+                self.assertEqual(result.stderr, '')
+                self.assertEqual(list(Path(temporary).iterdir()), [])
+
+    def test_resource_inventory_counts_stopped_consumers_and_binds_volume_mountpoint(self):
+        fixture = object.__new__(docker_variants.Variant)
+        fixture.guest = 'fixture-guest'
+        fixture.plan = docker_variant_plan.variant_plan('volume-keep')
+        fixture.specs = fixture.plan['applications']
+        containers = {'sonarr': {'Id': 'sonarr-id', 'Mounts': [
+            {'Destination': '/mnt/media', 'Source': '/mnt/media'},
+            {'Destination': '/config', 'Source': '/accepted-volume', 'Name': docker_variant_plan.VOLUME}]},
+            'radarr': {'Id': 'radarr-id', 'Mounts': [{'Destination': '/config', 'Source': '/opt/docker/radarr/config'}]}}
+        fixture.container = lambda role: containers[role]
+        volume = {'Name': docker_variant_plan.VOLUME, 'Driver': 'local', 'Options': None, 'Scope': 'local',
+                  'Labels': fixture.labels(), 'Mountpoint': '/accepted-volume', 'CreatedAt': 'bound-creation'}
+        extra = []
+        def docker(*args):
+            if args == ('ps', '--all', '--quiet', '--no-trunc'):
+                return ('\n'.join(['sonarr-id', 'radarr-id'] + extra) + '\n').encode()
+            if args == ('volume', 'inspect', docker_variant_plan.VOLUME):
+                return json.dumps([volume]).encode()
+            if args == ('volume', 'ls', '--quiet'):
+                return (docker_variant_plan.VOLUME + '\n').encode()
+            if args == ('network', 'ls', '--format', '{{.Name}}'):
+                return b'host\nnone\nbridge\n'
+            raise AssertionError(args)
+        fixture.docker = docker
+        self.assertEqual(fixture.objects()['volume']['consumers'], ['sonarr-id'])
+        extra.append('stopped-unmanaged-container')
+        with self.assertRaisesRegex(docker_variants.Refused, 'other_container_present'):
+            fixture.objects()
+        extra.clear()
+        containers['sonarr']['Mounts'][1]['Source'] = '/replacement-volume'
+        with self.assertRaisesRegex(docker_variants.Refused, 'volume_consumers_changed'):
+            fixture.objects()
+
+    def test_variant_check_does_not_accept_a_changed_wanted_policy(self):
+        fixture = object.__new__(docker_variants.Variant)
+        fixture.guest = 'fixture-guest'
+        fixture.plan = docker_variant_plan.variant_plan('docker-exact-digest')
+        fixture.specs = fixture.plan['applications']
+        manifest = {'schema': 1, 'guest_id': fixture.guest,
+                    'plan': docker_variant_plan.variant_plan('docker-update-allowed-tag'),
+                    'inputs': {role: {} for role in fixture.specs}}
+        with mock.patch.object(fixture, 'engine') as engine:
+            with self.assertRaisesRegex(docker_variants.Refused, 'manifest_changed'):
+                fixture.inspect(manifest)
+            engine.assert_not_called()
+
     def test_wanted_tag_policy_is_distinct_from_frozen_older_execution(self):
         allowed = docker_variant_plan.variant_plan('docker-update-allowed-tag')
         exact = docker_variant_plan.variant_plan('docker-exact-digest')
