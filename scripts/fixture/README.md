@@ -342,3 +342,11 @@ their hash-bound source. No DNS setting, host mount, network acquisition,
 VM restart or old attempt replay is performed. Successful console output
 includes hashes of the seven preparation records after journal closure;
 delivery alone never claims that the Docker load succeeded.
+
+`install-docker-supplement-resume` adds the separate reviewed helper bound
+to the actual successful offline preparation, closed journal and observed
+Compose input hashes. Its nine direct installed dependencies must match
+their reviewed bytes. Delivery refuses an existing destination and never
+executes the helper. The earlier resume and diagnostic modules remain
+unchanged; the new cold-resume operation retains all incomplete histories
+and still requires an independently observed stopped image-only state.
