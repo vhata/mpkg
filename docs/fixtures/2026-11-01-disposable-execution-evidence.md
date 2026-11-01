@@ -340,8 +340,44 @@ ID `9`, with firmware variables SHA-256
 Restoring `native-change` for the Docker work preserved this prior state
 again as `before-restore-de247b4245a24884`.
 
-Complete image bindings remain unverified. Applied product restore points
-remain unavailable until actual product operations create them.
+On the restored native-change guest, a separate diagnostic activation
+verified the same engine and three child images, with no containers or
+volumes and startup still disabled. Its observation completed successfully;
+its overall image state remained unverified. A separately journaled load
+of the original-index archive then returned Docker client exit one and
+wrapper exit 75. It preserved the prior records and retained the actual
+182-byte diagnostic, whose SHA-256 is
+`3c15efd23ab2fa788fd8aa890f35ea386e0118fb267e7abdbae7042099979350`.
+Docker found the requested linux/amd64 platform but reported missing
+content with digest
+`4489f0c4579dc9b56b1fd13dc3d4c9aefb38493d1a234ed1cd33d19fd6bdfcdc`.
+
+That digest belongs to the selected Sonarr child's attestation manifest
+in the unchanged original index. The versioned Docker/containerd import
+code includes selected-platform referrers after platform filtering. A
+separate acquisition therefore collected the three selected children's
+attestation manifests, configs and in-toto metadata, without acquiring
+other architectures' runtime layers. Its completed report has SHA-256
+`2e1ab12cc11766ecbde486cdadbc0ef2c51c10ff6547c17006eb6e891ca9cbd4`:
+12 descriptor entries correspond to 11 unique blobs and 9,528,772 bytes.
+Every blob's digest, size and JSON structure passed independent checking.
+This establishes content identity, not publisher-signature verification.
+
+The first supplemental acquisition preserved a partial cache when it
+encountered OCI 1.1's inline empty config. The corrected parser accepts
+only the exact empty-object descriptor tuple for that form; the later
+complete acquisition remains separate from the failed cache.
+
+A separate guest preparation attempted to obtain that exact metadata
+closure over HTTPS before constructing and loading a supplemented archive.
+It stopped at `acquire-exact-metadata` with `oci_request_deadline` and
+wrapper exit 74. The complete serial records the failure and return to
+an idle shell. No successful image load or completed preparation is
+established by this attempt, and it must not be replayed over its history.
+
+Complete image bindings remain unverified, and no application container
+has started. Applied product restore points remain unavailable until
+actual product operations create them.
 
 ## Verification and limits
 
