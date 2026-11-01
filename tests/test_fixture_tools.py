@@ -1034,4 +1034,39 @@ class FixtureNativeAssemblyDiagnosticTests(unittest.TestCase):
         self.assertFalse(f['complete'](manager,group,markers,guest,True,False))
 
 
+class FixtureOciSupplementTests(unittest.TestCase):
+    def load(self):
+        root=Path(__file__).resolve().parents[1]
+        source=ast.parse((root/'scripts/fixture/oci_supplement.py').read_text())
+        nodes=[n for n in source.body if isinstance(n,ast.FunctionDef) and n.name in {'selected_attestation','auxiliary_records'}
+               or isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name)
+               and n.targets[0].id in {'MANIFEST','CONFIG','ATTESTATION','MAX_BLOB','MAX_TOTAL'}]
+        descriptor=next(n for n in ast.parse((root/'scripts/proofs/oci_acquire.py').read_text()).body
+                        if isinstance(n,ast.FunctionDef) and n.name=='descriptor')
+        scope={'Refused':ValueError,'re':re}
+        exec(compile(ast.Module(body=[descriptor,*nodes],type_ignores=[]),'supplement-validation','exec'),scope)
+        return scope
+
+    def test_only_the_requested_child_attestation_is_selected(self):
+        f=self.load()
+        def attestation(subject,digest):
+            return {'mediaType':f['MANIFEST'],'digest':'sha256:'+digest,'size':1112,
+                    'platform':{'architecture':'unknown','os':'unknown'},
+                    'annotations':{'vnd.docker.reference.type':'attestation-manifest',
+                                   'vnd.docker.reference.digest':'sha256:'+subject}}
+        chosen=attestation('a'*64,'b'*64);other=attestation('c'*64,'d'*64)
+        self.assertEqual(f['selected_attestation']({'manifests':[other,chosen]},'a'*64),chosen)
+        for entries in ([other],[chosen,chosen],[dict(chosen,platform={'os':'linux','architecture':'arm64'})]):
+            with self.assertRaises(ValueError):f['selected_attestation']({'manifests':entries},'a'*64)
+
+    def test_only_bounded_json_auxiliary_closure_is_accepted(self):
+        f=self.load();config={'mediaType':f['CONFIG'],'digest':'sha256:'+'a'*64,'size':153}
+        layer={'mediaType':f['ATTESTATION'],'digest':'sha256:'+'b'*64,'size':512}
+        manifest={'schemaVersion':2,'mediaType':f['MANIFEST'],'config':config,'layers':[layer]}
+        self.assertEqual(f['auxiliary_records'](manifest),[config,layer])
+        for replacement in ([dict(layer,mediaType='application/vnd.oci.image.layer.v1.tar+gzip')],
+                            [dict(layer,size=f['MAX_BLOB']+1)],[],[layer]*9):
+            with self.assertRaises(ValueError):f['auxiliary_records'](dict(manifest,layers=replacement))
+
+
 if __name__ == '__main__':unittest.main()
