@@ -3,6 +3,7 @@
 import argparse
 import base64
 import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -179,10 +180,14 @@ def qmp_query(operation):
         return request(operation)
 
 
-def console(script=None, seconds=10):
+def console(script=None, seconds=10, prompt=False, login_root=False):
     qmp_query('query-status')  # Bind the socket family to the expected running VM first.
     with socket.socket(socket.AF_UNIX) as sock:
         sock.settimeout(10);sock.connect(str(VM/'c.sock'))
+        if prompt:
+            sock.sendall(b'\n')
+        if login_root:
+            sock.sendall(b'root\n')
         if script is not None:
             source=Path(script).resolve()
             allowed=runner.PROJECT/'scripts'
@@ -192,7 +197,18 @@ def console(script=None, seconds=10):
             if len(data)>262144:raise ValueError('console script exceeds input bound')
             encoded=base64.b64encode(data).decode()
             chunks='\n'.join(encoded[i:i+76] for i in range(0,len(encoded),76))
-            command="\nstty -echo\nbase64 -d > /run/mpkg-fixture-input.sh <<'MPKG_INPUT'\n"+chunks+"\nMPKG_INPUT\nMPKG_GUEST_ID="+vm_identity()['guest_id']+" bash /run/mpkg-fixture-input.sh; printf '\\nMPKG_CONSOLE_EXIT=%s\\n' \"$?\"\nstty echo\n"
+            digest=hashlib.sha256(data).hexdigest()
+            guest_path='/run/mpkg-fixture-input-'+digest+'-'+uuid.uuid4().hex+'.sh'
+            command=("\nstty -echo\numask 077\nif (set -o noclobber; base64 -d > "+guest_path+
+                     " <<'MPKG_INPUT'\n"+chunks+"\nMPKG_INPUT\n); then\n"+
+                     "if printf '%s  %s\\n' "+digest+" "+guest_path+
+                     " | sha256sum --strict --check >/dev/null; then\n"+
+                     "MPKG_GUEST_ID="+vm_identity()['guest_id']+" bash "+guest_path+
+                     "; code=$?; printf '%s\\n' \"$code\" > "+guest_path+".exit; "+
+                     "printf '\\nMPKG_CONSOLE_EXIT=%s\\n' \"$code\"\n"+
+                     "else printf '\\nMPKG_TRANSFER_HASH_FAILED\\n'; fi\n"+
+                     "else printf '\\nMPKG_TRANSFER_DECODE_FAILED\\n'; fi\nstty echo\n")
+
             sock.sendall(command.encode())
         end=time.monotonic()+seconds;data=bytearray()
         while time.monotonic()<end and len(data)<262144:
@@ -209,15 +225,19 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console'])
     parser.add_argument('--script')
+    parser.add_argument('--prompt',action='store_true')
+    parser.add_argument('--login-root',action='store_true')
     parser.add_argument('--seconds',type=int,default=10)
     args=parser.parse_args()
     if sys.version_info[:2]!=(3,12):parser.error('Python 3.12 is required')
+    if sum(bool(value) for value in (args.prompt,args.login_root,args.script))>1:
+        parser.error('choose one console input mode')
     if not 1<=args.seconds<=30:parser.error('console observation must be 1–30 seconds')
     os.umask(0o077)
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     if args.operation=='prepare':prepare()
     elif args.operation.startswith('start-'):start(args.operation=='start-installer')
-    elif args.operation=='console':console(args.script,args.seconds)
+    elif args.operation=='console':console(args.script,args.seconds,args.prompt,args.login_root)
     else:print(json.dumps(qmp_query('query-status' if args.operation=='status' else 'system_powerdown')))
 
 

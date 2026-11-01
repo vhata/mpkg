@@ -35,6 +35,7 @@ mkdir -p /mnt/boot
 mount /dev/vda1 /mnt/boot
 # The ISO keyring is seeded with the same accepted public Arch trust inputs.
 install -m 0644 /run/mpkg-inputs/keyrings/archlinux* /usr/share/pacman/keyrings/
+pacman-key --init
 pacman-key --populate archlinux
 mapfile -t packages < /run/mpkg-inputs/baseline-artifacts.list
 for index in "${!packages[@]}"; do

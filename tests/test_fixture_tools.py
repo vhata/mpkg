@@ -1,5 +1,6 @@
 """Host boundary tests for disposable-fixture acquisition and extraction."""
 import importlib.util
+import base64
 import io
 from pathlib import Path
 import tarfile
@@ -144,6 +145,35 @@ class FixtureGuestBoundaryTests(unittest.TestCase):
         self.assertIn('dump-guest-core=off',joined)
         self.assertIn('readonly=on,file=/run/mpkg-fixture/inputs.img',joined)
         self.assertEqual(args[args.index('-uuid')+1],identity['guest_id'])
+
+
+class FixtureConsoleTransferTests(unittest.TestCase):
+    def test_decoded_script_must_match_before_execution(self):
+        sys.modules.setdefault('runner',RUNNER)
+        spec=importlib.util.spec_from_file_location('transfer_vm',Path(__file__).resolve().parents[1]/'scripts/fixture/vm.py')
+        vm=importlib.util.module_from_spec(spec);spec.loader.exec_module(vm)
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);scripts=root/'scripts';scripts.mkdir();source=scripts/'probe.sh'
+            payload=b'printf executed > "$MPKG_TEST_EXECUTED"\n';source.write_bytes(payload)
+            sock=mock.MagicMock();sock.recv.return_value=b''
+            socket_context=mock.MagicMock();socket_context.__enter__.return_value=sock
+            with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(vm,'qmp_query',return_value={}), \
+                 mock.patch.object(vm,'vm_identity',return_value={'guest_id':'00000000-0000-4000-8000-000000000000'}), \
+                 mock.patch.object(vm.socket,'socket',return_value=socket_context), \
+                 mock.patch.object(vm.select,'select',return_value=([sock],[],[])):
+                vm.console(str(source),1)
+            wire=sock.sendall.call_args.args[0].decode()
+            encoded=base64.b64encode(payload).decode()
+            variants={'valid':wire,'decode':wire.replace(encoded,'!'+encoded[1:]),
+                      'hash':wire.replace(encoded,base64.b64encode(b'printf wrong\n').decode())}
+            fakebin=root/'bin';fakebin.mkdir();(fakebin/'stty').write_text('#!/bin/sh\nexit 0\n');(fakebin/'stty').chmod(0o755)
+            for name,command in variants.items():
+                destination=root/name;destination.mkdir();marker=destination/'executed'
+                command=command.replace('/run/mpkg-fixture-input-',str(destination/'input-'))
+                result=subprocess.run(['/usr/bin/bash','-c',command],env={'PATH':str(fakebin)+':/usr/bin:/bin',
+                                      'MPKG_TEST_EXECUTED':str(marker)},capture_output=True,timeout=10)
+                self.assertEqual(marker.exists(),name=='valid',result.stdout+result.stderr)
+                if name!='valid':self.assertIn(b'MPKG_TRANSFER_',result.stdout)
 
 
 if __name__ == '__main__':unittest.main()
