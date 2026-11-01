@@ -19,6 +19,17 @@ from core import Refused, read_regular, require_guest
 from docker_ready import PROPERTIES, UNITS, assert_unit
 from run import command, trusted_install
 
+def safe_execution(execution, expected):
+    prefix = ('{ path=' + expected.split()[0] + ' ; argv[]=' + expected + ' ; ') if expected else ''
+    known = {'path', 'argv[]', 'ignore_errors', 'flags', 'start_time', 'stop_time', 'pid', 'code', 'status'}
+    fields = re.findall(r'(?:^|[;{])\s*([A-Za-z_]+(?:\[\])?)=', execution)
+    return {
+        'ExecStart_expected_path_and_argv': bool(prefix and execution.startswith(prefix)),
+        'ExecStart_original_prefix_matches': bool(prefix and execution.startswith(prefix + 'ignore_errors=no ;')),
+        'ExecStart_field_names': [name if name in known else '<unknown>' for name in fields],
+        'ExecStart': prefix + '<manager fields omitted>' if prefix and execution.startswith(prefix) else '<redacted-or-absent>',
+    }
+
 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 guest = require_guest(os.environ['MPKG_GUEST_ID'])
 trusted_install()
@@ -55,15 +66,10 @@ for unit, (_, expected) in UNITS.items():
             value = values.get(key)
             view[key] = value if value in (None, '', allowed) else '<unexpected>'
         execution = values.get('ExecStart', '')
-        prefix = ('{ path=' + expected.split()[0] + ' ; argv[]=' + expected + ' ; ') if expected else ''
         view['ExecStart_present'] = 'ExecStart' in values
-        view['ExecStart_expected_path_and_argv'] = bool(prefix and execution.startswith(prefix))
-        view['ExecStart_original_prefix_matches'] = bool(prefix and execution.startswith(prefix + 'ignore_errors=no ;'))
-        view['ExecStart_field_names'] = re.findall(r'(?:^|[;{])\s*([A-Za-z_]+(?:\[\])?)=', execution)
-        # Print arguments only when they exactly equal the known command from
-        # the independently verified package; unexpected argv remains hidden.
-        view['ExecStart'] = execution if (prefix and execution.startswith(prefix)
-                                           and execution.count('{') == 1 and len(execution) < 4096) else '<redacted-or-absent>'
+        # Only the fixed known command may be displayed; no arbitrary tail,
+        # unexpected argument or unknown field name is exported.
+        view.update(safe_execution(execution, expected))
         try:
             assert_unit(unit, values)
             view['preflight_assertion'] = 'accepted'

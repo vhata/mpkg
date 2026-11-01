@@ -1,10 +1,12 @@
 """Host-safe tests: temporary files/SQLite only, no real service/package tools."""
 import importlib.util
+import ast
 import contextlib
 import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import sqlite3
 import stat
@@ -183,6 +185,25 @@ class RealNativeConflictTests(unittest.TestCase):
 
 
 class DockerReadinessTests(unittest.TestCase):
+    def test_diagnostic_hides_unexpected_tail_even_after_exact_command_prefix(self):
+        script = (PROOFS / 'guest-docker-diagnostic.sh').read_text()
+        embedded = script.split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0]
+        tree = ast.parse(embedded)
+        definition = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                          and node.name == 'safe_execution')
+        namespace = {'re': re}
+        exec(compile(ast.Module(body=[definition], type_ignores=[]), '<diagnostic-format>', 'exec'), namespace)
+        expected = '/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock'
+        prefix = '{ path=/usr/bin/dockerd ; argv[]=' + expected + ' ; '
+        secret = 'UNEXPECTED_PRIVATE_SENTINEL'
+        for raw in (prefix + secret + ' ; ignore_errors=no ; }',
+                    prefix + secret + '=private ; }',
+                    '{ path=/usr/bin/dockerd ; argv[]=' + secret + ' ; }'):
+            public = namespace['safe_execution'](raw, expected)
+            self.assertNotIn(secret, json.dumps(public))
+        self.assertTrue(namespace['safe_execution'](prefix + secret + ' ; }', expected)
+                        ['ExecStart_expected_path_and_argv'])
+
     def test_activated_socket_accepts_running_state_but_not_failed_state(self):
         value = {'LoadState': 'loaded', 'FragmentPath': '/usr/lib/systemd/system/docker.socket',
                  'DropInPaths': '', 'UnitFileState': 'disabled', 'ActiveState': 'active',
