@@ -297,6 +297,34 @@ desired={mode=448}
             self.assertEqual(results(report["resources"][0])[("accepted", "state")], "unknown")
             self.assertIn("required_check_unverified", report["blockers"])
 
+    def test_endpoint_predicates_remain_unknown_without_exporting_or_probing_url(self):
+        original = load_declaration(service(checks=False).source_bytes.replace(b"checks=[]", b'checks=["health"]') + b'''[[checks]]
+id="health"
+kind="endpoint"
+resource="web"
+timeout_seconds=3
+url="http://127.0.0.1:8080/PRIVATE_ENDPOINT_PATH"
+expected_status=200
+''')
+        self.adopt(original)
+        report = self.report(original)
+        self.assertEqual(results(report["resources"][0]),
+                         {("accepted", "health"): "unknown", ("current", "health"): "unknown"})
+        self.assertNotIn("PRIVATE_ENDPOINT_PATH", json.dumps(report))
+        self.assertTrue(all(item["reason"] == "check_not_implemented"
+                            for item in report["resources"][0]["checks"]))
+
+    def test_historical_binding_survives_reopen_without_touching_store(self):
+        self.adopt()
+        before = self.store.current()["resources"][0]["accepted_checks"]
+        self.store.record_intent(service("{running=true}", logical="renamed"), 1)
+        self.store.close()
+        inventory = {path.name: (path.read_bytes(), path.stat().st_mtime_ns) for path in self.directory.iterdir()}
+        with HostStore.open_readonly(self.directory, HOST, owner_uid=os.geteuid()) as reader:
+            self.assertEqual(reader.current()["resources"][0]["accepted_checks"], before)
+        self.assertEqual(inventory, {path.name: (path.read_bytes(), path.stat().st_mtime_ns)
+                                     for path in self.directory.iterdir()})
+
     def test_missing_projection_blocks_and_invalid_bindings_fail_closed(self):
         self.adopt()
         original = self.store.current()
