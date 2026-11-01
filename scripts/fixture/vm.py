@@ -238,7 +238,7 @@ def proof_install_payload(name):
         'docker-supplement-resume':('docker_supplement_resume.py','f1c93ca71799b73a66142238978ea257a75a036f0ceb6d2cd547efd5c8fbec1b'),
         'protected-output':('protected_output.py','cbe4f3081f243b7e4509f0d99d20aff9de07752bc074c7f633270bffc50ef510'),
         'docker-variant-plan':('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
-        'docker-variants':('docker_variants.py','b58b947ad1450064a54254ecb4526b60adee88d20380e7a06924ca3ccc762f82'),
+        'docker-variants':('docker_variants.py','1515a3b8ebd888c8bc1e555ed94c8c2606d64358e39230d5b80bf74e2589f447'),
         'docker-variant-experiment':('docker_variant_experiment.py','041cf5407adec454905b1929909b4dd020ad6c862eceb53d29ef9c464bdda3f5'),
         'docker-variant-retire':('docker_variant_retire.py','ff914917ca99021cfc6e89e0aff48a3c7be6b27c3d7ba0c204e2c3d16d00a462'),
         'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b'),
@@ -310,14 +310,14 @@ def install():
             ('docker_baseline.py','f6af324e2d0844a6159f0e6dcf1e72c766679953dc4e4ec5c093ff42271bbeca'),
             ('docker_variant_experiment.py','041cf5407adec454905b1929909b4dd020ad6c862eceb53d29ef9c464bdda3f5'),
             ('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
-            ('docker_variants.py','b58b947ad1450064a54254ecb4526b60adee88d20380e7a06924ca3ccc762f82'),
+            ('docker_variants.py','1515a3b8ebd888c8bc1e555ed94c8c2606d64358e39230d5b80bf74e2589f447'),
             ('run.py','adcd36404cb43e8bcdc0189eab6c98997ef8ea281461e54ba5aa3524dba8674e'),
         ],
         'docker_variant_experiment.py':[
             ('core.py','0b13e3dc39d3a985ff7b8b3fd9885f3b09c75444854b41f775dd953b42d0167a'),
             ('docker_baseline.py','f6af324e2d0844a6159f0e6dcf1e72c766679953dc4e4ec5c093ff42271bbeca'),
             ('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
-            ('docker_variants.py','b58b947ad1450064a54254ecb4526b60adee88d20380e7a06924ca3ccc762f82'),
+            ('docker_variants.py','1515a3b8ebd888c8bc1e555ed94c8c2606d64358e39230d5b80bf74e2589f447'),
             ('run.py','adcd36404cb43e8bcdc0189eab6c98997ef8ea281461e54ba5aa3524dba8674e'),
         ],
         'docker_variant_plan.py':[
@@ -448,10 +448,10 @@ def image_attestation_payload():
 def docker_variants_replacement_payload():
     source=runner.PROJECT/'scripts/proofs/docker_variants.py'
     data=runner.regular_file(source).read_bytes()
-    if hashlib.sha256(data).hexdigest()!='b58b947ad1450064a54254ecb4526b60adee88d20380e7a06924ca3ccc762f82':
+    if hashlib.sha256(data).hexdigest()!='1515a3b8ebd888c8bc1e555ed94c8c2606d64358e39230d5b80bf74e2589f447':
         raise ValueError('variant replacement differs from reviewed bytes')
     template=runner.regular_file(runner.PROJECT/'scripts/fixture/guest_docker_variants_replace.py').read_text()
-    if hashlib.sha256(template.encode()).hexdigest()!='ee7109c5fa24d9439faefa12e73b7d0fdb43b0a53e7a6d0de432e289887f623c':
+    if hashlib.sha256(template.encode()).hexdigest()!='c1cf26233e1c53e6d6758f2ad1c22ffa284cb118c6df056ab0a93377ae936688':
         raise ValueError('variant replacement template differs from reviewed bytes')
     marker='REPLACEMENT_BASE64 = None'
     if template.count(marker)!=1:
