@@ -27,6 +27,25 @@ if [[ -f /var/lib/mpkg-fixture/python-3.12.16/started && ! -L /var/lib/mpkg-fixt
         tail -n 8 /var/lib/mpkg-fixture/python-3.12.16/build.log
     fi
 fi
+for kind in ack gitstatus; do
+    state=/var/lib/mpkg-fixture/aur-$kind
+    if [[ -f $state/started && ! -L $state/started ]]; then
+        printf 'AUR_BUILD_STATUS=%s\n' "$kind"
+        SYSTEMD_COLORS=0 systemctl --no-pager --plain show --property=ActiveState,SubState,Result,ExecMainStatus "mpkg-fixture-aur-$kind.service"
+        for name in exit complete; do
+            if [[ -f $state/$name && ! -L $state/$name ]]; then
+                printf 'present %s/%s\n' "$state" "$name"
+            fi
+        done
+        if [[ -f $state/exit && ! -L $state/exit ]]; then
+            code=$(cat "$state/exit")
+            [[ $code =~ ^[0-9]{1,3}$ ]] && printf 'aur_build_exit=%s\n' "$code"
+        fi
+        if [[ -f $state/build.log && ! -L $state/build.log ]]; then
+            tail -n 8 "$state/build.log"
+        fi
+    fi
+done
 ps -eo pid=,comm= | awk '$2 ~ /^(pacstrap|pacman|gpg|gpg-agent|make|cc1|ld|ldconfig|mkinitcpio)$/ {print}'
 lsblk -o NAME,SIZE,TYPE,SERIAL,MOUNTPOINTS
 if [[ -f /var/lib/mpkg-fixture/bootstrap-complete ]]; then
