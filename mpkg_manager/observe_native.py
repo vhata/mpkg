@@ -54,6 +54,19 @@ def _allowed_query(argv):
             and bool(NAME.fullmatch(argv[-1])) and argv[-1].endswith(".service"))
 
 
+def _terminate_query(process):
+    # The group can outlive its leader, so do not condition this on poll().
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except OSError:
+        pass
+    try:
+        process.wait(timeout=1)
+    except (OSError, subprocess.TimeoutExpired):
+        # A kernel-blocked child must not make cleanup unbounded.
+        pass
+
+
 def run_readonly(argv, *, timeout=10, max_output=1024 * 1024):
     """Run a closed query with one deadline and a combined stdout/stderr cap.
 
@@ -83,41 +96,46 @@ def run_readonly(argv, *, timeout=10, max_output=1024 * 1024):
     total = 0
     failure = None
     try:
-        with selectors.DefaultSelector() as selector:
-            selector.register(process.stdout, selectors.EVENT_READ, True)
-            selector.register(process.stderr, selectors.EVENT_READ, False)
-            while selector.get_map():
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    failure = "timeout"
-                    break
-                for key, _ in selector.select(min(remaining, 0.1)):
-                    chunk = os.read(key.fd, 65536)
-                    if not chunk:
-                        selector.unregister(key.fileobj)
-                        continue
-                    total += len(chunk)
-                    if total > max_output:
-                        failure = "output_limit"
+        try:
+            with selectors.DefaultSelector() as selector:
+                selector.register(process.stdout, selectors.EVENT_READ, True)
+                selector.register(process.stderr, selectors.EVENT_READ, False)
+                while selector.get_map():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        failure = "timeout"
                         break
-                    if key.data:
-                        chunks.append(chunk)
-                if failure:
-                    break
-            if not failure:
-                try:
-                    process.wait(timeout=max(0.001, deadline - time.monotonic()))
-                except subprocess.TimeoutExpired:
-                    failure = "timeout"
-    except OSError:
-        failure = "io_error"
-    finally:
+                    for key, _ in selector.select(min(remaining, 0.1)):
+                        chunk = os.read(key.fd, 65536)
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            continue
+                        total += len(chunk)
+                        if total > max_output:
+                            failure = "output_limit"
+                            break
+                        if key.data:
+                            chunks.append(chunk)
+                    if failure:
+                        break
+                if not failure:
+                    try:
+                        process.wait(timeout=max(0.001, deadline - time.monotonic()))
+                    except subprocess.TimeoutExpired:
+                        failure = "timeout"
+        except OSError:
+            failure = "io_error"
         if failure:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        process.wait()
+            _terminate_query(process)
+    except BaseException:
+        # Cancellation must stop descendants even if the leader was reaped.
+        # Preserve the original exception if cleanup itself is interrupted.
+        try:
+            _terminate_query(process)
+        except BaseException:
+            pass
+        raise
+    finally:
         process.stdout.close()
         process.stderr.close()
     if failure:
@@ -221,8 +239,7 @@ def observe_resources(resources, *, host_id, runner=None, observed_at=None):
         if resource["kind"] == "service":
             identity = resource["identity"]
             if (set(identity) != {"manager", "unit"} or identity["manager"] != "system"
-                    or type(identity["unit"]) is not str or not NAME.fullmatch(identity["unit"])
-                    or not identity["unit"].endswith(".service")):
+                    or type(identity["unit"]) is not str or not NAME.fullmatch(identity["unit"])):
                 raise ValueError("invalid_observation_resource")
     facts = []
 
@@ -254,6 +271,11 @@ def observe_resources(resources, *, host_id, runner=None, observed_at=None):
         if resource["kind"] != "service":
             for prop in sorted({"present", *resource.get("desired", {})}):
                 add(resource, prop, "unknown", reason="resource_kind_not_observed", source="unsupported_adapter")
+            continue
+        if not resource["identity"]["unit"].endswith(".service"):
+            for prop in SERVICE_PROPERTIES:
+                add(resource, prop, "unknown", reason="service_unit_type_unsupported",
+                    source="unsupported_adapter")
             continue
         properties, error = _service_snapshot(resource["identity"]["unit"], runner)
         if error:

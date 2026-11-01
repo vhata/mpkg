@@ -43,6 +43,8 @@ the missing facts are required.
 ## System services
 
 The adapter observes explicit `.service` units in the system manager.
+Declarations naming other unit types receive unknown facts with
+`service_unit_type_unsupported` without invoking systemctl.
 It repeats a fixed `systemctl show` query, including invocation and
 activation evidence, and requires stable, complete, recognized fields.
 Missing fields are unknown even when systemd omitted an empty field.
@@ -70,10 +72,12 @@ It accepts no mutating verbs, caller-selected program, shell or sudo
 operation. Its environment excludes inherited loader, Docker, D-Bus,
 proxy and credential settings. Standard input is closed.
 
-One deadline and combined stdout/stderr byte cap bound each process.
-Failure terminates its private process group, including children keeping
-pipes open. Successful stdout is private parser input; stderr, raw
-exceptions, failed output and partial output are never exported.
+One query deadline and combined stdout/stderr byte cap bound each process.
+Failure or cancellation kills its private process group, including
+children whose group leader exited or which keep pipes open. Cleanup
+allows at most one second to reap the leader; cancellation preserves the
+original exception. Successful stdout is private parser input; stderr,
+raw exceptions, failed output and partial output are never exported.
 Public failures use fixed codes. Test-only runner injection does not add
 an executable field to declarations or the future helper protocol.
 
@@ -85,6 +89,6 @@ PATH="$PWD/.venv/bin:$PATH" .venv/bin/python -m unittest discover \
 ```
 
 The tests stub package/systemd queries and use short local child
-processes for environment, output-limit and timeout behavior. They
-perform no package, service, Docker or privileged host operations and
-do not establish the real Arch acceptance scenarios.
+processes for environment, output-limit, timeout and cancellation
+behavior. They perform no package, service, Docker or privileged host
+operations and do not establish the real Arch acceptance scenarios.

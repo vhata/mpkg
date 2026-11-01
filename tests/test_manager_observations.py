@@ -3,6 +3,7 @@ from dataclasses import FrozenInstanceError
 import json
 import os
 from pathlib import Path
+import selectors
 import subprocess
 import sys
 import tempfile
@@ -10,6 +11,7 @@ import time
 import unittest
 from unittest.mock import patch
 
+from mpkg_manager.declarations import load_declaration
 from mpkg_manager.observations import Observation, ObservationBatch
 from mpkg_manager.observe_native import (
     ENVIRONMENT, PACKAGE_EXPLICIT, PACKAGE_VERSIONS, SERVICE_QUERY,
@@ -210,6 +212,28 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual({f.property for f in batch.facts}, {"present", "mode"})
         self.assertTrue(all(f.state == "unknown" for f in batch.facts))
 
+    def test_normalized_unsupported_unit_types_remain_unknown_without_commands(self):
+        for unit in ("example.socket", "example.timer", "example"):
+            with self.subTest(unit=unit):
+                declaration = load_declaration(f'''schema = 1
+components = []
+[[resources]]
+id = "example"
+kind = "service"
+identity = {{manager = "system", unit = "{unit}"}}
+manage = ["running", "enabled"]
+desired = {{running = true, enabled = true}}
+'''.encode())
+                runner = Queries()
+                batch = self.observe(declaration.model["resources"], runner)
+                self.assertEqual(runner.calls, [])
+                self.assertEqual(batch.coverage, ("example",))
+                self.assertTrue({"present", "running", "enabled"} <=
+                                {fact.property for fact in batch.facts})
+                self.assertTrue(all(fact.state == "unknown" for fact in batch.facts))
+                self.assertTrue(all(fact.limitations == ("service_unit_type_unsupported",)
+                                    for fact in batch.facts))
+
     def test_bad_identity_and_duplicate_resource_never_execute(self):
         for resources in [[package(), package()], [package("--root")],
                           [service() | {"identity": {"manager": "user", "unit": "sshd.service"}}]]:
@@ -241,7 +265,8 @@ class BoundedQueryTests(unittest.TestCase):
         cases = [("/usr/bin/pacman", "-S", "git"), ("/usr/bin/pacman", "-Sy"),
                  ("/usr/bin/systemctl", "restart", "sshd.service"),
                  ("/usr/bin/sudo", "pacman", "-Q"), ("pacman", "-Q"),
-                 SERVICE_QUERY + ("--user",), SERVICE_QUERY + ("bad\n.service",)]
+                 SERVICE_QUERY + ("--user",), SERVICE_QUERY + ("bad\n.service",),
+                 SERVICE_QUERY + ("example.socket",)]
         with patch("mpkg_manager.observe_native.subprocess.Popen") as spawn:
             for argv in cases:
                 self.assertEqual(run_readonly(argv).code, "invalid_query")
@@ -293,6 +318,83 @@ class BoundedQueryTests(unittest.TestCase):
             self.assertLess(time.monotonic() - started, 1)
             time.sleep(1.05)
             self.assertFalse(marker.exists())
+
+    def test_cancellation_stops_group_and_preserves_exception(self):
+        real_popen = subprocess.Popen
+        real_selector = selectors.DefaultSelector
+        for boundary in ("select", "wait"):
+            for exception_type in (KeyboardInterrupt, SystemExit):
+                with self.subTest(boundary=boundary, exception=exception_type), \
+                        tempfile.TemporaryDirectory() as directory:
+                    marker = Path(directory) / "must-not-appear"
+                    original = exception_type("cancel observation")
+                    leader_exits = exception_type is SystemExit
+                    code = f"""
+import os, time
+child = os.fork()
+if child:
+    if {leader_exits!r}:
+        os._exit(0)
+    os.close(1)
+    os.close(2)
+    time.sleep(5)
+else:
+    if {boundary!r} == 'select':
+        os.write(1, b'ready')
+    else:
+        os.close(1)
+        os.close(2)
+    time.sleep(0.6)
+    open({str(marker)!r}, 'w').write('effect')
+"""
+                    processes = []
+
+                    def launch(argv, **kwargs):
+                        process = real_popen([sys.executable, "-c", code], **kwargs)
+                        processes.append(process)
+                        if boundary == "wait":
+                            real_wait = process.wait
+                            interrupted = False
+
+                            def wait(*args, **wait_kwargs):
+                                nonlocal interrupted
+                                if not interrupted:
+                                    interrupted = True
+                                    raise original
+                                return real_wait(*args, **wait_kwargs)
+
+                            process.wait = wait
+                        return process
+
+                    def selector_factory():
+                        selector = real_selector()
+                        if boundary == "select":
+                            real_select = selector.select
+
+                            def select(timeout=None):
+                                events = real_select(timeout)
+                                if events:
+                                    if leader_exits:
+                                        processes[0].wait(timeout=1)
+                                    raise original
+                                return events
+
+                            selector.select = select
+                        return selector
+
+                    started = time.monotonic()
+                    with patch("mpkg_manager.observe_native.subprocess.Popen", side_effect=launch), \
+                            patch("mpkg_manager.observe_native.selectors.DefaultSelector",
+                                  side_effect=selector_factory), \
+                            self.assertRaises(exception_type) as caught:
+                        run_readonly(PACKAGE_VERSIONS, timeout=0.1)
+                    self.assertIs(caught.exception, original)
+                    self.assertLess(time.monotonic() - started, 0.5)
+                    self.assertIsNotNone(processes[0].returncode)
+                    self.assertTrue(processes[0].stdout.closed)
+                    self.assertTrue(processes[0].stderr.closed)
+                    time.sleep(0.65)
+                    self.assertFalse(marker.exists())
 
     def test_query_bounds_cannot_disable_limits(self):
         with patch("mpkg_manager.observe_native.subprocess.Popen") as spawn:
