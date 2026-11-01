@@ -581,6 +581,28 @@ class DockerVolumeInitializationTests(unittest.TestCase):
 
 
 class VolumeKeepDiagnosticTests(unittest.TestCase):
+    def test_radarr_observer_reports_shape_without_any_response_values(self):
+        script = (PROOFS / 'guest-volume-keep-radarr-diagnostic.sh').read_text()
+        parsed = ast.parse(script.split("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0])
+        nodes = [node for node in parsed.body if isinstance(node, ast.FunctionDef)
+                 and node.name in ('response_view', 'error_view')]
+        namespace = {'json': json, 'Refused': core.Refused, 'RADARR_ROOT': Path('/fixed/root')}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), '<radarr-diagnostic-functions>', 'exec'), namespace)
+        observe = namespace['response_view']
+        result = observe('rootfolders', 200, json.dumps([
+            {'id': 1, 'path': '/fixed/root', 'accessible': True, 'private': 'PRIVATE_SENTINEL'},
+            {'id': 2, 'path': '/PRIVATE_SENTINEL'}]).encode())
+        self.assertEqual(result, {'http_status': 200, 'json_type': 'array', 'count': 2,
+            'all_entries_objects': True, 'expected_path_count': 1, 'expected_path_id_positive': True,
+            'expected_path_accessible': True})
+        self.assertNotIn('PRIVATE_SENTINEL', json.dumps(result))
+        self.assertEqual(observe('naming', 400, b'[{"error":"PRIVATE_SENTINEL"}]'),
+                         {'http_status': 400, 'json_type': 'array'})
+        self.assertEqual(observe('naming', 200, b'PRIVATE_SENTINEL'),
+                         {'http_status': 200, 'json_type': 'unparseable'})
+        self.assertEqual(namespace['error_view'](KeyError('PRIVATE_SENTINEL')),
+                         {'exception_type': 'KeyError', 'errno': None})
+
     def test_stage_diagnostic_emits_only_fixed_source_coordinates_and_error_kind(self):
         script = (PROOFS / 'guest-volume-keep-stage-diagnostic.sh').read_text()
         program = script.split("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
