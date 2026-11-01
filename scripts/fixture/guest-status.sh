@@ -21,10 +21,38 @@ if [[ -f /var/lib/mpkg-fixture/python-3.12.16/exit && ! -L /var/lib/mpkg-fixture
     [[ $code =~ ^[0-9]{1,3}$ ]] && printf 'python_build_exit=%s\n' "$code"
 fi
 if [[ -f /var/lib/mpkg-fixture/python-3.12.16/started && ! -L /var/lib/mpkg-fixture/python-3.12.16/started ]]; then
-    SYSTEMD_COLORS=0 systemctl --no-pager --plain show --property=ActiveState,SubState,Result,ExecMainStatus mpkg-fixture-python-build.service
+    SYSTEMD_COLORS=0 systemctl --no-pager --plain show --property=ActiveState,SubState,Result,ExecMainStatus,MainPID,ControlPID,ControlGroup,TasksCurrent mpkg-fixture-python-build.service
     if [[ -f /var/lib/mpkg-fixture/python-3.12.16/build.log && ! -L /var/lib/mpkg-fixture/python-3.12.16/build.log ]]; then
         printf 'PYTHON_BUILD_LOG_TAIL\n'
         tail -n 8 /var/lib/mpkg-fixture/python-3.12.16/build.log
+    fi
+    if [[ -f /var/lib/mpkg-fixture/python-3.12.16/complete && ! -L /var/lib/mpkg-fixture/python-3.12.16/complete ]]; then
+        [[ $(stat -c '%u:%g:%a' /var/lib/mpkg-fixture/python-3.12.16/complete) == 0:0:600 ]]
+        complete=$(head -c 128 /var/lib/mpkg-fixture/python-3.12.16/complete)
+        [[ $complete == "$MPKG_GUEST_ID" ]]
+        printf 'PYTHON_COMPLETE_UUID=%s\n' "$complete"
+        builder=/var/lib/mpkg-fixture/python-3.12.16/builder.txt
+        [[ -f $builder && ! -L $builder && $(stat -c '%u:%g:%a' "$builder") == 0:0:600 ]]
+        [[ $(stat -c '%s' "$builder") -le 1024 ]]
+        printf 'PYTHON_BUILDER_RECORDED\n'
+        head -c 1024 "$builder"
+        printf 'PYTHON_BUILDER_CURRENT\n'
+        id mpkg-pybuild
+        { ps -u mpkg-pybuild -o pid=,comm= || [[ $? == 1 ]]; } | awk 'NR <= 16 {print} END {printf "PYTHON_BUILDER_PROCESS_COUNT=%d\n", NR}'
+        result=/var/lib/mpkg-fixture/python-3.12.16/result.json
+        [[ -f $result && ! -L $result && $(stat -c '%u:%g:%a' "$result") == 0:0:600 ]]
+        [[ $(stat -c '%s' "$result") -le 16384 ]]
+        printf 'PYTHON_RESULT_JSON\n'
+        head -c 16384 "$result"
+        sha256sum "$result"
+        if [[ -f /sys/fs/cgroup/system.slice/mpkg-fixture-python-build.service/cgroup.events ]]; then
+            printf 'PYTHON_CGROUP_EVENTS\n'
+            head -c 256 /sys/fs/cgroup/system.slice/mpkg-fixture-python-build.service/cgroup.events
+            printf 'PYTHON_CGROUP_PIDS\n'
+            head -c 1024 /sys/fs/cgroup/system.slice/mpkg-fixture-python-build.service/cgroup.procs
+        else
+            printf 'PYTHON_CGROUP_ABSENT\n'
+        fi
     fi
 fi
 for kind in ack gitstatus; do

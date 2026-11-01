@@ -275,10 +275,27 @@ class FixtureProofAdditionTests(unittest.TestCase):
             read.assert_not_called()
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);(root/'scripts/proofs').mkdir(parents=True)
-            (root/'scripts/proofs/docker_ready.py').write_bytes(b'changed reviewed source')
-            with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(module,'qmp_query') as qmp:
-                with self.assertRaises(ValueError):module.console(addition='docker-ready')
-                qmp.assert_not_called()
+            for name,filename in [('docker-ready','docker_ready.py'),('docker-baseline','docker_baseline.py')]:
+                (root/'scripts/proofs'/filename).write_bytes(b'changed reviewed source')
+                with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(module,'qmp_query') as qmp:
+                    with self.assertRaises(ValueError):module.console(addition=name)
+                    qmp.assert_not_called()
+
+    def test_each_generated_addition_binds_its_own_reviewed_bytes_and_filename(self):
+        module=self.load()
+        expected={'docker-ready':('docker_ready.py','c45f93c6011d12486dbc7e912d07e9de0bf858048a0e683395ca0c969458af40'),
+                  'docker-baseline':('docker_baseline.py','ef9385b2a0f55f3074ccb7522ae14719fc97fddf1fd95e3d8f4796c53bfbbdb2')}
+        for name,(filename,digest) in expected.items():
+            with self.subTest(name=name):
+                program=ast.parse(module.proof_install_payload(name))
+                installer=next(n for n in program.body if isinstance(n,ast.FunctionDef) and n.name=='install')
+                assignments={n.targets[0].id:n.value for n in ast.walk(installer)
+                             if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name)}
+                payload=base64.b64decode(assignments['data'].args[0].value,validate=True)
+                self.assertEqual(hashlib.sha256(payload).hexdigest(),digest)
+                self.assertEqual(assignments['digest'].value,digest)
+                self.assertEqual(assignments['target'].right.value,filename)
+                self.assertEqual(assignments['record'].right.value,name+'.json')
 
     def test_generated_installer_publishes_once_without_following_existing_target(self):
         module=self.load()

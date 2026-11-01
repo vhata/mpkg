@@ -226,11 +226,15 @@ def qmp_query(operation):
 
 
 def proof_install_payload(name):
-    if name != 'docker-ready':
+    additions={
+        'docker-ready':('docker_ready.py','c45f93c6011d12486dbc7e912d07e9de0bf858048a0e683395ca0c969458af40'),
+        'docker-baseline':('docker_baseline.py','ef9385b2a0f55f3074ccb7522ae14719fc97fddf1fd95e3d8f4796c53bfbbdb2'),
+    }
+    if name not in additions:
         raise ValueError('proof addition is not allowlisted')
-    source=runner.PROJECT/'scripts/proofs/docker_ready.py'
+    filename,digest=additions[name]
+    source=runner.PROJECT/'scripts/proofs'/filename
     data=runner.regular_file(source).read_bytes()
-    digest='c45f93c6011d12486dbc7e912d07e9de0bf858048a0e683395ca0c969458af40'
     if hashlib.sha256(data).hexdigest()!=digest:
         raise ValueError('proof addition bytes differ from the reviewed digest')
     payload=r'''import base64, hashlib, json, os, stat, sys, uuid
@@ -244,7 +248,7 @@ def protected_directory(path, mode=None):
         raise RuntimeError('proof addition directory is not root-protected')
 
 def publish_new_file(target, data):
-    temporary=target.with_name('.docker-ready-'+uuid.uuid4().hex+'.pending')
+    temporary=target.with_name('.proof-addition-'+uuid.uuid4().hex+'.pending')
     fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
     with os.fdopen(fd,'wb') as stream:
         stream.write(data)
@@ -272,10 +276,10 @@ def install():
     guest=require_guest(os.environ.get('MPKG_GUEST_ID'))
     os.umask(0o077)
     data=base64.b64decode(PAYLOAD_BASE64,validate=True)
-    digest='c45f93c6011d12486dbc7e912d07e9de0bf858048a0e683395ca0c969458af40'
+    digest=ADDITION_DIGEST
     if hashlib.sha256(data).hexdigest()!=digest:
         raise RuntimeError('proof addition digest mismatch')
-    target=target_directory/'docker_ready.py'
+    target=target_directory/ADDITION_FILENAME
     if target.exists() or target.is_symlink():
         raise RuntimeError('proof addition destination already exists')
     state=Path('/var/lib/mpkg-fixture')
@@ -283,7 +287,7 @@ def install():
     records=state/'proof-additions'
     if not records.exists() and not records.is_symlink():records.mkdir(mode=0o700)
     protected_directory(records,0o700)
-    record=records/'docker-ready.json'
+    record=records/ADDITION_RECORD
     if record.exists() or record.is_symlink():
         raise RuntimeError('proof addition already has evidence')
     publish_new_file(target,data)
@@ -294,7 +298,9 @@ def install():
 
 install()
 '''
-    return payload.replace('PAYLOAD_BASE64',repr(base64.b64encode(data).decode())).encode()
+    return (payload.replace('PAYLOAD_BASE64',repr(base64.b64encode(data).decode()))
+            .replace('ADDITION_DIGEST',repr(digest)).replace('ADDITION_FILENAME',repr(filename))
+            .replace('ADDITION_RECORD',repr(name+'.json')).encode())
 
 
 def console(script=None, seconds=10, prompt=False, login_root=False, addition=None):
@@ -352,7 +358,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -370,6 +376,7 @@ def main():
     elif args.operation.startswith('start-'):start(args.operation=='start-installer')
     elif args.operation=='console':console(args.script,args.seconds,args.prompt,args.login_root)
     elif args.operation=='install-docker-ready':console(seconds=args.seconds,addition='docker-ready')
+    elif args.operation=='install-docker-baseline':console(seconds=args.seconds,addition='docker-baseline')
     else:print(json.dumps(qmp_query('query-status' if args.operation=='status' else 'system_powerdown')))
 
 
