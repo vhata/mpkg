@@ -11,9 +11,3 @@ Only work promoted from whole-codebase reviews belongs here. Every entry is read
 ## P3 Low
 
 ## Unprioritized
-
-- [NATIVE] `parse-pkgbuild-literal-boundaries` — **Respect Bash comments and strings when editing literal package fields.** Valid helper input must remain editable without corrupting its source.
-  - Source: [full review](2026-10-31-2121-full.md), 2026-10-31.
-  - Findings: `dependency-comment-closes-array`, `quoted-description-counts-as-assignment`
-  - Starting point: `mpkg` functions `literal_dependencies` and `update`.
-  - Cover parentheses in array comments and assignment-shaped lines in multiline descriptions. Preserve all dependencies and unrelated source, validate output syntax, and reject unsupported input before writing without executing dependency expressions.
