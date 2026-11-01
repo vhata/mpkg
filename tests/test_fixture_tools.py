@@ -531,7 +531,7 @@ class FixtureProofAdditionTests(unittest.TestCase):
                   'native-service-recover':('native_service_recover.py','f8e55069f53055d89c1603db90b5259e87b47129747d0bccf831053544828b3e'),
                   'account-defaults':('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
                   'docker-variant-plan':('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
-                  'docker-variants':('docker_variants.py','3e1f6aae53a17fc86fcb4ca8a1a2a351a5a3eb6c0c4fc4b13b4a25699ef95af8'),
+                  'docker-variants':('docker_variants.py','b58b947ad1450064a54254ecb4526b60adee88d20380e7a06924ca3ccc762f82'),
                   'docker-variant-experiment':('docker_variant_experiment.py','041cf5407adec454905b1929909b4dd020ad6c862eceb53d29ef9c464bdda3f5'),
                   'docker-variant-retire':('docker_variant_retire.py','ff914917ca99021cfc6e89e0aff48a3c7be6b27c3d7ba0c204e2c3d16d00a462'),
                   'docker-diagnostic-resume':('docker_diagnostic_resume.py','4966aaa9d517ba4e4a7e5104f6a31e202bfecaa0f1a3636e5b2bb22f9b3e9a2e'),

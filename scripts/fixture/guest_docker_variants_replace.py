@@ -12,7 +12,7 @@ import sys
 import uuid
 
 OLD_SHA256 = 'fb67486f1bbcce48855cf05ebf70768726161d5965c5d7e224b20fc9a390c6dc'
-NEW_SHA256 = '3e1f6aae53a17fc86fcb4ca8a1a2a351a5a3eb6c0c4fc4b13b4a25699ef95af8'
+NEW_SHA256 = 'b58b947ad1450064a54254ecb4526b60adee88d20380e7a06924ca3ccc762f82'
 RESUME_SHA256 = 'f1c93ca71799b73a66142238978ea257a75a036f0ceb6d2cd547efd5c8fbec1b'
 REPLACEMENT_BASE64 = None  # Filled only by the fixed host transport.
 
