@@ -477,6 +477,25 @@ class FixtureAccountTests(unittest.TestCase):
 
 
 class NativeServiceTests(unittest.TestCase):
+    def test_effective_diagnostic_reports_whitespace_without_exposing_values(self):
+        script = (PROOFS / 'guest-native-service-diagnostic.sh').read_text()
+        embedded = script.split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0]
+        definition = next(node for node in ast.parse(embedded).body if isinstance(node, ast.FunctionDef)
+                          and node.name == 'effective_summary')
+        namespace = {}
+        exec(compile(ast.Module(body=[definition], type_ignores=[]), '<effective-summary>', 'exec'), namespace)
+        raw = b'allowusers fixture-native \nhostkey PRIVATE_SENTINEL\nother OTHER_PRIVATE_SENTINEL\n'
+        result = namespace['effective_summary'](raw, {'allowusers': 'fixture-native', 'hostkey': '/expected'})
+        self.assertFalse(result['allowusers']['exact_match'])
+        self.assertTrue(result['allowusers']['strip_match'])
+        self.assertEqual(result['allowusers']['trailing_whitespace'], [True])
+        self.assertFalse(result['hostkey']['strip_match'])
+        self.assertNotIn('PRIVATE_SENTINEL', json.dumps(result))
+        duplicate = namespace['effective_summary'](b'allowusers fixture-native\nallowusers fixture-native\n',
+                                                   {'allowusers': 'fixture-native'})
+        self.assertEqual(duplicate['allowusers']['occurrences'], 2)
+        self.assertFalse(duplicate['allowusers']['strip_match'])
+
     def test_running_unit_must_use_exact_command_dropin_and_no_environment_options(self):
         manager = {
             'ExecStart': '{ path=/usr/bin/sshd ; argv[]=/usr/bin/sshd -D ; ignore_errors=no ; pid=123 ; }',

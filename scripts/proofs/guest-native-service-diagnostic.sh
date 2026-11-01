@@ -37,6 +37,69 @@ def metadata(path):
             'uid': info.st_uid, 'gid': info.st_gid, 'mode': oct(stat.S_IMODE(info.st_mode))}
 
 
+def effective_summary(raw, expected):
+    observed = {}
+    normalized = {}
+    for line in raw.decode().splitlines():
+        key, separator, value = line.partition(' ')
+        if separator and key in expected:
+            observed.setdefault(key, []).append(value)
+        pieces = line.split(None, 1)
+        if len(pieces) == 2 and pieces[0] in expected:
+            normalized.setdefault(pieces[0], []).append(pieces[1])
+    return {key: {'occurrences': len(observed.get(key, [])),
+                  'exact_match': observed.get(key) == [value],
+                  'strip_match': [item.strip() for item in observed.get(key, [])] == [value],
+                  'normalized_separator_match': [item.strip() for item in normalized.get(key, [])] == [value],
+                  'value_lengths': [len(item) for item in observed.get(key, [])],
+                  'leading_whitespace': [item != item.lstrip() for item in observed.get(key, [])],
+                  'trailing_whitespace': [item != item.rstrip() for item in observed.get(key, [])]}
+            for key, value in expected.items()}
+
+
+def effective_config(path, role, root):
+    if not path.exists():
+        return {'present': False}
+    trusted_path(path)
+    if read_regular(path)[0] != configuration(role, root):
+        return {'present': True, 'matches_fixed_generated_config': False, 'query_attempted': False}
+    name, _, port, _ = ROLES[role]
+    expected = {'port': str(port), 'addressfamily': 'inet', 'listenaddress': '127.0.0.1:' + str(port),
+                'hostkey': str(root / (role + '-host')), 'authorizedkeysfile': str(PUBLIC / (name + '.pub')),
+                'allowusers': name, 'permitrootlogin': 'no', 'passwordauthentication': 'no',
+                'kbdinteractiveauthentication': 'no', 'authenticationmethods': 'publickey',
+                'usepam': 'yes', 'disableforwarding': 'yes', 'permittty': 'no', 'forcecommand': 'internal-sftp'}
+    try:
+        raw = command(['/usr/bin/sshd', '-T', '-f', str(path)], timeout=15)
+    except Refused:
+        return {'present': True, 'matches_fixed_generated_config': True, 'query_succeeded': False}
+    if len(raw) > 65536:
+        raise Refused('diagnostic_effective_output_bound')
+    return {'present': True, 'matches_fixed_generated_config': True, 'query_succeeded': True,
+            'fields': effective_summary(raw, expected)}
+
+
+def journal_state(directory):
+    journal = {'present': (directory / 'state.sqlite3').exists()}
+    if not journal['present']:
+        return journal
+    trusted_path(directory, directory=True)
+    trusted_path(directory / 'state.sqlite3')
+    database = sqlite3.connect((directory / 'state.sqlite3').as_uri() + '?mode=ro', uri=True, timeout=1)
+    try:
+        database.execute('PRAGMA query_only=ON')
+        rows = database.execute('SELECT terminal,COUNT(*) FROM attempts GROUP BY terminal').fetchall()
+        events = database.execute('SELECT kind,COUNT(*) FROM events GROUP BY kind').fetchall()
+        if any(value not in (None, 'observed-complete', 'failed', 'unverified') for value, count in rows) or any(
+                value not in ('started', 'observed-complete', 'failed', 'unverified') for value, count in events):
+            raise Refused('diagnostic_unexpected_journal_state')
+        journal.update(attempt_counts={value or 'unknown': count for value, count in rows},
+                       event_counts=dict(events), protected_count=database.execute('SELECT COUNT(*) FROM protected').fetchone()[0])
+    finally:
+        database.close()
+    return journal
+
+
 def validate_config(path, expected):
     if not path.exists():
         return {'present': False}
@@ -86,12 +149,15 @@ resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 guest = require_guest(os.environ['MPKG_GUEST_ID'])
 trusted_install()
 root = state_root(guest)
+recovery = root.parent / 'native-service-recovery'
 paths = [root, root / 'state.sqlite3', root / 'baseline.json',
          root / 'packaged-sshd_config', root / 'packaged-sshd.service',
          PUBLIC, MANAGED_CONFIG, MANAGED_CONFIG.with_name('sshd_config.mpkg-fixture-new'),
          PUBLIC / 'external.conf', EXTERNAL_UNIT, MANAGED_DROPINS,
          MANAGED_DROPINS / '50-mpkg-fixture.conf', EXCLUSIVE, EXCLUSIVE / 'sentinel',
          SHARED, SHARED / 'sentinel', Path('/run/sshd')]
+paths.extend([recovery, recovery / 'state.sqlite3', recovery / 'original-state.sqlite3',
+              recovery / 'scope.json', recovery / 'result.json'])
 for role, (name, _, _, _) in ROLES.items():
     paths.extend(root / (role + '-' + purpose + suffix) for purpose in ('host', 'client') for suffix in ('', '.pub'))
     paths.extend([root / (role + '-known-hosts'), PUBLIC / (name + '.pub'), Path('/home') / name])
@@ -147,22 +213,8 @@ for unit in ('sshd.service', 'mpkg-fixture-external.service', 'sshdgenkeys.servi
             str(MANAGED_DROPINS / '50-mpkg-fixture.conf') if role == 'native' else '')
     units[unit] = view
 
-journal = {'present': (root / 'state.sqlite3').exists()}
-if journal['present']:
-    trusted_path(root, directory=True)
-    trusted_path(root / 'state.sqlite3')
-    database = sqlite3.connect((root / 'state.sqlite3').as_uri() + '?mode=ro', uri=True, timeout=1)
-    try:
-        database.execute('PRAGMA query_only=ON')
-        rows = database.execute('SELECT terminal,COUNT(*) FROM attempts GROUP BY terminal').fetchall()
-        events = database.execute('SELECT kind,COUNT(*) FROM events GROUP BY kind').fetchall()
-        if any(value not in (None, 'observed-complete', 'failed', 'unverified') for value, count in rows) or any(
-                value not in ('started', 'observed-complete', 'failed', 'unverified') for value, count in events):
-            raise Refused('diagnostic_unexpected_journal_state')
-        journal.update(attempt_counts={value or 'unknown': count for value, count in rows},
-                       event_counts=dict(events), protected_count=database.execute('SELECT COUNT(*) FROM protected').fetchone()[0])
-    finally:
-        database.close()
+journal = journal_state(root)
+recovery_journal = journal_state(recovery)
 checks = []
 if root.is_dir():
     with os.scandir(root) as entries:
@@ -180,8 +232,11 @@ validation = {
     'native_active': validate_config(MANAGED_CONFIG, configuration('native', root)),
     'external': validate_config(PUBLIC / 'external.conf', configuration('external', root)),
 }
+effective = {'native': effective_config(MANAGED_CONFIG, 'native', root),
+             'external': effective_config(PUBLIC / 'external.conf', 'external', root)}
 print(json.dumps({'schema': 1, 'guest_id': guest, 'diagnostic_only': True,
                   'fixed_paths': files, 'accounts': accounts, 'units': units,
                   'journal': journal, 'check_stages': checks, 'config_validation': validation,
+                  'recovery_journal': recovery_journal, 'effective_configuration': effective,
                   'service_mutation': False, 'authenticated_requests': False}, sort_keys=True))
 PY
