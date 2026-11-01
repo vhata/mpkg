@@ -118,6 +118,16 @@ class GuestGuardTests(unittest.TestCase):
 
 
 class DockerReadinessTests(unittest.TestCase):
+    def test_activated_socket_accepts_running_state_but_not_failed_state(self):
+        value = {'LoadState': 'loaded', 'FragmentPath': '/usr/lib/systemd/system/docker.socket',
+                 'DropInPaths': '', 'UnitFileState': 'disabled', 'ActiveState': 'active',
+                 'SubState': 'running', 'Listen': '/run/docker.sock (Stream)',
+                 'SocketMode': '0660', 'SocketUser': 'root', 'SocketGroup': 'docker'}
+        docker_ready.assert_unit('docker.socket', value, started=True)
+        docker_ready.assert_unit('docker.socket', dict(value, SubState='listening'), started=True)
+        with self.assertRaisesRegex(docker_ready.Refused, 'docker_unit_not_ready'):
+            docker_ready.assert_unit('docker.socket', dict(value, SubState='failed'), started=True)
+
     def test_service_must_be_packaged_and_start_only_fixed_local_arguments(self):
         value = {
             'LoadState': 'loaded', 'FragmentPath': '/usr/lib/systemd/system/docker.service',

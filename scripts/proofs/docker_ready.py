@@ -54,8 +54,8 @@ def assert_unit(unit, value, started=False):
           or value.get('SocketGroup') != 'docker'):
         raise Refused('docker_socket_definition_mismatch')
     if started:
-        expected = 'running' if executable else 'listening'
-        if (value.get('ActiveState') != 'active' or value.get('SubState') != expected
+        expected = ('running',) if executable else ('listening', 'running')
+        if (value.get('ActiveState') != 'active' or value.get('SubState') not in expected
                 or (executable and int(value.get('MainPID', '0')) <= 0)):
             raise Refused('docker_unit_not_ready')
     elif value.get('ActiveState') != 'inactive' or value.get('MainPID', '0') != '0':
