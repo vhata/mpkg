@@ -189,6 +189,15 @@ def _version(value, path):
     return result
 
 
+def _package_version_binding(properties, path):
+    version = properties.get("version", {})
+    if (properties.get("source") == "aur" and version.get("policy") == "exact"
+            and "recipe_revision" not in version):
+        _fail("missing_recipe_revision", path)
+    if "recipe_revision" in version and properties.get("source") != "aur":
+        _fail("unexpected_recipe_revision", path)
+
+
 def _images(value, path):
     def image(item, location):
         item = _object(item, ("service", "policy", "reference", "digest", "platform",
@@ -386,13 +395,6 @@ def _resource(value, path):
         result[key] = _list(value.get(key, []), path + (key,), _identifier)
     if not set(result["manage"]) <= set(desired):
         _fail("managed_property_without_value", path + ("manage",))
-    if kind == "package":
-        version = result["desired"].get("version", {})
-        if (result["desired"].get("source") == "aur" and version.get("policy") == "exact"
-                and "recipe_revision" not in version):
-            _fail("missing_recipe_revision", path + ("desired", "version"))
-        if "recipe_revision" in version and result["desired"].get("source") != "aur":
-            _fail("unexpected_recipe_revision", path + ("desired", "version"))
     if kind == "file" and {"content", "content_input"} <= set(desired):
         _fail("conflicting_content_sources", path + ("desired",))
     if "purpose" in value:
@@ -469,6 +471,7 @@ def _validate(model):
             if reference not in inputs or len(inputs[reference]["files"]) != 1:
                 _fail("content_requires_single_file_input", at + ("desired", "content_input"))
     requirements = {}
+    requirement_paths = {}
     for index, component in enumerate(result["components"]):
         at = ("components", index)
         if any(reference not in resources for reference in component["resources"]):
@@ -476,7 +479,7 @@ def _validate(model):
         for reference in component["resources"]:
             if component["id"] not in resources[reference]["consumers"]:
                 resources[reference]["consumers"].append(component["id"])
-        for requirement in component["requirements"]:
+        for requirement_index, requirement in enumerate(component["requirements"]):
             reference, prop = requirement["resource"], requirement["property"]
             if reference not in component["resources"]:
                 _fail("requirement_outside_component", at + ("requirements",))
@@ -487,11 +490,25 @@ def _validate(model):
             requirement["value"] = value
             encoded = canonical_json(value)
             key = (reference, prop)
-            if key in requirements and requirements[key] != encoded:
+            if key in requirements and canonical_json(requirements[key]) != encoded:
                 _fail("conflicting_requirements", at + ("requirements",))
             if prop in resource["desired"] and canonical_json(resource["desired"][prop]) != encoded:
                 _fail("conflicting_requirements", at + ("requirements",))
-            requirements[key] = encoded
+            requirements[key] = value
+            requirement_paths[key] = at + ("requirements", requirement_index, "value")
+    for index, resource in enumerate(result["resources"]):
+        if resource["kind"] == "package":
+            # Validate the combined constraints without promoting a consumer's
+            # requirements into desired state or management authority.
+            effective = dict(resource["desired"])
+            version_path = ("resources", index, "desired", "version")
+            for prop in ("source", "version"):
+                key = (resource["id"], prop)
+                if key in requirements and prop not in effective:
+                    effective[prop] = requirements[key]
+                    if prop == "version":
+                        version_path = requirement_paths[key]
+            _package_version_binding(effective, version_path)
     check_resources = {"package": {"package"}, "service": {"service"},
                        "endpoint": {"compose", "service"},
                        "access": {"file", "directory", "symlink", "volume"}}
@@ -538,7 +555,9 @@ def load_declaration(raw):
         _fail("declaration_too_large")
     try:
         parsed = tomllib.loads(raw.decode("utf-8"))
-    except (UnicodeDecodeError, tomllib.TOMLDecodeError, RecursionError):
+    except (ValueError, RecursionError):
+        # tomllib can also raise plain ValueError for Python's integer
+        # conversion limit; no parser diagnostics belong in public output.
         raise DeclarationError("invalid_toml") from None
     try:
         _json_value(parsed)

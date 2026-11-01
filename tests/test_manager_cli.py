@@ -68,6 +68,22 @@ class ManagerCliTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertEqual(json.loads(result.stdout)['error']['code'], code)
 
+    def test_parser_conversion_and_nesting_limits_use_fixed_public_errors(self):
+        sentinel = 'DO_NOT_PRINT_PARSER_SENTINEL'
+        for value in ('9' * 5000, '[' * 2000 + '1' + ']' * 2000):
+            with self.subTest(kind='integer' if value[0] == '9' else 'array'):
+                raw = ('schema=1\ncomponents=[]\nresources=[]\n' + sentinel + '=' + value).encode()
+                self.assertLess(len(raw), MAX_DECLARATION_BYTES)
+                self.source.write_bytes(raw)
+                result = self.invoke('validate', str(self.source), '--json')
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(json.loads(result.stdout), {
+                    'valid': False, 'error': {'code': 'invalid_toml', 'path': []}})
+                self.assertEqual(result.stderr, '')
+                self.assertNotIn(sentinel, result.stdout)
+                self.assertNotIn(str(self.source), result.stdout)
+                self.assertEqual(self.source.read_bytes(), raw)
+
 
 if __name__ == '__main__':
     unittest.main()

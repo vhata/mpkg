@@ -21,6 +21,8 @@ resources exist, its checks pass, or any proposed effects are authorized.
 Success exits zero. Invalid declarations or arguments exit two. Unavailable
 input files exit three. Failure output is JSON with a fixed error `code` and
 a structural `path`; it contains no offending values or source excerpts.
+Parser conversion and nesting limits also produce fixed errors, without
+tracebacks or parser diagnostic text.
 `--json` returns schema and normalization versions, the normalized model's
 SHA-256, counts and `application: "not_implemented"`. Human output gives the
 same limited validation claim.
@@ -125,6 +127,10 @@ requires `recipe_revision`, a complete 40- or 64-character lowercase hex
 commit ID. A recipe revision is not accepted for a non-AUR source. `any`
 does not accept an observed version as a hidden pin. Availability and Arch
 transaction compatibility remain native integration prerequisites.
+These rules apply to the combined source and version constraints from
+desired properties and all consumer requirements, after conflict checks.
+Combining constraints does not add desired properties or grant management
+authority.
 
 Each Compose image entry requires `service`, `reference` and `policy`
 (`any` or `exact`). Exact intent also requires a lowercase `sha256:` digest

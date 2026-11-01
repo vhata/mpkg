@@ -110,6 +110,53 @@ desired = {present = true, source = "repository", version = {policy = "any"}}
         with self.assertRaises(DeclarationError):
             declaration([resource()], components)
 
+    def test_package_version_context_combines_desired_and_consumer_requirements(self):
+        exact = {'policy': 'exact', 'value': '1-1'}
+        versions = [exact, exact | {'recipe_revision': 'a' * 40}, {'policy': 'any'}]
+        placements = [('desired', 'desired'), ('desired', 'one'),
+                      ('one', 'desired'), ('one', 'one'), ('one', 'two')]
+        for source in ('aur', 'repository', 'unknown', None):
+            for version in versions:
+                for source_place, version_place in placements:
+                    with self.subTest(source=source, version=version,
+                                      placements=(source_place, version_place)):
+                        desired = {}
+                        components = {name: dict(id=name, purpose='Use package', resources=['data'],
+                                                 requirements=[]) for name in ('one', 'two')}
+                        for prop, value, place in [('source', source, source_place),
+                                                   ('version', version, version_place)]:
+                            if value is None:
+                                continue
+                            if place == 'desired':
+                                desired[prop] = value
+                            else:
+                                components[place]['requirements'].append(
+                                    dict(resource='data', property=prop, value=value))
+                        package = resource({'name': 'example'}, kind='package',
+                                           desired=desired, manage=[])
+                        expected_error = None
+                        if 'recipe_revision' in version and source != 'aur':
+                            expected_error = 'unexpected_recipe_revision'
+                        elif source == 'aur' and version == exact:
+                            expected_error = 'missing_recipe_revision'
+                        if expected_error:
+                            with self.assertRaises(DeclarationError) as error:
+                                declaration([package], components.values())
+                            self.assertEqual(error.exception.code, expected_error)
+                        else:
+                            model = declaration([package], components.values()).model
+                            self.assertEqual(model['resources'][0]['desired'], desired)
+                            self.assertEqual(model['resources'][0]['manage'], [])
+
+        # A disagreeing source remains a conflict, regardless of its version.
+        package = resource({'name': 'example'}, kind='package', desired={
+            'source': 'repository', 'version': exact | {'recipe_revision': 'a' * 40}}, manage=[])
+        component = dict(id='one', purpose='Use package', resources=['data'], requirements=[
+            dict(resource='data', property='source', value='aur')])
+        with self.assertRaises(DeclarationError) as error:
+            declaration([package], [component])
+        self.assertEqual(error.exception.code, 'conflicting_requirements')
+
     def test_references_cycles_and_unsupported_properties_fail_closed(self):
         cases = [
             [resource(requires=['missing'])],
@@ -188,7 +235,9 @@ desired = {present = true, source = "repository", version = {policy = "any"}}
     def test_invalid_utf8_and_toml_scalars_never_escape_the_public_error(self):
         for source in [b'\xff', b'schema=1\nresources=[]\ncomponents=[]\nvalue=nan',
                        b'schema=1\nresources=[]\ncomponents=[]\nvalue=2026-11-01',
-                       b'schema=1\nresources=[]\ncomponents=[]\nvalue="SENTINEL']:
+                       b'schema=1\nresources=[]\ncomponents=[]\nvalue="SENTINEL',
+                       b'schema=' + b'9' * 5000,
+                       b'value=' + b'[' * 2000 + b'1' + b']' * 2000]:
             with self.subTest(source=source), self.assertRaises(DeclarationError) as error:
                 load_declaration(source)
             self.assertNotIn('SENTINEL', str(error.exception))
