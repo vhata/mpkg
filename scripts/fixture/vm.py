@@ -237,7 +237,7 @@ def proof_install_payload(name):
         'docker-diagnostic-resume':('docker_diagnostic_resume.py','4966aaa9d517ba4e4a7e5104f6a31e202bfecaa0f1a3636e5b2bb22f9b3e9a2e'),
         'docker-supplement-resume':('docker_supplement_resume.py','f1c93ca71799b73a66142238978ea257a75a036f0ceb6d2cd547efd5c8fbec1b'),
         'docker-variant-plan':('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
-        'docker-variants':('docker_variants.py','fb67486f1bbcce48855cf05ebf70768726161d5965c5d7e224b20fc9a390c6dc'),
+        'docker-variants':('docker_variants.py','3e1f6aae53a17fc86fcb4ca8a1a2a351a5a3eb6c0c4fc4b13b4a25699ef95af8'),
         'docker-variant-experiment':('docker_variant_experiment.py','041cf5407adec454905b1929909b4dd020ad6c862eceb53d29ef9c464bdda3f5'),
         'docker-variant-retire':('docker_variant_retire.py','ff914917ca99021cfc6e89e0aff48a3c7be6b27c3d7ba0c204e2c3d16d00a462'),
         'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b'),
@@ -305,14 +305,14 @@ def install():
             ('docker_baseline.py','f6af324e2d0844a6159f0e6dcf1e72c766679953dc4e4ec5c093ff42271bbeca'),
             ('docker_variant_experiment.py','041cf5407adec454905b1929909b4dd020ad6c862eceb53d29ef9c464bdda3f5'),
             ('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
-            ('docker_variants.py','fb67486f1bbcce48855cf05ebf70768726161d5965c5d7e224b20fc9a390c6dc'),
+            ('docker_variants.py','3e1f6aae53a17fc86fcb4ca8a1a2a351a5a3eb6c0c4fc4b13b4a25699ef95af8'),
             ('run.py','adcd36404cb43e8bcdc0189eab6c98997ef8ea281461e54ba5aa3524dba8674e'),
         ],
         'docker_variant_experiment.py':[
             ('core.py','0b13e3dc39d3a985ff7b8b3fd9885f3b09c75444854b41f775dd953b42d0167a'),
             ('docker_baseline.py','f6af324e2d0844a6159f0e6dcf1e72c766679953dc4e4ec5c093ff42271bbeca'),
             ('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
-            ('docker_variants.py','fb67486f1bbcce48855cf05ebf70768726161d5965c5d7e224b20fc9a390c6dc'),
+            ('docker_variants.py','3e1f6aae53a17fc86fcb4ca8a1a2a351a5a3eb6c0c4fc4b13b4a25699ef95af8'),
             ('run.py','adcd36404cb43e8bcdc0189eab6c98997ef8ea281461e54ba5aa3524dba8674e'),
         ],
         'docker_variant_plan.py':[
@@ -440,6 +440,20 @@ def image_attestation_payload():
     return template.encode()
 
 
+def docker_variants_replacement_payload():
+    source=runner.PROJECT/'scripts/proofs/docker_variants.py'
+    data=runner.regular_file(source).read_bytes()
+    if hashlib.sha256(data).hexdigest()!='3e1f6aae53a17fc86fcb4ca8a1a2a351a5a3eb6c0c4fc4b13b4a25699ef95af8':
+        raise ValueError('variant replacement differs from reviewed bytes')
+    template=runner.regular_file(runner.PROJECT/'scripts/fixture/guest_docker_variants_replace.py').read_text()
+    if hashlib.sha256(template.encode()).hexdigest()!='543aecbf07231243c1a710f06414cbbf343f6b7eaa5c4b1b42752f356af1de23':
+        raise ValueError('variant replacement template differs from reviewed bytes')
+    marker='REPLACEMENT_BASE64 = None'
+    if template.count(marker)!=1:
+        raise ValueError('variant replacement template changed')
+    return template.replace(marker,'REPLACEMENT_BASE64 = '+repr(base64.b64encode(data).decode())).encode()
+
+
 def image_attestation_offline_payload():
     # Verify the frozen report and both previous sources using their existing
     # producer gate, without executing the resulting payload.
@@ -477,6 +491,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
         if replacement=='native-service':payload=native_service_replacement_payload()
         elif replacement=='docker-baseline':payload=docker_baseline_replacement_payload()
         elif replacement=='native-verifier':payload=native_verifier_replacement_payload()
+        elif replacement=='docker-variants':payload=docker_variants_replacement_payload()
         else:raise ValueError('replacement is not allowlisted')
         suffix='.py'
     elif addition is not None:
@@ -532,7 +547,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','install-docker-diagnostic-resume','install-docker-supplement-resume','install-docker-variant-plan','install-docker-variants','install-docker-variant-experiment','install-docker-variant-retire','prepare-image-attestations','prepare-image-attestations-offline','replace-native-service','replace-docker-baseline','replace-native-verifier'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','install-docker-diagnostic-resume','install-docker-supplement-resume','install-docker-variant-plan','install-docker-variants','install-docker-variant-experiment','install-docker-variant-retire','prepare-image-attestations','prepare-image-attestations-offline','replace-native-service','replace-docker-baseline','replace-docker-variants','replace-native-verifier'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -567,6 +582,7 @@ def main():
     elif args.operation=='prepare-image-attestations-offline':console(seconds=args.seconds,offline_attestations=True)
     elif args.operation=='replace-native-service':console(seconds=args.seconds,replacement='native-service')
     elif args.operation=='replace-docker-baseline':console(seconds=args.seconds,replacement='docker-baseline')
+    elif args.operation=='replace-docker-variants':console(seconds=args.seconds,replacement='docker-variants')
     elif args.operation=='replace-native-verifier':console(seconds=args.seconds,replacement='native-verifier')
     else:print(json.dumps(qmp_query('query-status' if args.operation=='status' else 'system_powerdown')))
 

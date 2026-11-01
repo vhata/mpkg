@@ -350,3 +350,13 @@ their reviewed bytes. Delivery refuses an existing destination and never
 executes the helper. The earlier resume and diagnostic modules remain
 unchanged; the new cold-resume operation retains all incomplete histories
 and still requires an independently observed stopped image-only state.
+
+`replace-docker-variants` corrects only the exact earlier variant helper
+on a pristine image-ready restore. It requires the unused resume and
+variant state, absent application account/data, inactive disabled Docker,
+and the accepted image/archive/history bindings. All imported verifier
+modules are hash-bound before use. The old helper and prepared receipt
+are durable before atomic publication; their directory entries are also
+synced. The operation preserves all existing image and failed-attempt
+evidence and never starts Docker or executes variant setup. Save a new
+stopped checkpoint after successful delivery before running any case.

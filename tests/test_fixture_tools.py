@@ -531,7 +531,7 @@ class FixtureProofAdditionTests(unittest.TestCase):
                   'native-service-recover':('native_service_recover.py','f8e55069f53055d89c1603db90b5259e87b47129747d0bccf831053544828b3e'),
                   'account-defaults':('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
                   'docker-variant-plan':('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
-                  'docker-variants':('docker_variants.py','fb67486f1bbcce48855cf05ebf70768726161d5965c5d7e224b20fc9a390c6dc'),
+                  'docker-variants':('docker_variants.py','3e1f6aae53a17fc86fcb4ca8a1a2a351a5a3eb6c0c4fc4b13b4a25699ef95af8'),
                   'docker-variant-experiment':('docker_variant_experiment.py','041cf5407adec454905b1929909b4dd020ad6c862eceb53d29ef9c464bdda3f5'),
                   'docker-variant-retire':('docker_variant_retire.py','ff914917ca99021cfc6e89e0aff48a3c7be6b27c3d7ba0c204e2c3d16d00a462'),
                   'docker-diagnostic-resume':('docker_diagnostic_resume.py','4966aaa9d517ba4e4a7e5104f6a31e202bfecaa0f1a3636e5b2bb22f9b3e9a2e'),
@@ -1332,6 +1332,92 @@ class FixtureOfflineMetadataTests(unittest.TestCase):
         with mock.patch.object(vm,'qmp_query') as qmp:
             with self.assertRaises(ValueError):vm.console(attestations=True,offline_attestations=True)
             qmp.assert_not_called()
+
+
+class FixturePristineVariantReplacementTests(unittest.TestCase):
+    def test_closed_transport_binds_exact_old_new_and_validator_imports(self):
+        vm=FixtureProofAdditionTests().load()
+        program=ast.parse(vm.docker_variants_replacement_payload())
+        values={n.targets[0].id:n.value for n in program.body
+                if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name)}
+        self.assertEqual(values['OLD_SHA256'].value,'fb67486f1bbcce48855cf05ebf70768726161d5965c5d7e224b20fc9a390c6dc')
+        raw=base64.b64decode(values['REPLACEMENT_BASE64'].value,validate=True)
+        self.assertEqual(hashlib.sha256(raw).hexdigest(),values['NEW_SHA256'].value)
+        dependencies=next(n.value for n in ast.walk(program) if isinstance(n,ast.Assign)
+                          and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='dependencies')
+        bound={key.value:(value.value if isinstance(value,ast.Constant) else values[value.id].value)
+               for key,value in zip(dependencies.keys,dependencies.values)}
+        root=Path(__file__).resolve().parents[1]/'scripts/proofs'
+        for filename,digest in bound.items():
+            self.assertEqual(hashlib.sha256((root/filename).read_bytes()).hexdigest(),digest)
+            imported={n.module+'.py' for n in ast.walk(ast.parse((root/filename).read_text()))
+                      if isinstance(n,ast.ImportFrom) and n.module and (root/(n.module+'.py')).is_file()}
+            self.assertTrue(imported <= bound.keys(),filename)
+        with tempfile.TemporaryDirectory() as tmp:
+            project=Path(tmp);(project/'scripts/proofs').mkdir(parents=True)
+            (project/'scripts/proofs/docker_variants.py').write_bytes(b'unreviewed')
+            with mock.patch.object(RUNNER,'PROJECT',project),mock.patch.object(vm,'qmp_query') as qmp:
+                with self.assertRaises(ValueError):vm.console(replacement='docker-variants')
+                qmp.assert_not_called()
+
+    def test_receipt_reservation_syncs_new_ancestor_entries_before_return(self):
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/guest_docker_variants_replace.py'
+        function=next(n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef)
+                      and n.name=='reserve_receipt')
+        events=[]
+        scope={'protected_directory':lambda *args:None,'sync_directory':lambda p:events.append(p)}
+        exec(compile(ast.Module(body=[function],type_ignores=[]),'reserve-variant-receipt','exec'),scope)
+        with tempfile.TemporaryDirectory() as tmp:
+            state=Path(tmp)
+            receipt=scope['reserve_receipt'](state)
+            # Publication can be attempted only after this reservation returns.
+            events.append('publish')
+            self.assertEqual(events,[state,state/'proof-replacements','publish'])
+            self.assertTrue(receipt.is_dir())
+            with self.assertRaises(FileExistsError):scope['reserve_receipt'](state)
+
+    def test_fresh_image_evidence_and_inactive_engine_are_required(self):
+        import grp
+        import pwd
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/guest_docker_variants_replace.py'
+        function=next(n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef)
+                      and n.name=='require_fresh_state')
+        with tempfile.TemporaryDirectory() as tmp:
+            scope={'Path':lambda value:Path(tmp)/value.lstrip('/'),
+                   'pwd':SimpleNamespace(getpwnam=mock.Mock(side_effect=KeyError),getpwuid=mock.Mock(side_effect=KeyError)),
+                   'grp':SimpleNamespace(getgrnam=mock.Mock(side_effect=KeyError),getgrgid=mock.Mock(side_effect=KeyError))}
+            exec(compile(ast.Module(body=[function],type_ignores=[]),'pristine-variant','exec'),scope)
+            evidence={Path('/record'):b'old'};large={'archive':'hash'};provenance={'docker':'unit'}
+            def resume():
+                return SimpleNamespace(preparation_evidence=mock.Mock(return_value=(None,provenance,{},evidence,large)),
+                    package_units=mock.Mock(return_value=provenance),units=mock.Mock(),quiescent=mock.Mock(),
+                    evidence_unchanged=mock.Mock())
+            current=resume()
+            self.assertEqual(scope['require_fresh_state']('guest',current),(evidence,large))
+            current.units.assert_called_once_with(provenance,active=False)
+            current.quiescent.assert_called_once_with()
+            current.evidence_unchanged.assert_called_once_with(evidence,large)
+            for failure in ('preparation_evidence','units','quiescent','evidence_unchanged'):
+                current=resume();getattr(current,failure).side_effect=ValueError('changed')
+                with self.subTest(failure=failure),self.assertRaises(ValueError):
+                    scope['require_fresh_state']('guest',current)
+            scope['pwd'].getpwnam.side_effect=None
+            with self.assertRaises(RuntimeError):scope['require_fresh_state']('guest',resume())
+
+    def test_variant_replacement_preserves_old_file_on_identity_drift(self):
+        import stat
+        import uuid
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/guest_docker_variants_replace.py'
+        function=next(n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef)
+                      and n.name=='publish_replacement')
+        raw=b'new reviewed variant'
+        scope={'os':os,'hashlib':hashlib,'uuid':uuid,'NEW_SHA256':hashlib.sha256(raw).hexdigest(),
+               'OLD_SHA256':'old','read_bound_file':mock.Mock(side_effect=[(b'old','accepted'),(b'old','changed')])}
+        exec(compile(ast.Module(body=[function],type_ignores=[]),'replace-variant','exec'),scope)
+        with tempfile.TemporaryDirectory() as tmp:
+            target=Path(tmp)/'docker_variants.py';target.write_bytes(b'old')
+            with self.assertRaises(RuntimeError):scope['publish_replacement'](target,raw,'accepted')
+            self.assertEqual(target.read_bytes(),b'old')
 
 
 if __name__ == '__main__':unittest.main()
