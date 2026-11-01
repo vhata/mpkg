@@ -40,6 +40,7 @@ import service_environment
 import docker_resume
 import account_defaults
 import native_service_recover
+import native_service_observe
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -91,7 +92,7 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(list(Path(temporary).iterdir()), [])
 
     def test_guest_image_entrypoints_refuse_host_before_docker(self):
-        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py', 'native_conflict.py', 'docker_resume.py', 'native_service_recover.py'):
+        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py', 'native_conflict.py', 'docker_resume.py', 'native_service_recover.py', 'native_service_observe.py'):
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as temporary:
                 result = subprocess.run([
                     sys.executable, '-I', str(PROOFS / filename),
@@ -392,6 +393,45 @@ class DockerReadinessTests(unittest.TestCase):
 
 
 class NativeRecoveryTests(unittest.TestCase):
+    def test_observation_records_only_its_own_completion_and_keeps_prior_bytes(self):
+        for fail in (False, True):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as temporary:
+                root = core.private_directory(Path(temporary) / 'native-service')
+                recovery = core.private_directory(Path(temporary) / 'native-service-recovery')
+                seed = Path(temporary) / 'private-seed'
+                core.write_new(seed, b'fixture-only')
+                for directory, count in ((root, 8), (recovery, 0)):
+                    journal = core.Journal(directory)
+                    journal.begin(str(uuid.uuid4()))
+                    for _ in range(count):
+                        journal.capture(seed)
+                    journal.close()
+                before = [(directory / 'state.sqlite3').read_bytes() for directory in (root, recovery)]
+                with mock.patch.object(native_service_observe, 'bindings', return_value=(root, recovery, *before)), \
+                        mock.patch.object(native_service_observe.native, 'trusted_path', side_effect=lambda path, **kwargs: path.lstat()), \
+                        mock.patch.object(native_service_observe.native, 'check',
+                            side_effect=native_service_observe.Refused('injected') if fail else None,
+                            return_value={'status': 'observed'}) as check:
+                    if fail:
+                        with self.assertRaisesRegex(native_service_observe.Refused, 'injected'):
+                            native_service_observe.observe('guest')
+                    else:
+                        result = native_service_observe.observe('guest')
+                        self.assertTrue(result['original_attempt_remains_unknown'])
+                        self.assertTrue(result['recovery_attempt_remains_unknown'])
+                    with self.assertRaisesRegex(native_service_observe.Refused, 'fresh_attempt_required'):
+                        native_service_observe.observe('guest')
+                    self.assertEqual(check.call_count, 1)
+                    with self.assertRaisesRegex(native_service_observe.Refused, 'history_not_expected_unknown'):
+                        native_service_observe.unknown_history(root, 7)
+                self.assertEqual([(directory / 'state.sqlite3').read_bytes() for directory in (root, recovery)], before)
+                observed = root.parent / 'native-service-observation'
+                self.assertEqual((observed / 'original-state.sqlite3').read_bytes(), before[0])
+                self.assertEqual((observed / 'recovery-state.sqlite3').read_bytes(), before[1])
+                journal = core.Journal(observed)
+                self.assertEqual(journal.export()[0]['state'], 'unknown' if fail else 'observed-complete')
+                journal.close()
+
     def test_partial_group_guard_rejects_a_user_or_changed_group(self):
         groups = [SimpleNamespace(gr_name='fixture-native', gr_gid=1500, gr_mem=[]),
                   SimpleNamespace(gr_name='media', gr_gid=1001, gr_mem=[])]

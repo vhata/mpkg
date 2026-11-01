@@ -234,6 +234,7 @@ before any system mutation.
 - `guest-docker-resume.sh`: resume only the bound image-ready checkpoint.
 - `guest-native-service.sh`: native SSH baseline setup/check.
 - `guest-native-service-recover.sh`: exact observed one-group setup continuation.
+- `guest-native-service-observe.sh`: verify the running recovered fixture.
 - `guest-image-import.sh`: archive import, then observed image manifest.
 - `guest-native-proof.sh`: actual native manifest, then prepare-only proof.
 - `guest-native-conflict.sh`: real frozen audio-package conflict preparation.
@@ -354,6 +355,17 @@ attempt remains unknown, including after successful authenticated checks.
 Any failure in this continuation remains unresolved and blocks another
 invocation. It does not rerun generic setup, erase history, reinstall
 packages or alter the independently completed build state.
+
+`native_service_observe.py` addresses a later verification-only failure:
+OpenSSH 10.6 emits canonical keyword casing. The corrected parser folds
+keyword names only, retaining exact case-sensitive values and rejecting
+duplicates across different keyword spellings. The one-shot observer
+requires that corrected source and the two expected unknown histories.
+It preserves private before-copies, performs the existing bounded
+configuration/service/protected-key/SFTP checks, then requires both
+earlier journal files to remain byte-for-byte unchanged. Only its new
+observation attempt can complete. It neither reruns setup/recovery nor
+changes service state; failed observation remains unresolved.
 
 `check` validates `sshd -t`, effective configuration, exact memberships,
 service state/enablement, protected inputs and metadata, then performs
