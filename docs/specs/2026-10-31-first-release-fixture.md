@@ -160,10 +160,14 @@ metadata, dropping the request or treating conflicting versions as
 equivalent. Preserve that selection rationale in the source inventory.
 
 Read-only canonical Git history established the ancestry and consistent
-metadata. The selected recipe files are hashed. All AUR source archive
-verification, isolated preparation, test results and built artifact
-hashes remain to be obtained. No source declaration alone grants
-privileged execution authority or selects an unbound AUR helper.
+version declarations. The selected recipe files are hashed. Later
+[guest execution](../fixtures/2026-11-01-disposable-execution-evidence.md)
+found a homepage URL discrepancy between this parent's `.SRCINFO` and
+PKGBUILD-generated metadata. The reviewed reconciliation binds both exact
+metadata hashes and accepts only that URL difference, recording that the
+metadata did not match. Source verification, builds and their checks
+remain separate evidence. No source declaration alone grants privileged
+execution authority or selects an unbound AUR helper.
 
 ## Guest assembly and restore points
 

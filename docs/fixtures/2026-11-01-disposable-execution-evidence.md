@@ -119,20 +119,71 @@ variables SHA-256
 This label records the repository bootstrap only; it is not the complete
 `native-change` fixture or an applied product restore point.
 
-The supervised Python 3.12.16 job was launched successfully after the
-installed boot and source checks. A subsequent observation found it
-active/running in configure, with the OpenSSL compilation/link check
-successful. Build completion, module verification and publication remain
-pending at this checkpoint. The observed package inventory remains 207.
+The supervised Python 3.12.16 build completed with numeric exit zero,
+the matching guest completion UUID, and manager result `success` with
+`active/exited` state. Both manager PIDs were zero, its cgroup was absent,
+and the dedicated builder UID/GID 967 had no surviving process. The
+staged tree contained 8,380 entries and 8,027 regular files totaling
+329,356,391 bytes. Publication retained root ownership and checked SSL,
+SQLite, bz2, lzma, zlib, ctypes, readline and GDBM. The recorded compiler
+was GCC 16.2.1; runtime libraries reported OpenSSL 3.6.5 and SQLite 3.54.0.
+The installed-tree SHA-256 is
+`d234281388c58ec427b11c66358a4c7fbdd8798f63777b20b2c59baa8b594683`;
+the private result JSON SHA-256 is
+`e660c3e8556869896ceb67dafbd601e7eaa6b21457c72c6f49b733c27596a3b1`.
+The repository package inventory remains 207.
 
-No source build, guest image import or mechanism result is recorded as
-passed yet. Applied product restore points remain unavailable until
-actual product operations create them.
+After clean shutdown, `python-ready` was saved as offline snapshot ID `2`,
+with no memory state and firmware variables SHA-256
+`07a4bc9434242842fe724a86bcf69b0212006a3385b10e384fab7dec8084dd72`.
+
+The first five mechanism experiments returned observed results and the
+combined entrypoint returned exit zero:
+
+| Experiment | Actual observation and limit |
+| --- | --- |
+| Journal | Five start/effect/completion cases preserved not-started, unknown and observed-complete distinctions; process exits and SQLite query-only faults do not test power loss |
+| Protected inputs | Exact replay succeeded, drift blocked, exports omitted the secret sentinel, failed capture published no reference, and restored history neither authorized recovery nor rolled back external effects |
+| XML | Stale and intervening edits blocked while unrelated bytes survived; this used synthetic XML and still requires exclusive writer maintenance |
+| Retirement | Changed consumers, new descendants and a same-filesystem bind mount blocked deletion; a fresh disposition removed two entries, the shared sentinel survived, and the injected partial outcome remained unverified |
+| Supervision | Killing the controller left manager-owned work running; overlap was blocked for both supervised work and a surviving child; the orphan case remained unknown after its child effect |
+
+These results do not establish real Sonarr editing, Docker daemon recovery,
+or product retirement.
+
+The separate frozen conflict proof reproduced the 167-package metadata
+resolution, then libalpm 16.0.1 actually rejected preparation with result
+`-1`, error `46` (conflicting dependencies), identifying the exact pair
+`pulseaudio=17.0+r134+g77d25a1e6-1` and
+`pipewire-pulse=1:1.6.10-1`. Its private local database was empty;
+there were no fetch calls, removals or accepted questions. The proof
+returned observed with console exit zero. It used the hash-bound
+October 30 databases without acquiring conflict archives or importing
+the installed package state, and never requested transaction commit.
+
+The first offline AUR chain built `perl-file-next` 1.18-7 and passed its
+recipe checks, producing a 14,697-byte archive with SHA-256
+`16aed58ad66d473949975603458f880e625709612537466a36e041dc0d5b40d0`.
+It installed that package, then refused to build `ack` because generated
+metadata differed from the pinned `.SRCINFO`. The exact difference was
+only `url`: the pinned metadata used `http://betterthangrep.com/`, while
+the pinned PKGBUILD generated `http://beyondgrep.com/`. Every other
+normalized field matched. The job exited one with no completion marker;
+both manager PIDs were zero and no cgroup or builder process survived.
+All 207 repository versions remained unchanged, with only the new
+dependency installed as explicit because the later reason adjustment
+had not run. This partial state was preserved in the stopped
+`failed-ack-metadata` checkpoint before investigating a bounded fix.
+
+The full AUR chain and guest image import remain unverified. Applied
+product restore points remain unavailable until actual product operations
+create them.
 
 ## Verification and limits
 
-The combined host-safe suite passed 43 tests after the first proof
-integration. Subsequent edits require the final repository checks and
+At checkpoint `68c2e92`, repository setup selected Python 3.12 and the
+combined checks passed 79 tests, syntax for 71 files, eight queue entries
+and relative links. Subsequent edits require final repository checks and
 independent integration review. Host tests exercise isolated primitives
 and refusal paths; they do not establish real guest behavior.
 
