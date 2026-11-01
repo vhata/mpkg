@@ -353,6 +353,100 @@ class FixtureImageDiagnosticTests(unittest.TestCase):
             {'fixture_name':'fixture','kind':'config-digest','reference':'sha256:'+'c'*64}])
 
 
+class FixtureImageIndexPreparationTests(unittest.TestCase):
+    def load(self):
+        import json
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/guest_image_index_prepare.py'
+        program=ast.parse(path.read_text())
+        names={'members','metadata','descriptor','plan','HashReader','repack'}
+        nodes=[n for n in program.body if isinstance(n,(ast.Import,))
+               or isinstance(n,ast.ImportFrom) and n.module=='pathlib'
+               or isinstance(n,(ast.FunctionDef,ast.ClassDef)) and n.name in names
+               or isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name)
+               and n.targets[0].id in ('INDEX','MANIFEST','CONFIG')]
+        namespace={'Refused':ValueError,'IMAGES':(),
+                   'LAYERS':{'application/vnd.oci.image.layer.v1.tar+gzip'},
+                   'canonical':lambda x:json.dumps(x,sort_keys=True,separators=(',',':')).encode()}
+        exec(compile(ast.Module(body=nodes,type_ignores=[]),'fixture-index-preparation','exec'),namespace)
+        return namespace
+
+    def fixture(self):
+        module=self.load();encode=module['canonical'];digest=lambda raw:hashlib.sha256(raw).hexdigest()
+        layer=b'opaque unextracted layer bytes'
+        config=encode({'os':'linux','architecture':'amd64','config':{'Labels':{'org.opencontainers.image.version':'fixed'}}})
+        records=[{'mediaType':module['CONFIG'],'digest':'sha256:'+digest(config),'size':len(config)},
+                 {'mediaType':'application/vnd.oci.image.layer.v1.tar+gzip','digest':'sha256:'+digest(layer),'size':len(layer)}]
+        child=encode({'schemaVersion':2,'mediaType':module['MANIFEST'],'config':records[0],'layers':records[1:]})
+        selected={'mediaType':module['MANIFEST'],'digest':'sha256:'+digest(child),'size':len(child),
+                  'platform':{'os':'linux','architecture':'amd64'}}
+        index=encode({'schemaVersion':2,'mediaType':module['INDEX'],'manifests':[selected,
+                     dict(selected,digest='sha256:'+'e'*64,platform={'os':'linux','architecture':'arm64'})]})
+        annotations={'org.opencontainers.image.ref.name':'lscr.io/linuxserver/test:mpkg-fixture-fixture',
+                     'io.mpkg.source.index.digest':'sha256:'+digest(index)}
+        old=encode({'schemaVersion':2,'mediaType':module['INDEX'],'manifests':[dict(selected,annotations=annotations)]})
+        files={'oci-layout':encode({'imageLayoutVersion':'1.0.0'}),'index.json':old}
+        files.update({'blobs/sha256/'+digest(raw):raw for raw in (layer,config,child,index)})
+        images=(('fixture','linuxserver/test',digest(index),digest(child),digest(config),'fixed'),)
+        acquired={'images':[{'fixture_name':'fixture','blobs':[
+            {'digest':r['digest'],'size':r['size'],'media_type':r['mediaType']} for r in records]}]}
+        return module,files,images,acquired
+
+    def archive(self,files):
+        raw=io.BytesIO()
+        with tarfile.open(fileobj=raw,mode='w') as tar:
+            for name,data in files.items():
+                entry=tarfile.TarInfo(name);entry.size=len(data);tar.addfile(entry,io.BytesIO(data))
+        raw.seek(0)
+        return raw
+
+    def test_repack_changes_only_root_descriptors_and_preserves_all_original_blobs(self):
+        import json
+        module,files,images,acquired=self.fixture();prepared=io.BytesIO()
+        with tarfile.open(fileobj=self.archive(files),mode='r:') as tar:
+            entries=module['members'](tar);new,record=module['plan'](tar,entries,acquired,images)
+            module['repack'](tar,entries,new,prepared)
+        prepared.seek(0)
+        with tarfile.open(fileobj=prepared,mode='r:') as tar:
+            result={entry.name:tar.extractfile(entry).read() for entry in tar}
+        self.assertEqual(set(result),set(files))
+        self.assertEqual({n:b for n,b in result.items() if n!='index.json'},
+                         {n:b for n,b in files.items() if n!='index.json'})
+        top=json.loads(result['index.json'])['manifests'][0]
+        self.assertEqual(top['digest'],'sha256:'+images[0][2])
+        self.assertEqual(top['mediaType'],module['INDEX']);self.assertNotIn('platform',top)
+        self.assertEqual(record['blob_count'],4)
+
+    def test_repack_refuses_corrupt_layer_before_load_can_use_output(self):
+        module,files,images,acquired=self.fixture()
+        layer=next(n for n,b in files.items() if b==b'opaque unextracted layer bytes')
+        files[layer]=b'x'*len(files[layer])
+        with tarfile.open(fileobj=self.archive(files),mode='r:') as tar:
+            entries=module['members'](tar);new,_=module['plan'](tar,entries,acquired,images)
+            with self.assertRaises(ValueError):module['repack'](tar,entries,new,io.BytesIO())
+
+    def test_repack_refuses_unlisted_blobs_or_changed_source_root(self):
+        module,files,images,acquired=self.fixture()
+        altered=dict(files);altered['blobs/sha256/'+'f'*64]=b'extra'
+        with tarfile.open(fileobj=self.archive(altered),mode='r:') as tar:
+            with self.assertRaises(ValueError):module['plan'](tar,module['members'](tar),acquired,images)
+        altered=dict(files);altered['index.json']=files['index.json'].replace(b'linuxserver/test',b'other/repository')
+        with tarfile.open(fileobj=self.archive(altered),mode='r:') as tar:
+            with self.assertRaises(ValueError):module['plan'](tar,module['members'](tar),acquired,images)
+
+    def test_archive_members_refuse_traversal_duplicates_and_links(self):
+        module=self.load()
+        for name,kind in (('../escape',tarfile.REGTYPE),('oci-layout',tarfile.SYMTYPE),
+                          ('oci-layout',tarfile.REGTYPE)):
+            raw=io.BytesIO()
+            with tarfile.open(fileobj=raw,mode='w') as tar:
+                entry=tarfile.TarInfo(name);entry.type=kind;entry.linkname='outside' if kind==tarfile.SYMTYPE else ''
+                tar.addfile(entry,io.BytesIO())
+                if kind==tarfile.REGTYPE and name=='oci-layout':tar.addfile(entry,io.BytesIO())
+            raw.seek(0)
+            with tarfile.open(fileobj=raw,mode='r:') as tar:
+                with self.assertRaises(ValueError):module['members'](tar)
+
+
 class FixtureProofAdditionTests(unittest.TestCase):
     def load(self):
         sys.modules['runner']=RUNNER

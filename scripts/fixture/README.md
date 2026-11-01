@@ -180,6 +180,26 @@ The Docker resume addition only installs its helper. Its separate runtime
 entrypoint requires the successful initial engine/import evidence and
 exact image-only checkpoint bindings before starting that existing engine.
 
+`guest_image_index_prepare.py` covers the observed archive whose root
+entries point directly to the acquired amd64 child manifests. It requires
+the completed but unverified original import and the exact image-only
+engine. It verifies the original archive and every copied blob, then
+creates a separate archive whose root descriptors point to the unchanged
+original OCI indexes, with the same fixture annotations. No layer is
+extracted, no blob is acquired, and no explicit tag command is used.
+One `docker image load --platform linux/amd64` attempts the new archive;
+actual original-index associations determine the result. Prior import
+history remains intact, and known child image identities left by loading
+are reported without cleanup. This preparation does not waive later
+checkpoint, application or acceptance checks.
+
+The [Docker load documentation](https://docs.docker.com/reference/cli/docker/image/load/)
+describes explicit platform selection. The
+[containerd 2.4.2 importer](https://github.com/containerd/containerd/blob/v2.4.2/client/import.go)
+binds image records to the root index's descriptors and filters the content
+walk by platform. These support testing this nested-index representation;
+they do not establish the guest's resulting digest associations.
+
 Relevant tool behavior is documented by the authoritative
 [bubblewrap manual](https://man.archlinux.org/man/bwrap.1.en),
 [QEMU invocation reference](https://www.qemu.org/docs/master/system/invocation.html)
