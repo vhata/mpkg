@@ -47,8 +47,10 @@ Identity fields are validated against the declaration kind's schema
 before constructing physical keys. Accepted engine identities are
 rebound through the supplied trusted aliases and must agree with their
 stored keys; missing historical alias bindings cannot grant authority.
-Native package and service facts must identify their corresponding
-observer source. Missing properties, unsupported sources, stale evidence
+Package, service and Compose facts must identify their corresponding
+implemented observer source. Other kinds cannot claim known observations
+through an arbitrary or mismatched source name. Missing properties,
+unsupported sources, stale evidence
 and future timestamps remain unknown. `now` accepts an aware datetime
 for deterministic callers and tests; its default is current UTC time.
 `max_age_seconds` is an integer from 1 through 3600, inclusive. Facts at

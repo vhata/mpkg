@@ -102,18 +102,24 @@ class PlanningTests(unittest.TestCase):
         declaration = load_declaration(b'''schema=1
 components=[]
 [[resources]]
-id="directory"
-kind="directory"
-identity={path="/fixture"}
-manage=["present", "owner", "mode"]
-desired={present=true, owner="root", mode=0o750}
+id="service"
+kind="service"
+identity={manager="system", unit="example.service"}
+manage=["running", "enabled"]
+desired={running=true, enabled=false}
+[[resources]]
+id="package"
+kind="package"
+identity={name="example"}
+desired={source="repository"}
 ''')
         item = resource(declaration)
         result = self.report(declaration, current(declaration), batch(declaration, [
-            fact(item, "present", True), fact(item, "owner", "someone"),
-            fact(item, "mode", None, state="unknown")]))
+            fact(item, "running", True), fact(item, "enabled", True),
+            fact(resource(declaration, 1), "source", None, state="unknown")]))
         self.assertEqual({key: value["comparison"] for key, value in properties(result).items()},
-                         {"present": "agreement", "owner": "difference", "mode": "unknown"})
+                         {"running": "agreement", "enabled": "difference"})
+        self.assertEqual(properties(result, 1)["source"]["comparison"], "unknown")
         self.assertFalse(result["executable"])
         self.assertIn("application_not_implemented", result["blockers"])
         self.assertIn("attempt_history_unavailable", result["blockers"])
@@ -300,7 +306,8 @@ files=[{path="config",classification="nonsecret"}]
 ''')
         matching = self.report(old, current(old), batch(old, [
             fact(resource(old), "content_input", "bundle")]))
-        self.assertEqual(properties(matching)["content_input"]["comparison"], "agreement")
+        self.assertEqual(properties(matching)["content_input"]["comparison"], "unknown")
+        self.assertNotIn("consumer_context_conflict", matching["blockers"])
         self.assertFalse(properties(matching)["content_input"]["authority"])
         for desired, bundle in [('content="inline"', ""), ("mode=0o600", ""),
                                ("mode=0o600", '''[[inputs]]
@@ -484,6 +491,48 @@ expected={running=true}''')
         self.assertEqual(result["resources"][0]["checks"][0]["result"], "unknown")
         self.assertEqual(properties(result)["running"]["limitations"],
                          ["observation_source_unsupported"])
+
+    def test_compose_reports_the_implemented_source_and_rejects_other_sources(self):
+        declaration = load_declaration(b'''schema=1
+components=[]
+[[resources]]
+id="app"
+kind="compose"
+identity={engine="local",project="example"}
+desired={running=true}
+''')
+        aliases = {"local": "accepted-engine"}
+        record = current(declaration, aliases=aliases)
+        for source in ("docker_selected_project_inventory", "systemd_unit_properties",
+                       "unsupported_adapter", "unknown-private-source"):
+            observation = fact(resource(declaration), "running", True)
+            observation["evidence_source"] = source
+            result = self.report(declaration, record, batch(declaration, [observation]),
+                                 engine_aliases=aliases)
+            found = properties(result)["running"]
+            if source == "docker_selected_project_inventory":
+                self.assertEqual(found["comparison"], "agreement")
+                self.assertEqual(found["evidence_source"], source)
+            else:
+                self.assertEqual(found["comparison"], "unknown")
+                self.assertEqual(found["limitations"], ["observation_source_unsupported"])
+
+    def test_unimplemented_resource_observers_cannot_supply_known_facts(self):
+        declaration = load_declaration(b'''schema=1
+components=[]
+[[resources]]
+id="data"
+kind="directory"
+identity={path="/fixture/data"}
+desired={present=true}
+''')
+        for source in ("systemd_unit_properties", "docker_selected_project_inventory",
+                       "pacman_installed_inventory", "unsupported_adapter", "future_observer"):
+            observation = fact(resource(declaration), "present", True)
+            observation["evidence_source"] = source
+            result = self.report(declaration, current(declaration), batch(declaration, [observation]))
+            self.assertEqual(properties(result)["present"]["comparison"], "unknown")
+            self.assertIn("observation_source_unsupported", result["blockers"])
 
     def test_invalid_context_and_selection_fail_with_fixed_codes(self):
         for context in ({"host_id": "bad"}, {"max_age_seconds": True}, {"max_age_seconds": 0},
