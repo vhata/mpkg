@@ -174,16 +174,132 @@ def refresh(name):
     mark_dependencies(deps)
 
 
-def literal_dependencies(text):
-    blocks = list(re.finditer(r"^depends=\((.*?)\)", text, re.M | re.S))
-    if len(blocks) != 1:
+def literal_tokens(text):
+    """Locate words without evaluating shell code; reject unclear boundaries."""
+    tokens = []
+    position = 0
+    operators = "();&|<>"
+    while position < len(text):
+        char = text[position]
+        if char in " \t":
+            position += 1
+            continue
+        if char == "#":
+            end = text.find("\n", position)
+            position = len(text) if end < 0 else end
+            continue
+        start = position
+        if char == "\n" or char in operators:
+            if char in "<>":
+                raise ValueError("Cannot edit PKGBUILD with shell redirections or here-documents.")
+            position += 1
+        else:
+            while position < len(text):
+                char = text[position]
+                if char in " \t\n" + operators:
+                    break
+                if char in "\"'":
+                    quote = char
+                    position += 1
+                    while position < len(text) and text[position] != quote:
+                        if quote == '"' and text[position] in "$`\\":
+                            raise ValueError("Cannot edit PKGBUILD with shell expansions or escapes.")
+                        position += 1
+                    if position == len(text):
+                        raise ValueError("Cannot edit PKGBUILD with an unterminated quote.")
+                elif char in "$`\\":
+                    raise ValueError("Cannot edit PKGBUILD with shell expansions or escapes.")
+                position += 1
+        tokens.append((text[start:position], start, position))
+    return tokens
+
+
+def literal_assignments(text):
+    """Read simple top-level assignments, keeping their original source spans.
+
+    This is deliberately a restricted editor, not a Bash interpreter. Reject
+    compound top-level commands and ambiguous function bodies rather than
+    guessing which assignments execute. Quoted words and comments are opaque.
+    """
+    tokens = literal_tokens(text)
+    fields = {}
+    position = 0
+    while position < len(tokens):
+        word, start, end = tokens[position]
+        if word == "\n":
+            position += 1
+            continue
+        assignment = re.fullmatch(r"([a-zA-Z_][a-zA-Z0-9_]*)=(.*)", word, re.S)
+        if assignment:
+            name, value = assignment.groups()
+            position += 1
+            if value == "" and position < len(tokens) and tokens[position][0] == "(":
+                value = []
+                position += 1
+                while position < len(tokens) and tokens[position][0] != ")":
+                    item = tokens[position][0]
+                    if item in ("(", ";", "&", "|"):
+                        raise ValueError("Expected a literal PKGBUILD array.")
+                    if item != "\n":
+                        value.append(item)
+                    position += 1
+                if position == len(tokens):
+                    raise ValueError("Expected a closing parenthesis for the literal array.")
+                end = tokens[position][2]
+                position += 1
+            fields.setdefault(name, []).append((slice(start, end), value))
+        elif (re.fullmatch(r"[a-zA-Z_][a-zA-Z0-9_]*", word)
+              and [token[0] for token in tokens[position + 1:position + 3]] == ["(", ")"]):
+            position += 3
+            while position < len(tokens) and tokens[position][0] == "\n":
+                position += 1
+            if position == len(tokens) or tokens[position][0] != "{":
+                raise ValueError("Expected a brace-delimited package function.")
+            # Ordinary metapackage functions contain simple commands. Without
+            # compound shell syntax, a standalone closing brace at a command
+            # boundary unambiguously ends the function; quoted braces do not.
+            position += 1
+            command_start = True
+            while position < len(tokens):
+                item = tokens[position][0]
+                if item == "}":
+                    if not command_start:
+                        raise ValueError("Cannot edit PKGBUILD with ambiguous function braces.")
+                    position += 1
+                    break
+                if item in {"{", "if", "then", "else", "elif", "fi", "case", "esac",
+                            "for", "select", "while", "until", "do", "done", "function"}:
+                    raise ValueError("Cannot edit PKGBUILD with compound function syntax.")
+                command_start = item in {"\n", ";", "&", "|"}
+                position += 1
+            else:
+                raise ValueError("Expected a closing brace for the package function.")
+        else:
+            raise ValueError("Cannot edit PKGBUILD: expected literal assignments or simple functions.")
+        if position < len(tokens) and tokens[position][0] != "\n":
+            raise ValueError("Cannot edit PKGBUILD: expected one assignment or function per line.")
+    return fields
+
+
+def literal_dependencies(text, fields=None):
+    if fields is None:
+        fields = literal_assignments(text)
+    blocks = fields.get("depends", [])
+    if len(blocks) != 1 or not isinstance(blocks[0][1], list):
         raise ValueError("Expected one literal depends array.")
-    block = blocks[0]
-    if any(char in block[1] for char in "$`\\"):
-        raise ValueError("Depends array must contain literal package names.")
-    deps = set(shlex.split(block[1], comments=True))
+    block, words = blocks[0]
+    deps = {shlex.split(word, comments=False)[0] for word in words}
     validate_dependencies(deps)
     return block, deps
+
+
+def validate_pkgbuild(text):
+    # Syntax checking must not source startup files or execute package code.
+    env = {key: value for key, value in os.environ.items() if key not in {"BASH_ENV", "ENV"}}
+    result = run("bash", "--noprofile", "--norc", "-n", input=text, env=env,
+                 capture=True, check=False, stderr=subprocess.PIPE)
+    if result.returncode:
+        raise ValueError("Invalid PKGBUILD syntax: " + result.stderr.strip())
 
 
 def validate_dependencies(deps):
@@ -212,20 +328,27 @@ def commit_message(name, old, new, description=None):
 def update(name, args):
     require_yay()
     path = build_path(name)
-    original = path.read_text() if path.exists() else None
+    original = None
+    if path.exists():
+        with path.open(newline="") as source:
+            original = source.read()
     release = 1
     old_deps = None
     if original is not None:
-        releases = re.findall(r"^pkgrel=([0-9]+)$", original, re.M)
-        if len(releases) != 1:
+        fields = literal_assignments(original)
+        releases = fields.get("pkgrel", [])
+        if (len(releases) != 1 or not isinstance(releases[0][1], str)
+                or not re.fullmatch(r"[0-9]+", releases[0][1])):
             raise ValueError("Cannot increment pkgrel: expected one integer assignment.")
-        release = int(releases[0]) + 1
-        _, old_deps = literal_dependencies(original)
+        release_block, previous_release = releases[0]
+        release = int(previous_release) + 1
+        block, old_deps = literal_dependencies(original, fields)
+        validate_pkgbuild(original)
     description = None
     if args[0].startswith(("+", "-")):
         if original is None:
             raise ValueError(f"Cannot edit: {name}/PKGBUILD does not exist.")
-        block, deps = literal_dependencies(original)
+        deps = old_deps.copy()
         for change in args:
             if len(change) < 2 or change[0] not in "+-":
                 raise ValueError("Each edit must be +PACKAGE or -PACKAGE.")
@@ -234,8 +357,10 @@ def update(name, args):
                 deps.add(change[1:])
             else:
                 deps.discard(change[1:])
-        updated = original[:block.start()] + dependency_array(deps) + original[block.end():]
-        updated = re.sub(r"^pkgrel=[0-9]+$", f"pkgrel={release}", updated, count=1, flags=re.M)
+        updated = original
+        replacements = [(block, dependency_array(deps)), (release_block, f"pkgrel={release}")]
+        for span, replacement in sorted(replacements, key=lambda item: item[0].start, reverse=True):
+            updated = updated[:span.start] + replacement + updated[span.stop:]
     else:
         if len(args) < 2:
             raise ValueError("Supply a description and at least one dependency.")
@@ -245,6 +370,7 @@ def update(name, args):
         updated = (f"pkgname={name}\npkgver=1\npkgrel={release}\n"
                    f"pkgdesc={shlex.quote(description)}\narch=('any')\n\n"
                    f"{dependency_array(deps)}\n\npackage() {{\n  :\n}}\n")
+    validate_pkgbuild(updated)
     path.parent.mkdir(exist_ok=True)
     path.write_text(updated)
     try:
