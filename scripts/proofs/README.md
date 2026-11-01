@@ -234,6 +234,24 @@ it performs no import, repack, pull, tag, cleanup or retry. This cold
 diagnostic activation does not satisfy image-ready resume's successful
 association requirement. A failed activation remains unresolved.
 
+`docker_supplement_resume.py` serves a separately observed image-only
+checkpoint after the selected amd64 attestation closure has been added
+and imported successfully. It preserves both failed import histories and
+the unknown preparation, validates the unchanged original indexes and
+every added auxiliary descriptor/blob, and requires the recorded original
+index associations, version labels and exact retained-child inventory.
+It binds all prior records, the new completed preparation and the original
+image-manifest output before using the same fixed disabled-unit startup
+checks. Its separate one-shot journal leaves uncertain startup unresolved;
+it never loads, pulls, retags, deletes or starts application containers.
+
+The successful preparation, journal and Compose-manifest acceptance hashes
+are intentionally unset until those bytes have actually been observed.
+There is no environment or command-line override. Source review alone does
+not authorize execution: the final observed hashes and fixed guest delivery
+need review before this helper can resume a stopped checkpoint. The earlier
+`docker_resume.py` eligibility rules remain unchanged.
+
 ### Console wrappers
 
 The reviewed console transport may execute these fixed Bash files with
@@ -246,6 +264,7 @@ before any system mutation.
 - `guest-docker-ready.sh`: fixed daemon readiness/start.
 - `guest-docker-resume.sh`: resume only the bound image-ready checkpoint.
 - `guest-docker-diagnostic-resume.sh`: activate the incomplete image state for diagnosis.
+- `guest-docker-supplement-resume.sh`: resume the observed supplemented image checkpoint.
 - `guest-native-service.sh`: native SSH baseline setup/check.
 - `guest-native-service-recover.sh`: exact observed one-group setup continuation.
 - `guest-native-service-observe.sh`: verify the running recovered fixture.

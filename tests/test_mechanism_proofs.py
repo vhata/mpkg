@@ -46,6 +46,7 @@ import docker_diagnostic_resume
 import docker_variants
 import docker_variant_experiment
 import docker_variant_retire
+import docker_supplement_resume
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -97,7 +98,7 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(list(Path(temporary).iterdir()), [])
 
     def test_guest_image_entrypoints_refuse_host_before_docker(self):
-        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py', 'native_conflict.py', 'docker_resume.py', 'native_service_recover.py', 'native_service_observe.py', 'docker_diagnostic_resume.py'):
+        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py', 'native_conflict.py', 'docker_resume.py', 'native_service_recover.py', 'native_service_observe.py', 'docker_diagnostic_resume.py', 'docker_supplement_resume.py'):
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as temporary:
                 result = subprocess.run([
                     sys.executable, '-I', str(PROOFS / filename),
@@ -434,6 +435,120 @@ class RealNativeConflictTests(unittest.TestCase):
                          case['readonly_native_resolution']['stdout_sha256_computed'])
         with self.assertRaisesRegex(native_conflict.Refused, 'frozen_conflict_resolution_changed'):
             native_conflict.parse_candidates(b'extra mpkg-proof-conflict 1-1 synthetic\n')
+
+
+class DockerSupplementResumeTests(unittest.TestCase):
+    def inventory(self):
+        value = {'observed_index_images': [], 'retained_child_images': [], 'verified_associations': [],
+                 'unverified_associations': [], 'observed_image_ids': []}
+        for name, repository, index, child, config, version in oci_acquire.IMAGES:
+            reference = 'lscr.io/' + repository + '@sha256:' + index
+            value['observed_index_images'].append({'Id': 'sha256:' + index, 'Os': 'linux', 'Architecture': 'amd64',
+                'RepoTags': ['lscr.io/' + repository + ':mpkg-fixture-' + name], 'RepoDigests': [reference]})
+            value['retained_child_images'].append({'Id': 'sha256:' + child, 'Os': 'linux', 'Architecture': 'amd64',
+                                                  'RepoTags': [], 'RepoDigests': []})
+            value['observed_image_ids'].extend(['sha256:' + index, 'sha256:' + child])
+            value['verified_associations'].append({'reference': reference, 'image_id': 'sha256:' + index,
+                'index_digest': 'sha256:' + index, 'manifest_digest': 'sha256:' + child,
+                'config_digest': 'sha256:' + config, 'platform': 'linux/amd64', 'version_label': version})
+        value['observed_image_ids'].sort()
+        return value
+
+    def test_no_runtime_result_can_be_invented_from_an_unset_acceptance_pin(self):
+        with mock.patch.object(docker_supplement_resume, 'OBSERVED', None):
+            with self.assertRaisesRegex(docker_supplement_resume.Refused, 'runtime_evidence_pending'):
+                docker_supplement_resume.preparation_evidence('unobserved-guest')
+
+    def test_auxiliary_report_refuses_other_platform_subject_or_runtime_layers(self):
+        report = {'schema': 1, 'source_archive_sha256': docker_supplement_resume.SOURCE_SHA256,
+                  'source_archive_bytes': docker_supplement_resume.ARCHIVE_BYTES,
+                  'docker_or_runtime_operations': False, 'registry_signatures_verified': False,
+                  'images': [], 'descriptor_bytes_total': 0}
+        for offset, (name, repository, index, child, _, _) in enumerate(oci_acquire.IMAGES):
+            manifest = {'digest': 'sha256:' + str(offset + 1) * 64, 'size': 1112,
+                        'mediaType': docker_supplement_resume.MANIFEST}
+            config = {'digest': 'sha256:' + str(offset + 4) * 64, 'size': 2,
+                      'mediaType': 'application/vnd.oci.empty.v1+json'}
+            layer = {'digest': 'sha256:' + str(offset + 7) * 64, 'size': 20,
+                     'mediaType': docker_supplement_resume.ATTESTATION}
+            report['images'].append({'fixture_name': name, 'repository': repository,
+                'original_index_digest': 'sha256:' + index, 'selected_child_digest': 'sha256:' + child,
+                'attestation_descriptor': dict(manifest, platform={'os': 'unknown', 'architecture': 'unknown'},
+                    annotations={'vnd.docker.reference.type': 'attestation-manifest',
+                                 'vnd.docker.reference.digest': 'sha256:' + child}),
+                'blobs': [manifest, config, layer]})
+            report['descriptor_bytes_total'] += 1134
+        self.assertEqual(len(docker_supplement_resume.supplement_records(report)[0]), 3)
+        changed = json.loads(json.dumps(report))
+        changed['images'][0]['attestation_descriptor']['annotations']['vnd.docker.reference.digest'] = 'sha256:' + 'f' * 64
+        with self.assertRaisesRegex(docker_supplement_resume.Refused, 'selected_attestation_changed'):
+            docker_supplement_resume.supplement_records(changed)
+        changed = json.loads(json.dumps(report))
+        changed['images'][0]['blobs'][2]['mediaType'] = 'application/vnd.oci.image.layer.v1.tar+gzip'
+        with self.assertRaisesRegex(docker_supplement_resume.Refused, 'descriptor_shape'):
+            docker_supplement_resume.supplement_records(changed)
+
+    def test_retained_children_are_recorded_without_substituting_original_indexes(self):
+        value = self.inventory()
+        self.assertEqual(len(docker_supplement_resume.image_inventory(value)), 6)
+        value['observed_index_images'][0]['Id'] = value['retained_child_images'][0]['Id']
+        with self.assertRaisesRegex(docker_supplement_resume.Refused, 'inventory_scope'):
+            docker_supplement_resume.image_inventory(value)
+        value = self.inventory()
+        value['observed_index_images'][0]['RepoTags'] = ['unapproved.example/image:alias']
+        with self.assertRaisesRegex(docker_supplement_resume.Refused, 'inventory_identity_shape'):
+            docker_supplement_resume.image_inventory(value)
+        value = self.inventory()
+        value['verified_associations'][0]['version_label'] = 'unobserved-version'
+        with self.assertRaisesRegex(docker_supplement_resume.Refused, 'verified_associations_changed'):
+            docker_supplement_resume.image_inventory(value)
+
+    def test_full_archive_check_refuses_extra_or_corrupt_blob_without_extracting(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / 'archive.tar'
+            raw = b'bounded metadata fixture'
+            name = 'blobs/sha256/' + hashlib.sha256(raw).hexdigest()
+            def archive(contents, extra=False):
+                with tarfile.open(path, 'w:') as tar:
+                    member = tarfile.TarInfo(name)
+                    member.size = len(contents)
+                    tar.addfile(member, io.BytesIO(contents))
+                    if extra:
+                        member = tarfile.TarInfo('index.json')
+                        member.size = 2
+                        tar.addfile(member, io.BytesIO(b'{}'))
+            archive(raw)
+            expected = {name: len(raw)}
+            self.assertEqual(docker_supplement_resume.archive_members(path, expected=expected)[0], expected)
+            archive(raw, extra=True)
+            with self.assertRaisesRegex(docker_supplement_resume.Refused, 'extra_or_resized_member'):
+                docker_supplement_resume.archive_members(path, expected=expected)
+            archive(b'x' * len(raw))
+            with self.assertRaisesRegex(docker_supplement_resume.Refused, 'blob_digest_changed'):
+                docker_supplement_resume.archive_members(path, expected=expected)
+            self.assertEqual({item.name for item in Path(temporary).iterdir()}, {'archive.tar'})
+
+    def test_supplemented_resume_timeout_preserves_history_and_blocks_retry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / 'prior'
+            core.write_new(path, b'immutable earlier history')
+            with mock.patch.object(docker_supplement_resume, 'preparation_evidence', return_value=(
+                    root, {}, {}, {path: b'immutable earlier history'}, {})), \
+                    mock.patch.object(docker_supplement_resume, 'package_units', return_value={}), \
+                    mock.patch.object(docker_supplement_resume.grp, 'getgrnam', return_value=SimpleNamespace(gr_gid=999, gr_mem=[])), \
+                    mock.patch.object(docker_supplement_resume.pwd, 'getpwall', return_value=[]), \
+                    mock.patch.object(docker_supplement_resume, 'units'), mock.patch.object(docker_supplement_resume, 'quiescent'), \
+                    mock.patch.object(docker_supplement_resume, 'command', side_effect=docker_supplement_resume.Refused('startup_timeout_unknown')) as command:
+                with self.assertRaisesRegex(docker_supplement_resume.Refused, 'startup_timeout_unknown'):
+                    docker_supplement_resume.resume('guest')
+                with self.assertRaisesRegex(docker_supplement_resume.Refused, 'fresh_resume_required'):
+                    docker_supplement_resume.resume('guest')
+                command.assert_called_once_with(['/usr/bin/systemctl', 'start', 'docker.service'], timeout=90)
+            self.assertEqual(path.read_bytes(), b'immutable earlier history')
+            journal = core.Journal(root / 'docker-supplement-resume')
+            self.assertEqual(journal.export()[0]['state'], 'unknown')
+            journal.close()
 
 
 class DockerDiagnosticActivationTests(unittest.TestCase):
