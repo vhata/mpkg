@@ -145,13 +145,16 @@ heavy build, while a successful exited Python unit may retain its status.
 `vm.py install-docker-ready`, `install-docker-baseline` and
 `install-native-conflict`, `install-service-environment`,
 `install-account-defaults` and
-`install-docker-resume` add only their fixed reviewed, digest-pinned helpers
+`install-docker-resume` and `install-docker-diagnostic-resume` add only their fixed reviewed, digest-pinned helpers
 after Python is available. Each generates the installer payload
 at runtime and uses the existing verified console transport.
 The installed guest/root disk guard and root-protected directory checks
 precede publication. An existing target is refused, and a private record
 binds the added file's digest. The operation does not run the new helper
 or modify the immutable source disk.
+Install `docker-resume` before the separate diagnostic activation helper;
+the latter binds that dependency exactly and preserves the incomplete
+image preparation history. Installing either helper does not activate it.
 
 Install the shared service environment observer before Docker readiness,
 and the account-defaults validator before corrected baseline helpers.

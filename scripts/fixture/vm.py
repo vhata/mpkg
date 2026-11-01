@@ -234,6 +234,7 @@ def proof_install_payload(name):
         'native-service-observe':('native_service_observe.py','6f519fbc6a2fe4da2b558653cc86e9e813ad54e6586656bfd620ba1c229df5c7'),
         'docker-baseline':('docker_baseline.py','f6af324e2d0844a6159f0e6dcf1e72c766679953dc4e4ec5c093ff42271bbeca'),
         'docker-resume':('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05'),
+        'docker-diagnostic-resume':('docker_diagnostic_resume.py','4966aaa9d517ba4e4a7e5104f6a31e202bfecaa0f1a3636e5b2bb22f9b3e9a2e'),
         'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b'),
     }
     if name not in additions:
@@ -283,6 +284,7 @@ def install():
     guest=require_guest(os.environ.get('MPKG_GUEST_ID'))
     os.umask(0o077)
     dependencies={
+        'docker_diagnostic_resume.py':[('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05')],
         'docker_ready.py':[('service_environment.py','91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502')],
         'docker_baseline.py':[('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532')],
         'native_service_recover.py':[
@@ -433,7 +435,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','replace-native-service','replace-docker-baseline','replace-native-verifier'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','install-docker-diagnostic-resume','replace-native-service','replace-docker-baseline','replace-native-verifier'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -458,6 +460,7 @@ def main():
     elif args.operation=='install-native-service-recover':console(seconds=args.seconds,addition='native-service-recover')
     elif args.operation=='install-native-service-observe':console(seconds=args.seconds,addition='native-service-observe')
     elif args.operation=='install-docker-resume':console(seconds=args.seconds,addition='docker-resume')
+    elif args.operation=='install-docker-diagnostic-resume':console(seconds=args.seconds,addition='docker-diagnostic-resume')
     elif args.operation=='replace-native-service':console(seconds=args.seconds,replacement='native-service')
     elif args.operation=='replace-docker-baseline':console(seconds=args.seconds,replacement='docker-baseline')
     elif args.operation=='replace-native-verifier':console(seconds=args.seconds,replacement='native-verifier')
