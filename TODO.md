@@ -4,10 +4,11 @@ Ordinary follow-ups live here; promoted whole-codebase review findings
 belong in [review/BACKLOG.md](review/BACKLOG.md). Follow
 [docket/TODO_GUIDE.md](docket/TODO_GUIDE.md). Ready entries are unblocked;
 understood work awaiting a dependency or external input belongs in Waiting.
-The full product redesign remains in planning. The user authorized
-disposable guest assembly and focused mechanism proofs on 2026-11-01.
-That scope does not authorize production server package or lifecycle
-changes, or implementation of the complete replacement.
+The user authorized staged implementation of the product redesign on
+2026-11-01 after the disposable mechanism proofs, including parallel
+work and reviewable pull requests while away. Production server package
+and lifecycle changes remain outside that authorization. Completion is
+measured against the first-release contract and acceptance scenarios.
 
 ## Needs triage
 
