@@ -6,6 +6,13 @@ for [milestone 1](../../plans/2026-10-31-server-environment-milestones.md).
 It defines the information and behavior we need, not a file format,
 class hierarchy, plugin protocol, or implementation.
 
+The [first-release contract](2026-10-31-first-release-contract.md)
+now proposes the supported facts, authority, verification, history and
+update policies. It adds explicit Compose-network accountability to the
+minimum inventory below. Its
+[acceptance scenarios](2026-10-31-first-release-acceptance.md) retain the
+required demonstrations and identify missing fixture evidence.
+
 ## Keep the model small
 
 A **component** explains why software and supporting resources belong
@@ -123,6 +130,12 @@ resources are not silently swept into a deletion.
 
 ## One concrete example
 
+The [Sonarr evidence and worked example](2026-10-31-compose-deployment-evidence.md)
+now grounds these relationships in inspected Compose files, identity
+inputs and selected path metadata. It records observed facts separately
+from proposed behavior and outstanding runtime/fixture evidence. The
+generic example below remains illustrative.
+
 Suppose an adopted `media` component runs a Docker application. It uses
 the `compose` account, a managed configuration file, an application-data
 directory, and a media directory also used by a known external consumer.
@@ -161,9 +174,9 @@ last exit code, and it distinguishes unknown state from verified state.
 - Retain a Docker volume after retirement: it stays attributable without
   keeping or recreating the deployment that previously used it.
 
-The next specification should choose the initial supported facts for
-each resource kind, the observation and verification checks, and how
-intent and host history are represented. Keep privilege boundaries,
-version support, and explicit update scope concrete for milestone 1.
-No general task language, framework dependency, or plugin system is
-needed to settle those decisions.
+The first-release contract develops these checks into proposed behavior
+and logical records. The [storage and execution design](2026-10-31-first-release-storage-and-execution.md)
+selects concrete encoding, persistence and native boundaries, with
+focused mechanism proofs and fixture evidence still required. No
+general task language, framework dependency or repository plugin system
+is introduced by those choices.

@@ -60,8 +60,17 @@ with its evidence in TODO and investigate the failure.
 
 The [first-release milestones](../plans/2026-10-31-server-environment-milestones.md)
 require disposable Arch demonstrations with real repository and AUR
-packages plus Docker. This workflow does not supply those demonstrations
+packages plus Docker. Routine checks do not supply those demonstrations
 or authorize running them on the production host.
+
+The [disposable run record](fixtures/2026-11-01-disposable-execution-evidence.md)
+tracks separate execution status and evidence for the
+[fixture tooling](../scripts/fixture/README.md) and
+[mechanism experiments](../scripts/proofs/README.md).
+Routine checks exercise their host-safe boundaries and primitives only;
+they never start a guest or invoke real package/service/Docker operations.
+Acquisition, guest bootstrap, builds and each experiment have distinct
+observations and failure states. None substitutes for A1–A12 acceptance.
 
 ## Review inputs
 
@@ -94,16 +103,18 @@ hygiene. Superseded PR runs are cancelled; main runs are not. Failed
 project checks upload their log for seven days. The Linux runner exercises
 the mocked suite; using Ubuntu for it does not expand product host support.
 
-There is no Git remote configured in this checkout. Hosted CI execution,
-PR checks, and branch protection therefore remain unverified. Local-only
-work keeps its prepared PR body and independent review under `.docket/`.
+With a PR-capable remote, publish a draft PR and verify its hosted checks
+before marking it ready. Keep independent review in a PR comment and
+preparation evidence under `.docket/`. Without a PR-capable remote, use
+the local review and landing procedure in
+[the Docket contract](../docket/CONTRACT.md#review-mode).
 
 Scheduled extended main validation is deferred until a substantive system
 suite exists. The review cadence report remains available on demand. When
 hosted CI exists, a red main is reverted or filed as P1 (P0 if release
 blocking) the same day; recovery requires a green subsequent main run.
 
-Recommended hosting settings, for the user to apply after adding a remote:
+Recommended hosting settings, for the user to apply:
 require `Project checks` and `Queue and PR hygiene`, linear history, and
 squash merges using the PR title and body. Delete merged head branches.
 Require neither current-base freshness nor a forge approval count by

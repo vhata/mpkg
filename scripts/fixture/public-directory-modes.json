@@ -1,0 +1,167 @@
+{
+  "purpose": "Targeted metadata-derived repair of public directories precreated under an incorrect bootstrap umask; never recurse or change private fixture/key directories",
+  "records": [
+    {
+      "path": "/boot",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "filesystem",
+      "version": "2025.10.12-1",
+      "archive_sha256": "6b6c3fee7432204840d3b6afc9bc1a68c28f591a47fb220071715c40cca956df"
+    },
+    {
+      "path": "/dev",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "filesystem",
+      "version": "2025.10.12-1",
+      "archive_sha256": "6b6c3fee7432204840d3b6afc9bc1a68c28f591a47fb220071715c40cca956df"
+    },
+    {
+      "path": "/etc",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "pacman-mirrorlist",
+      "version": "20260610-1",
+      "archive_sha256": "f6008b33d950a4e4eb5930fe3852cceb0fe1fa5fdaff36125583201531fe4ae9"
+    },
+    {
+      "path": "/etc/pacman.d",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "pacman-mirrorlist",
+      "version": "20260610-1",
+      "archive_sha256": "f6008b33d950a4e4eb5930fe3852cceb0fe1fa5fdaff36125583201531fe4ae9"
+    },
+    {
+      "path": "/proc",
+      "mode": "0555",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "filesystem",
+      "version": "2025.10.12-1",
+      "archive_sha256": "6b6c3fee7432204840d3b6afc9bc1a68c28f591a47fb220071715c40cca956df"
+    },
+    {
+      "path": "/root",
+      "mode": "0750",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "filesystem",
+      "version": "2025.10.12-1",
+      "archive_sha256": "6b6c3fee7432204840d3b6afc9bc1a68c28f591a47fb220071715c40cca956df"
+    },
+    {
+      "path": "/run",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "filesystem",
+      "version": "2025.10.12-1",
+      "archive_sha256": "6b6c3fee7432204840d3b6afc9bc1a68c28f591a47fb220071715c40cca956df"
+    },
+    {
+      "path": "/sys",
+      "mode": "0555",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "filesystem",
+      "version": "2025.10.12-1",
+      "archive_sha256": "6b6c3fee7432204840d3b6afc9bc1a68c28f591a47fb220071715c40cca956df"
+    },
+    {
+      "path": "/tmp",
+      "mode": "1777",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "filesystem",
+      "version": "2025.10.12-1",
+      "archive_sha256": "6b6c3fee7432204840d3b6afc9bc1a68c28f591a47fb220071715c40cca956df"
+    },
+    {
+      "path": "/usr",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "pacman",
+      "version": "7.1.0.r9.g54d9411-3",
+      "archive_sha256": "bad000f7b482c7f5e6c8e6951d918ce8a9207c0f9c0786ab2b49fe75e935de28"
+    },
+    {
+      "path": "/usr/bin",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "pacman",
+      "version": "7.1.0.r9.g54d9411-3",
+      "archive_sha256": "bad000f7b482c7f5e6c8e6951d918ce8a9207c0f9c0786ab2b49fe75e935de28"
+    },
+    {
+      "path": "/usr/lib",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "pacman",
+      "version": "7.1.0.r9.g54d9411-3",
+      "archive_sha256": "bad000f7b482c7f5e6c8e6951d918ce8a9207c0f9c0786ab2b49fe75e935de28"
+    },
+    {
+      "path": "/var",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "pacman",
+      "version": "7.1.0.r9.g54d9411-3",
+      "archive_sha256": "bad000f7b482c7f5e6c8e6951d918ce8a9207c0f9c0786ab2b49fe75e935de28"
+    },
+    {
+      "path": "/var/cache",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "pacman",
+      "version": "7.1.0.r9.g54d9411-3",
+      "archive_sha256": "bad000f7b482c7f5e6c8e6951d918ce8a9207c0f9c0786ab2b49fe75e935de28"
+    },
+    {
+      "path": "/var/cache/pacman",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "pacman",
+      "version": "7.1.0.r9.g54d9411-3",
+      "archive_sha256": "bad000f7b482c7f5e6c8e6951d918ce8a9207c0f9c0786ab2b49fe75e935de28"
+    },
+    {
+      "path": "/var/cache/pacman/pkg",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "pacman",
+      "version": "7.1.0.r9.g54d9411-3",
+      "archive_sha256": "bad000f7b482c7f5e6c8e6951d918ce8a9207c0f9c0786ab2b49fe75e935de28"
+    },
+    {
+      "path": "/var/lib",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "pacman",
+      "version": "7.1.0.r9.g54d9411-3",
+      "archive_sha256": "bad000f7b482c7f5e6c8e6951d918ce8a9207c0f9c0786ab2b49fe75e935de28"
+    },
+    {
+      "path": "/var/lib/pacman",
+      "mode": "0755",
+      "uid": 0,
+      "gid": 0,
+      "source_package": "pacman",
+      "version": "7.1.0.r9.g54d9411-3",
+      "archive_sha256": "bad000f7b482c7f5e6c8e6951d918ce8a9207c0f9c0786ab2b49fe75e935de28"
+    }
+  ]
+}

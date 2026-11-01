@@ -5,6 +5,17 @@ This file maps the current implementation. The
 and
 [resource model](docs/specs/2026-10-31-server-environment-resources.md)
 describe future work; the redesign remains in planning.
+The [first-release contract](docs/specs/2026-10-31-first-release-contract.md)
+and [acceptance scenarios](docs/specs/2026-10-31-first-release-acceptance.md)
+refine that proposal without changing the current implementation.
+The [storage and execution design](docs/specs/2026-10-31-first-release-storage-and-execution.md)
+selects proposed encoding, persistence and native operation boundaries;
+its mechanism proofs remain prerequisites to implementation.
+The [disposable fixture design](docs/specs/2026-10-31-first-release-fixture.md)
+binds source inputs and proposed assembly/checks. The separate
+[execution record](docs/fixtures/2026-11-01-disposable-execution-evidence.md)
+records actual acquisition and guest outcomes without claiming that the
+replacement manager has been implemented.
 
 ## Current boundaries
 
@@ -22,7 +33,12 @@ describe future work; the redesign remains in planning.
   the helper's metapackage discovery and rewriting scope.
 - `tests/test_mpkg.py` copies the helper to temporary repositories and
   substitutes package tools. It exercises real Git behavior there.
-- `scripts/`, `.githooks/`, and `.github/` own repository validation.
+- `scripts/fixture/` owns private runner acquisition, disposable guest
+  assembly, supervised builds and bounded input/artifact transport.
+  `scripts/proofs/` contains guarded mechanism experiments. These tools
+  run separately from routine checks and do not expose a product CLI.
+- The top-level `scripts/` entrypoints, `.githooks/`, and `.github/`
+  own repository validation.
   `docket/` is vendored workflow machinery, updated only by its
   installer.
 - `docs/specs/` and `plans/` retain the design requirements and

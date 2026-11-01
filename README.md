@@ -17,6 +17,13 @@ capabilities. Start with the
 [design mandate](docs/specs/2026-10-30-server-environment.md) and
 [milestone plan](plans/2026-10-31-server-environment-milestones.md).
 
+The [disposable fixture tools](scripts/fixture/README.md) and
+[mechanism experiments](scripts/proofs/README.md) support the separately
+authorized design proofs. Their
+[execution record](docs/fixtures/2026-11-01-disposable-execution-evidence.md)
+distinguishes acquired inputs, actual guest observations and remaining
+gates. These experiments are separate from the replacement manager.
+
 For repository work, read [AGENTS.md](AGENTS.md), then the
 [architecture map](ARCHITECTURE.md) and
 [quality gates](docs/QUALITY.md). Deferred work lives in

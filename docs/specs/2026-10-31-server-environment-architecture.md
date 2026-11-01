@@ -126,7 +126,10 @@ design check is: adopt without applying, remove the uncommitted
 declaration, and still identify the formerly managed deployment and its
 resources for a retirement plan, separately from unrelated discoveries.
 
-The storage format and location of these records remain undecided.
+The [storage and execution design](2026-10-31-first-release-storage-and-execution.md)
+proposes TOML declarations and a protected local SQLite store, with
+typed native operations and supervised attempts. These choices remain
+subject to its focused mechanism proofs before implementation.
 Ordinary status is observation and comparison; no background reconciler
 is required. Sensitive values must not leak into status or attempt logs.
 
@@ -230,10 +233,11 @@ Refine the minimum resource contract and validate the hardest
 milestone-1 operations with native tooling: nondisruptive adoption,
 actual repository/AUR installation, and a failed Docker change with
 truthful subsequent status. Identify concrete resource scope, success
-checks, version support, and retention of attempt history. Language,
-file formats, state storage, privilege boundaries, and the exact role of
-metapackages remain
-open. Validation must include adoption without an apply followed by
+checks, version support, and retention of attempt history. The linked
+storage/execution proposal now selects language, file encoding,
+persistence and privilege boundaries without requiring generated
+metapackages for collection intent. Its mechanism proofs remain open.
+Validation must include adoption without an apply followed by
 declaration removal, to verify that management history survives this
 path. Any implementation experiment must use the milestone's disposable
 Arch environment; none has been performed as part of this comparison.

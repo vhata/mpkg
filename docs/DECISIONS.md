@@ -4,6 +4,18 @@ These entries index agreed direction and repository choices. The linked
 specifications carry the detailed requirements; recording a decision does
 not claim its implementation exists.
 
+## 2026-11-01: disposable mechanism execution
+
+The user authorized assembling the isolated guest and running focused
+mechanism proofs. Use local private runner/input files and the bound
+disposable guest; this scope does not include production package or
+service changes, full replacement implementation, or landing branches.
+
+Keep artifact acquisition, guest assembly, source builds, mechanism
+observations and product acceptance distinct. The
+[execution record](fixtures/2026-11-01-disposable-execution-evidence.md)
+records actual results and limitations against the existing design.
+
 ## 2026-10-31: repository workflow
 
 Use Docket's vendored contract, a sourced TODO queue, an empty review

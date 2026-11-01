@@ -20,6 +20,15 @@ expected generated files, and a resource shared with another consumer.
 At least one shared consumer must be outside management. Named examples
 and verification checks will be selected during detailed design.
 
+The [Compose inspection and Sonarr example](../docs/specs/2026-10-31-compose-deployment-evidence.md)
+selects Sonarr from the actual definitions as the first Docker case.
+It records declared shared media consumers and observed identity/path
+facts. The [runtime baseline](../docs/specs/2026-10-31-sonarr-runtime-baseline.md)
+adds engine/project binding, image identity, actual mounts and
+credentials, and bounded endpoint/root-access results. Accepted fixture
+inputs and full functional checks still need verification before this
+becomes an executable demonstration.
+
 Use a conventional Compose deployment as the first Docker example,
 preferably one using published images with clearly identified
 configuration and data mounts. Select the application after inspecting
@@ -117,6 +126,22 @@ recognized or unresolved. This deferral does not remove the required
 native AUR installation and dependency-handling demonstration.
 
 ## Next design work
+
+The [first-release contract](../docs/specs/2026-10-31-first-release-contract.md)
+proposes bounded resource behavior and records the remaining design
+gates. The [acceptance scenarios](../docs/specs/2026-10-31-first-release-acceptance.md)
+map every criterion above to starting conditions and pass/fail evidence.
+Neither document claims acceptance execution. The
+[storage/execution proposal](../docs/specs/2026-10-31-first-release-storage-and-execution.md)
+selects concrete mechanisms, and the
+[fixture design](../docs/specs/2026-10-31-first-release-fixture.md)
+binds source metadata and assembly/check choices. Artifact acquisition,
+guest assembly, mechanism proofs and all acceptance executions remain
+separate gates. The
+[execution record](../docs/fixtures/2026-11-01-disposable-execution-evidence.md)
+records the measured native and Sonarr/Radarr fixtures and focused
+mechanism results against those gates. Fixture or mechanism success
+does not imply a product acceptance result.
 
 The [architecture direction](../docs/specs/2026-10-31-server-environment-architecture.md)
 selects direct native tooling and excludes Ansible and similar frameworks.
