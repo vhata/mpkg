@@ -30,7 +30,7 @@ from run import ENV, command, trusted_install
 # These pins can be filled only from the coordinator's successful observed
 # preparation and subsequent original image_manifest output. No CLI/env bypass.
 OBSERVED = None
-PREPARATION = 'image-attestation-preparation'
+PREPARATION = 'image-attestation-offline-preparation'
 ROOT_INDEX_SHA256 = '5d7f4116edc95dbdfbda27b9961228b26b4a8bd2fc4b7dc5dcba5404cedfc4b0'
 MANIFEST = 'application/vnd.oci.image.manifest.v1+json'
 CONFIGS = {'application/vnd.oci.image.config.v1+json', 'application/vnd.oci.empty.v1+json'}
@@ -38,10 +38,15 @@ ATTESTATION = 'application/vnd.in-toto+json'
 MAX_AUXILIARY = 32 * 1024 ** 2
 HISTORIES = {'docker-readiness': 'observed-complete', 'image-import': 'unverified',
              'image-index-preparation': None, 'docker-diagnostic-activation': 'observed-complete',
-             'image-index-load-diagnostic': 'unverified'}
+             'image-index-load-diagnostic': 'unverified', 'image-attestation-preparation': None}
+FAILED_METADATA_HASHES = {
+    'image-attestation-preparation/started.json': 'b0d35922ee68f2382888df270677367048e1d8fc18dfa2c506322aa18efe7fcf',
+    'image-attestation-preparation/state.sqlite3': 'b15a4ace0b0df57bc0ff1881cb0a998a6a624ce955c1dcffdc9aff991964c4ef',
+}
 PRIOR_FILES = ({name + '/state.sqlite3' for name in HISTORIES}
-               | {name + '/result.json' for name in HISTORIES if name != 'image-index-preparation'}
+               | {name + '/result.json' for name, terminal in HISTORIES.items() if terminal is not None}
                | {'image-index-preparation/started.json', 'image-index-preparation/prepared.json'}
+               | {'image-attestation-preparation/started.json'}
                | {'image-index-load-diagnostic/' + name for name in
                   ('started.json', 'capture.json', 'stdout.private', 'stderr.private')})
 PREPARATION_FILES = ('started.json', 'prepared.json', 'capture.json', 'result.json',
@@ -53,6 +58,29 @@ def actual_pins():
             or any(not isinstance(value, str) or not re.fullmatch('[0-9a-f]{64}', value) for value in OBSERVED.values())):
         raise Refused('docker_supplement_successful_runtime_evidence_pending')
     return OBSERVED
+
+
+def failed_acquisition_state(root):
+    """Preserve the observed stopped HTTPS attempt without accepting partial work."""
+    supplement = Path('/opt/mpkg-proof-inputs/oci-supplement')
+    expected = {root / 'image-attestation-preparation': {'started.json', 'state.sqlite3'},
+                supplement: {'blobs'}, supplement / 'blobs': {'sha256'}, supplement / 'blobs/sha256': set()}
+    evidence = {}
+    for path, names in expected.items():
+        trusted_path(path, directory=True)
+        before = path.lstat()
+        if stat.S_IMODE(before.st_mode) != 0o700:
+            raise Refused('docker_supplement_failed_acquisition_directory_changed')
+        actual = set()
+        with os.scandir(path) as entries:
+            for entry in entries:
+                actual.add(entry.name)
+                if len(actual) > len(names):
+                    raise Refused('docker_supplement_failed_acquisition_contents_changed')
+        if actual != names or identity(path.lstat()) != identity(before):
+            raise Refused('docker_supplement_failed_acquisition_contents_changed')
+        evidence[path] = identity(before)
+    return evidence
 
 
 def descriptor(value, media_types, limit):
@@ -259,6 +287,9 @@ def preparation_evidence(guest):
             or result.get('prior_prepared_archive_sha256') != PREPARED_SHA256
             or result.get('filesystem_layers_acquired') is not False
             or result.get('guest_metadata_acquired_and_verified') is not True
+            or result.get('network_acquisition') is not False
+            or result.get('metadata_transport') != 'bound-virtio-control-port'
+            or result.get('prior_metadata_acquisition_remains_unknown') is not True
             or result.get('explicit_tag_operations') is not False):
         raise Refused('docker_supplement_successful_preparation_required')
     captured = result.get('capture', {})
@@ -267,7 +298,8 @@ def preparation_evidence(guest):
         raise Refused('docker_supplement_load_completion_unverified')
     evidence = {}
     prior = result.get('prior_record_sha256', {})
-    if set(prior) != PRIOR_FILES or any(prior.get(path) != digest for path, digest in HASHES.items()):
+    if set(prior) != PRIOR_FILES or any(prior.get(path) != digest for path, digest in
+                                      (HASHES | FAILED_METADATA_HASHES).items()):
         raise Refused('docker_supplement_prior_record_scope_changed')
     for path in sorted(PRIOR_FILES):
         trusted_path(root / path)
@@ -298,7 +330,7 @@ def preparation_evidence(guest):
     validate_acquisition(acquisition)
     if acquisition_digest != result.get('original_acquisition_sha256'):
         raise Refused('docker_supplement_original_acquisition_changed')
-    supplement_path = Path('/opt/mpkg-proof-inputs/oci-supplement/acquisition.json')
+    supplement_path = Path('/opt/mpkg-proof-inputs/oci-supplement-offline/acquisition.json')
     trusted_path(supplement_path)
     supplement_raw = read_regular(supplement_path)[0]
     if hashlib.sha256(supplement_raw).hexdigest() != result.get('supplement_acquisition_sha256'):
@@ -306,7 +338,8 @@ def preparation_evidence(guest):
     evidence[supplement_path] = supplement_raw
     evidence[Path('/opt/mpkg-proof-inputs/acquisition.json')] = read_regular(Path('/opt/mpkg-proof-inputs/acquisition.json'))[0]
     images = image_inventory(result)
-    large = verify_archive_provenance(root, result, json.loads(supplement_raw))
+    large = failed_acquisition_state(root)
+    large.update(verify_archive_provenance(root, result, json.loads(supplement_raw)))
     compose, compose_digest = trusted_json('compose.json')
     expected = [{'reference': 'lscr.io/' + repository + '@sha256:' + index, 'image_id': 'sha256:' + index,
                  'platform': 'linux/amd64'} for name, repository, index, _, _, _ in IMAGES if name != 'sonarr-older']

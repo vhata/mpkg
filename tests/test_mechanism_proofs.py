@@ -459,6 +459,31 @@ class DockerSupplementResumeTests(unittest.TestCase):
             with self.assertRaisesRegex(docker_supplement_resume.Refused, 'runtime_evidence_pending'):
                 docker_supplement_resume.preparation_evidence('unobserved-guest')
 
+    def test_failed_https_acquisition_stays_empty_and_cannot_gain_completion(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            failed = root / 'image-attestation-preparation'
+            failed.mkdir(mode=0o700)
+            core.write_new(failed / 'started.json', b'{}')
+            core.write_new(failed / 'state.sqlite3', b'prior unknown history')
+            supplement = root / 'input'
+            for path in (supplement, supplement / 'blobs', supplement / 'blobs/sha256'):
+                path.mkdir(mode=0o700)
+            with mock.patch.object(docker_supplement_resume, 'Path', side_effect=lambda value:
+                    supplement if value == '/opt/mpkg-proof-inputs/oci-supplement' else Path(value)), \
+                    mock.patch.object(docker_supplement_resume, 'trusted_path'):
+                identities = docker_supplement_resume.failed_acquisition_state(root)
+                docker_supplement_resume.evidence_unchanged({}, identities)
+                for extra in (failed / 'result.json', supplement / 'acquisition.json', supplement / 'blobs/sha256/partial'):
+                    with self.subTest(extra=extra.name):
+                        core.write_new(extra, b'not accepted evidence')
+                        with self.assertRaisesRegex(docker_supplement_resume.Refused, 'acquisition_contents_changed'):
+                            docker_supplement_resume.failed_acquisition_state(root)
+                        with self.assertRaisesRegex(docker_supplement_resume.Refused, 'prior_evidence_changed'):
+                            docker_supplement_resume.evidence_unchanged({}, identities)
+                        extra.unlink()
+                self.assertEqual((failed / 'state.sqlite3').read_bytes(), b'prior unknown history')
+
     def test_auxiliary_report_refuses_other_platform_subject_or_runtime_layers(self):
         report = {'schema': 1, 'source_archive_sha256': docker_supplement_resume.SOURCE_SHA256,
                   'source_archive_bytes': docker_supplement_resume.ARCHIVE_BYTES,

@@ -236,8 +236,11 @@ association requirement. A failed activation remains unresolved.
 
 `docker_supplement_resume.py` serves a separately observed image-only
 checkpoint after the selected amd64 attestation closure has been added
-and imported successfully. It preserves both failed import histories and
-the unknown preparation, validates the unchanged original indexes and
+and imported successfully through the separately journaled offline
+preparation. It preserves both failed import histories, the unknown index
+preparation and the failed HTTPS acquisition's two exact records and empty
+input directory. It requires the bound virtio-control metadata transport,
+validates the unchanged original indexes and
 every added auxiliary descriptor/blob, and requires the recorded original
 index associations, version labels and exact retained-child inventory.
 It binds all prior records, the new completed preparation and the original
