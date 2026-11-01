@@ -12,6 +12,20 @@ semantics. A satisfying direct-name package takes priority; otherwise,
 only compatible virtual providers are marked as dependencies. Unresolved
 requirements prevent marking and prevent an update's success commit.
 
+Literal dependency edits preserve quoted descriptions and source outside
+`depends` and `pkgrel`, including comments around those fields. The editor
+accepts one top-level integer `pkgrel` and one literal `depends` array;
+array comments may contain parentheses. Fields may appear in either
+order, and single- or double-quoted descriptions may span lines.
+
+This editor supports simple top-level assignments and functions containing
+simple commands. It rejects ambiguous or unsupported shell constructs,
+including expansions, escapes, redirections, compound commands and
+repeated editable fields, before writing or invoking package tools. It
+does not source the PKGBUILD to parse dependencies. Bash checks the original and
+resulting syntax without executing code before the file is changed.
+Installation still uses `makepkg`, which evaluates PKGBUILDs normally.
+
 The standalone [viminumrc package](packages/viminumrc/README.md)
 supplies the shared Vim configuration and its system-wide login
 environment. Its build and migration instructions preserve an existing
