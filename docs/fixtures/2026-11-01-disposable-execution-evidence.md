@@ -16,9 +16,9 @@ establish any A1–A12 product acceptance result.
 | Native service and starting states | Authenticated checks and separate 209-, 212- and 220-package states completed |
 | Journal, protected replay, XML, supervision and bounded retirement | Focused experiments passed, including private Git-object and fixed child-error secrecy checks |
 | Native transaction | Frozen prepare-only checks and conflict refusal passed; no package transaction commit inferred |
-| Ordinary Docker fixture | Assembly and repeat check passed; separate restore/reboot check pending |
+| Ordinary Docker fixture | Assembly, repeat check and separate restore/reboot check passed; final stopped state ID 41 saved |
 | Compose mechanism experiment | All ten asserted checks passed, with the lifecycle limits below |
-| Volume, network and image-policy variants | All four resource variants and the allowed-tag update passed; the exact-digest branch remains pending |
+| Volume, network and image-policy variants | All four resource variants and the allowed-tag update passed; the exact-digest setup stopped with an attributed observation error, and its mechanism remains unverified |
 | Replacement manager and A1–A12 | Not implemented or executed by this work |
 
 ## Acquired inputs
@@ -445,10 +445,18 @@ for this application fixture.
 After orderly shutdown, `docker-adoption` was saved as offline snapshot
 ID `12`, with no memory state and firmware variables SHA-256
 `36b4ee16785f54cc2424a9632ef217725a5cb2c5e172384f857be24444168361`.
-The repeat check preceded shutdown; a separate reboot check of this
-snapshot has not been performed. Restoring `image-ready` for the distinct
+The repeat check preceded shutdown. Restoring `image-ready` for the distinct
 Compose proof preserved the application state again as
 `before-restore-36e63e5d95ef4abe`.
+
+A later independent restore of `docker-adoption` ID `12`, boot and
+check-only run passed with exit zero. No assembly or image-resume helper
+was replayed. Fresh attribution and readiness checks, configuration/data
+checks, copied-credential sentinel reads and authenticated Radarr directory
+discovery passed. After orderly shutdown,
+`docker-adoption-reboot-verified` was saved as offline snapshot ID `41`,
+with no memory state and firmware variables SHA-256
+`850fb33fbf7a3376a3f9acb5df8471c3906ed7b4ace6d9e02b889e99ff078f89`.
 
 The separate Compose proof then passed with exit zero on a fresh,
 successfully resumed `image-ready` branch. Captured rendering, runtime
@@ -737,6 +745,22 @@ SHA-256
 `4ba5f05f3fe1214089e691d3c9887bf67e4ebacb9e92ef0743ac6271d16beddd`.
 Independent review verified the saved result and checkpoint.
 
+The first exact-digest branch passed its fresh cold resume, then setup
+returned `unverified`/exit `74` at `radarr_naming_get`. The bounded failure
+record identifies `FileNotFoundError`, errno `2`, while reading a symlink
+from the application's enumerated `/proc/<pid>/fd` directory. This was
+the second attribution check before constructing or dispatching the
+naming request. No naming GET or root-folder POST was sent at that stage.
+The record does not identify which descriptor disappeared or establish
+its cause. Earlier assembly effects remain unresolved; setup was not
+replayed and the failed state is preserved. This evidence does not explain
+the earlier generic volume-keep failure.
+
+After orderly shutdown, `failed-exact-digest-attribution` was saved as
+offline snapshot ID `39`, with no memory state and firmware variables
+SHA-256
+`850fb33fbf7a3376a3f9acb5df8471c3906ed7b4ace6d9e02b889e99ff078f89`.
+
 The supplemental runtime gates currently stand as follows:
 
 | Variant | Assembly | Reboot check | Experiment | Retirement |
@@ -746,7 +770,7 @@ The supplemental runtime gates currently stand as follows:
 | Shared network | Setup and check passed; baseline ID 30 saved | Passed | Published-port remapping passed | Passed; final ID 31 saved |
 | Exclusive network deletion | Setup and check passed; baseline ID 33 saved | Passed | Published-port remapping passed | Passed; final ID 34 saved |
 | Allowed-tag image update | Setup and check passed; baseline ID 36 saved | Passed | Forward update passed; final ID 37 saved | Not required |
-| Exact-digest candidate refusal | Pending | Pending | Pending | Not required |
+| Exact-digest candidate refusal | First setup stopped with an attributed observation error | Pending | Pending | Not required |
 
 Applied product restore points remain unavailable until actual product
 operations create them.

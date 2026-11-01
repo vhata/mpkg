@@ -7,6 +7,10 @@ records exact identities, package resolutions and evidence levels.
 No acceptance scenario has run. Artifact acquisition, builds,
 implementation and VM execution require their own authorization.
 
+This design preserves the research evidence available on 2026-10-31.
+The separately authorized [execution record](../fixtures/2026-11-01-disposable-execution-evidence.md)
+reports subsequent acquisition, assembly and focused mechanism results.
+
 ## Evidence obtained
 
 Research on 2026-10-31 established the following inputs:
