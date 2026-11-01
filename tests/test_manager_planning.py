@@ -151,6 +151,19 @@ desired={present=true, owner="root", mode=0o750}
         self.assertEqual(properties(result)["running"]["limitations"], ["observation_identity_mismatch"])
         self.assertEqual(properties(result)["enabled"]["comparison"], "agreement")
 
+    def test_observation_identity_requires_exact_fields_for_its_kind(self):
+        for identity in ({"a": "system", "b": "web.service"},
+                         {"manager": "system", "unit": "web.service", "ignored": "extra"},
+                         {"manager": "user", "unit": "web.service"}):
+            with self.subTest(identity=identity):
+                observations = deepcopy(self.observations)
+                observations["facts"][0]["identity"] = identity
+                self.assert_error("invalid_observation_projection",
+                                  lambda: self.report(observations=observations))
+        record = deepcopy(self.record)
+        record["resources"][0]["definition"]["identity"] = {"a": "system", "b": "web.service"}
+        self.assert_error("invalid_management_projection", lambda: self.report(record=record))
+
     def test_missing_coverage_and_properties_are_not_empty_clean_results(self):
         empty = batch(self.declaration, [], coverage=[])
         self.assertEqual(properties(self.report(observations=empty))["running"]["limitations"],
@@ -241,6 +254,75 @@ desired={source="aur",version={policy="exact",value="1-1",recipe_revision="'''
         self.assertIn("consumer_requirement_conflict", result["blockers"])
         self.assertIn("consumer_change_requires_recording", result["blockers"])
         self.assertEqual(result["resources"][0]["known_consumers"], ["external:backup"])
+
+    def test_retained_package_requirements_validate_the_combined_version_context(self):
+        old = load_declaration(b'''schema=1
+[[components]]
+id="consumer"
+purpose="fixture"
+resources=["package"]
+requirements=[{resource="package",property="source",value="aur"}]
+[[resources]]
+id="package"
+kind="package"
+identity={name="example"}
+''')
+        new = load_declaration(b'''schema=1
+components=[]
+[[resources]]
+id="package"
+kind="package"
+identity={name="example"}
+desired={version={policy="exact",value="1-1"}}
+''')
+        item = resource(new)
+        result = self.report(new, current(old), batch(new, [fact(item, "present", True),
+            fact(item, "source", "aur"), fact(item, "version", "1-1")]))
+        self.assertEqual({row["comparison"] for row in properties(result).values()}, {"conflict"})
+        self.assertIn("consumer_context_conflict", result["blockers"])
+        self.assertTrue(all(not row["authority"] for row in properties(result).values()))
+
+    def test_retained_file_input_requirements_keep_context_and_exclusivity(self):
+        old = load_declaration(b'''schema=1
+[[components]]
+id="consumer"
+purpose="fixture"
+resources=["config"]
+requirements=[{resource="config",property="content_input",value="bundle"}]
+[[resources]]
+id="config"
+kind="file"
+identity={path="/fixture/config"}
+[[inputs]]
+id="bundle"
+base_directory="/fixture"
+files=[{path="config",classification="nonsecret"}]
+''')
+        matching = self.report(old, current(old), batch(old, [
+            fact(resource(old), "content_input", "bundle")]))
+        self.assertEqual(properties(matching)["content_input"]["comparison"], "agreement")
+        self.assertFalse(properties(matching)["content_input"]["authority"])
+        for desired, bundle in [('content="inline"', ""), ("mode=0o600", ""),
+                               ("mode=0o600", '''[[inputs]]
+id="bundle"
+base_directory="/fixture"
+files=[{path="config",classification="nonsecret"},
+       {path="second",classification="nonsecret"}]
+''')]:
+            with self.subTest(desired=desired, bundle=bool(bundle)):
+                new = load_declaration(('''schema=1
+components=[]
+[[resources]]
+id="config"
+kind="file"
+identity={path="/fixture/config"}
+desired={''' + desired + '}\n' + bundle).encode())
+                item = resource(new)
+                observations = batch(new, [fact(item, "content_input", "bundle"),
+                    fact(item, "mode", 0o600), fact(item, "content", "inline")])
+                result = self.report(new, current(old), observations)
+                self.assertEqual({row["comparison"] for row in properties(result).values()}, {"conflict"})
+                self.assertIn("consumer_context_conflict", result["blockers"])
 
     def test_physical_identity_survives_logical_rename(self):
         declaration = service(logical="renamed")
@@ -360,6 +442,34 @@ desired={running=true}
         self.assertFalse(properties(result)["running"]["authority"])
         self.assertEqual(result["retained_resources"][0]["required_decision"], "identity_unresolved")
 
+    def test_accepted_engine_definitions_must_match_the_recorded_physical_key(self):
+        declaration = load_declaration(b'''schema=1
+components=[]
+[[resources]]
+id="app"
+kind="compose"
+identity={engine="local",project="example"}
+manage=["running"]
+desired={running=true}
+''')
+        aliases = {"local": "accepted-engine"}
+        record = current(declaration, aliases=aliases)
+        observations = batch(declaration, [fact(resource(declaration), "running", True)])
+        wrong = deepcopy(record)
+        wrong["resources"][0]["definition"]["identity"]["project"] = "different-project"
+        self.assert_error("invalid_management_projection", lambda: self.report(
+            declaration, wrong, observations, engine_aliases=aliases))
+        renamed = load_declaration(declaration.source_bytes.replace(b'engine="local"', b'engine="new"'))
+        observations = batch(renamed, [fact(resource(renamed), "running", True)])
+        result = self.report(renamed, record, observations, engine_aliases={"new": "accepted-engine"})
+        self.assertFalse(properties(result)["running"]["authority"])
+        self.assertIn("physical_identity_unbound", result["blockers"])
+        self.assertEqual(result["retained_resources"][0]["required_decision"], "identity_unresolved")
+        complete = self.report(renamed, record, observations,
+                               engine_aliases={"local": "accepted-engine", "new": "accepted-engine"})
+        self.assertTrue(properties(complete)["running"]["authority"])
+        self.assertEqual(complete["retained_resources"], [])
+
     def test_required_service_check_rejects_a_mismatched_evidence_source(self):
         declaration = service(extra='''checks=["state"]
 [[checks]]
@@ -442,6 +552,24 @@ desired={content="SOURCE_SECRET_SENTINEL"}
                 self.assertEqual(result["retained_resources"][0]["required_decision"], "retire_or_relinquish")
                 after = {entry.name: (entry.read_bytes(), entry.stat().st_mtime_ns) for entry in path.iterdir()}
                 self.assertEqual(before, after)
+
+    def test_actual_relinquishment_preserves_external_consumer_requirements(self):
+        old = service(desired="{running=true}", manage='["running"]', prefix='''[[components]]
+id="backup"
+purpose="continuing consumer"
+resources=["web"]
+requirements=[{resource="web",property="running",value=true}]''')
+        new = service(desired="{running=false}", manage='["running"]')
+        with tempfile.TemporaryDirectory() as directory:
+            with HostStore.create(Path(directory) / "state", HOST, owner_uid=os.geteuid()) as store:
+                store.adopt(old, 0, ["web"])
+                stable_id = store.current()["resources"][0]["stable_id"]
+                store.relinquish([stable_id], 1)
+                result = self.report(new, store.current(), batch(new, [fact(resource(new), "running", False)]))
+        self.assertEqual(result["resources"][0]["management"], "relinquished")
+        self.assertEqual(result["resources"][0]["known_consumers"], ["backup"])
+        self.assertEqual(properties(result)["running"]["comparison"], "conflict")
+        self.assertFalse(properties(result)["running"]["authority"])
 
 
 if __name__ == "__main__":

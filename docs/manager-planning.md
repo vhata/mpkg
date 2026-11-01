@@ -43,6 +43,10 @@ capture token, opaque reference or source text is exported.
 An observation must have coherent host identity and UTC timestamps,
 unique resource/property facts and explicit resource coverage. Every
 compared fact must match the resource kind and bound physical identity.
+Identity fields are validated against the declaration kind's schema
+before constructing physical keys. Accepted engine identities are
+rebound through the supplied trusted aliases and must agree with their
+stored keys; missing historical alias bindings cannot grant authority.
 Native package and service facts must identify their corresponding
 observer source. Missing properties, unsupported sources, stale evidence
 and future timestamps remain unknown. `now` accepts an aware datetime
@@ -70,7 +74,13 @@ old kind's grants. Missing accepted engine bindings block identity
 matching; symbolic aliases are never inferred to be actual engines.
 
 Accepted consumer requirements remain effective alongside current
-requirements. Conflicting values are explicit, and consumer changes
+requirements, including after relinquishment transfers responsibility
+outside the manager. Combined constraints use declaration validation
+against the complete target context: an AUR source requirement can
+require an exact recipe binding, and retained file input references must
+still resolve without conflicting content sources. Invalid combined
+contexts report conflicts even when individual facts match.
+Conflicting values are explicit, and consumer changes
 require recording. Removing a declaration produces a retained resource
 requiring a retirement or relinquishment decision; it chooses neither
 deletion nor a data disposition. Relinquished records remain external.

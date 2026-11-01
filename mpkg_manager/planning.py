@@ -6,7 +6,8 @@ import json
 import re
 import uuid
 
-from .declarations import Declaration, DeclarationError, canonical_json, load_declaration, physical_key
+from .declarations import (Declaration, DeclarationError, canonical_json, load_declaration,
+                           physical_key, validate_model)
 
 
 MAX_PROJECTION_BYTES = 16 * 1024 * 1024
@@ -66,7 +67,14 @@ def _copy(value):
     return json.loads(raw)
 
 
-def _management(value):
+def _identity(resource):
+    """Validate the identity schema before the validated-only key helper."""
+    model = validate_model({"schema": 1, "components": [], "resources": [
+        {"id": "identity", "kind": resource["kind"], "identity": resource["identity"]}]})
+    return model["resources"][0]
+
+
+def _management(value, aliases):
     if value is None:
         return None
     result = _copy(value)
@@ -109,8 +117,9 @@ def _management(value):
         for field in ("manage", "consumers", "checks", "requires"):
             _strings(definition[field])
         _require(set(definition["manage"]) <= set(definition["desired"]))
-        if "engine" not in definition["identity"]:
-            _require(list(physical_key(definition, result["host_id"], {})) == key)
+        identity = _identity(definition)
+        if "engine" not in identity["identity"] or identity["identity"]["engine"] in aliases:
+            _require(list(physical_key(identity, result["host_id"], aliases)) == key)
         _require(type(resource["requirements"]) is list)
         for requirement in resource["requirements"]:
             _table(requirement, ("consumer", "property", "value"))
@@ -138,6 +147,7 @@ def _observation(value):
         _require(type(fact["kind"]) is str and type(fact["property"]) is str)
         _require(type(fact["identity"]) is dict and
                  all(type(k) is str and type(v) is str for k, v in fact["identity"].items()))
+        _identity(fact)
         _require(fact["state"] in ("known", "absent", "unknown"))
         _require(type(fact["value"]) in (str, int, bool, type(None)))
         _require(fact["state"] == "known" or fact["value"] is None)
@@ -156,9 +166,34 @@ def _same(left, right):
 
 def _key(resource, host_id, aliases):
     try:
-        return tuple(physical_key(resource, host_id, aliases))
+        return tuple(physical_key(_identity(resource), host_id, aliases))
     except (DeclarationError, KeyError, TypeError):
         return None
+
+
+def _constraints_valid(model, resource, constraints):
+    # A validation-only component combines retained/current constraints with
+    # the complete target context, including input definitions. It grants no
+    # authority and is never returned or recorded as a real consumer.
+    context = _copy(model)
+    names = {item["id"] for item in context["components"]}
+    suffix = 0
+    name = "retained-validation-0"
+    while name in names:
+        suffix += 1
+        name = f"retained-validation-{suffix}"
+    requirements = {}
+    for item in constraints:
+        requirement = {"resource": resource["id"], "property": item["property"], "value": item["value"]}
+        requirements[canonical_json(requirement)] = requirement
+    context["components"].append({"id": name, "purpose": "Validation-only retained constraints",
+                                  "resources": [resource["id"]],
+                                  "requirements": list(requirements.values())})
+    try:
+        validate_model(context)
+        return True
+    except DeclarationError:
+        return False
 
 
 def build_report(declaration, current, observations, *, host_id, engine_aliases=None,
@@ -187,7 +222,7 @@ def build_report(declaration, current, observations, *, host_id, engine_aliases=
     except (ValueError, TypeError, AttributeError, RecursionError):
         raise PlanningError("invalid_declaration_snapshot") from None
     try:
-        current = _management(current)
+        current = _management(current, aliases)
     except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
         raise PlanningError("invalid_management_projection") from None
     try:
@@ -247,7 +282,12 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
     facts = ({(item["resource_id"], item["property"]): item for item in observations["facts"]}
              if observations else {})
     coverage = set(observations["coverage"]) if observations else set()
-    accepted = {tuple(item["physical_key"]): item for item in current["resources"]} if current else {}
+    record_keys = {item["stable_id"]: _key(item["definition"], host_id, aliases)
+                   for item in current["resources"]} if current else {}
+    accepted = {tuple(item["physical_key"]): item for item in current["resources"]
+                if record_keys[item["stable_id"]] is not None} if current else {}
+    if any(key is None for key in record_keys.values()):
+        blocks.add("physical_identity_unbound")
     keys = {name: _key(resource, host_id, aliases) for name, resource in resources.items()}
     bound = [key for key in keys.values() if key is not None]
     _require(len(set(bound)) == len(bound))
@@ -257,7 +297,7 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
             requirements[requirement["resource"]].append({"consumer": component["id"],
                 "property": requirement["property"], "value": requirement["value"]})
 
-    def fact_for(resource, prop):
+    def fact_for(resource, prop, *, expected_key=None):
         if observation_state != "available":
             return None, "observations_" + observation_state
         if resource["id"] not in coverage:
@@ -265,8 +305,9 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
         fact = facts.get((resource["id"], prop))
         if fact is None:
             return None, "property_not_inspected"
-        if (fact["kind"] != resource["kind"] or keys[resource["id"]] is None
-                or _key(fact, host_id, aliases) != keys[resource["id"]]):
+        target_key = _key(resource, host_id, aliases) if expected_key is None else tuple(expected_key)
+        if (fact["kind"] != resource["kind"] or target_key is None
+                or _key(fact, host_id, aliases) != target_key):
             return None, "observation_identity_mismatch"
         source = {"package": "pacman_installed_inventory",
                   "service": "systemd_unit_properties"}.get(resource["kind"])
@@ -276,8 +317,8 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
             return fact, "observation_" + fact["state"]
         return fact, None
 
-    def compare(resource, prop, expected):
-        fact, reason = fact_for(resource, prop)
+    def compare(resource, prop, expected, *, expected_key=None):
+        fact, reason = fact_for(resource, prop, expected_key=expected_key)
         source = (fact["evidence_source"] if fact and fact["evidence_source"] in _SOURCES
                   else "provided_observation")
         if reason:
@@ -285,7 +326,7 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
         if resource["kind"] == "package" and prop == "present" and fact["value"] is False:
             return "unknown", ["package_request_resolution_unknown"], source
         if resource["kind"] == "package" and prop in ("version", "install_reason"):
-            present, present_reason = fact_for(resource, "present")
+            present, present_reason = fact_for(resource, "present", expected_key=expected_key)
             if present_reason or present["value"] is not True:
                 return "unknown", ["package_request_resolution_unknown"], source
         if resource["kind"] == "package" and prop == "version" and type(expected) is dict:
@@ -317,19 +358,23 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
         if managed and record["pending_disposition"]:
             reasons.add("recorded_disposition_pending")
         expected = {prop: [value] for prop, value in resource["desired"].items()}
-        constraints = requirements[name] + (record["requirements"] if managed else [])
+        retained_constraints = record["requirements"] if compatible else []
+        constraints = requirements[name] + retained_constraints
+        valid_context = not retained_constraints or _constraints_valid(model, resource, constraints)
         for requirement in constraints:
             expected.setdefault(requirement["property"], []).append(requirement["value"])
         accepted_manage = set(record["definition"]["manage"]) if managed else set()
-        accepted_consumers = set(record["definition"]["consumers"]) if managed else set()
+        accepted_consumers = set(record["definition"]["consumers"]) if compatible else set()
         consumers = accepted_consumers | set(resource["consumers"])
-        if managed and accepted_consumers != set(resource["consumers"]):
+        if compatible and accepted_consumers != set(resource["consumers"]):
             reasons.add("consumer_change_requires_recording")
         properties = []
         for prop, values in sorted(expected.items()):
             authority = prop in accepted_manage and prop in resource["manage"]
             if len({canonical_json(value) for value in values}) > 1:
                 state, limits, source = "conflict", ["consumer_requirement_conflict"], "provided_observation"
+            elif not valid_context:
+                state, limits, source = "conflict", ["consumer_context_conflict"], "provided_observation"
             else:
                 state, limits, source = compare(resource, prop, values[0])
             reasons.update(limits)
@@ -340,7 +385,7 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
                     reasons.add("property_authority_missing")
             properties.append({"property": prop, "comparison": state, "authority": authority,
                                "evidence_source": source, "limitations": limits})
-        accepted_checks = set(record["definition"]["checks"]) if managed else set()
+        accepted_checks = set(record["definition"]["checks"]) if compatible else set()
         check_ids = set(resource["checks"]) | accepted_checks
         if accepted_checks:
             # The current store projection retains check IDs but not their
@@ -379,10 +424,10 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
         blocks.update(reasons)
     retained, unselected = [], []
     if current:
-        unresolved = any(key is None for key in keys.values())
         selected_keys = {keys[name] for name in included}
         for record in current["resources"]:
-            if tuple(record["physical_key"]) in bound:
+            record_key = record_keys[record["stable_id"]]
+            if record_key is not None and tuple(record["physical_key"]) in bound:
                 if tuple(record["physical_key"]) not in selected_keys:
                     unselected.append({"stable_id": record["stable_id"],
                                        "logical_id": record["logical_id"],
@@ -391,7 +436,7 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
                     if record["pending_disposition"] and record["management"] == "accepted":
                         blocks.add("recorded_disposition_pending")
                 continue
-            uncertain = unresolved and "engine" in record["definition"]["identity"]
+            uncertain = record_key is None
             active = record["management"] == "accepted"
             decision = ("identity_unresolved" if uncertain else "retire_or_relinquish") if active else None
             retained.append({"stable_id": record["stable_id"], "logical_id": record["logical_id"],
