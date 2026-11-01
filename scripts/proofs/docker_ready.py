@@ -18,6 +18,7 @@ from experiments import fresh
 from native_manifest import SOURCE_SHA256, check_archive, trusted_json, validate_acquisition
 from native_service import parent_directory, trusted_path
 from run import ENV, command, trusted_install
+from service_environment import verified_environment_files
 
 
 UNITS = {'docker.service': ('docker', '/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock'),
@@ -31,7 +32,8 @@ PROPERTIES = ('LoadState,ActiveState,SubState,MainPID,UnitFileState,FragmentPath
 
 def properties(unit):
     raw = command(['/usr/bin/systemctl', 'show', unit, '--property=' + PROPERTIES])
-    return dict(line.split('=', 1) for line in raw.decode().splitlines())
+    value = dict(line.split('=', 1) for line in raw.decode().splitlines())
+    return verified_environment_files(unit, value) if UNITS[unit][1] else value
 
 
 def assert_unit(unit, value, started=False):

@@ -323,6 +323,14 @@ manager startup arguments and empty environment-option sources. The
 main process must own every covering listener before and after the
 probe. The pinned package unit has no `EnvironmentFile` or `SSHD_OPTS`;
 introducing either blocks this closed fixture check.
+The shared `service_environment.py` checks the fixed Docker, containerd,
+managed SSH and external-consumer service objects through local
+[typed systemd D-Bus properties](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.systemd1.html).
+An omitted `systemctl show` environment-file field is accepted only when
+the separate `EnvironmentFiles` query returns the exact empty `a(sb)`
+array. Nonempty, malformed, unsupported and failed reads refuse; no
+environment paths or values are exported. Textual `Environment` and
+`PassEnvironment` must still be present and empty.
 `check-external` checks only the separate consumer and shared sentinel;
 it does not require the retired managed service or exclusive directory.
 These commands write private observations, without changing services.

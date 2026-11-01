@@ -20,6 +20,7 @@ from core import Journal, Refused, canonical, private_directory, read_regular, r
 from native_manifest import SOURCE_SHA256, check_archive, trusted_json, validate_acquisition
 from run import command, trusted_install
 from compose_proof import covering_listeners
+from service_environment import verified_environment_files
 
 
 PUBLIC = Path('/etc/mpkg-fixture-ssh')
@@ -125,7 +126,8 @@ def no_listener():
 
 def service_properties(unit):
     raw = command(['/usr/bin/systemctl', 'show', unit, '--property=ActiveState,SubState,MainPID,UnitFileState,FragmentPath,DropInPaths,LimitCORE,ExecStart,Environment,EnvironmentFiles,PassEnvironment'])
-    return dict(line.split('=', 1) for line in raw.decode().splitlines())
+    value = dict(line.split('=', 1) for line in raw.decode().splitlines())
+    return verified_environment_files(unit, value)
 
 
 def external_unit():

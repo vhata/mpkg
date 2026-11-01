@@ -36,6 +36,7 @@ import run as proof_run
 import docker_ready
 import docker_baseline
 import native_conflict
+import service_environment
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -182,6 +183,66 @@ class RealNativeConflictTests(unittest.TestCase):
                          case['readonly_native_resolution']['stdout_sha256_computed'])
         with self.assertRaisesRegex(native_conflict.Refused, 'frozen_conflict_resolution_changed'):
             native_conflict.parse_candidates(b'extra mpkg-proof-conflict 1-1 synthetic\n')
+
+
+class ServiceEnvironmentTests(unittest.TestCase):
+    def test_absent_display_field_requires_typed_empty_array_for_each_service(self):
+        expected = {
+            'docker.service': 'docker_2eservice',
+            'containerd.service': 'containerd_2eservice',
+            'sshd.service': 'sshd_2eservice',
+            'mpkg-fixture-external.service': 'mpkg_2dfixture_2dexternal_2eservice',
+        }
+        for unit, object_name in expected.items():
+            original = {'Environment': '', 'PassEnvironment': ''}
+            with self.subTest(unit=unit), mock.patch.object(
+                    service_environment, 'command', return_value=b'a(sb) 0\n') as query:
+                value = service_environment.verified_environment_files(unit, original)
+            self.assertEqual(value['EnvironmentFiles'], '')
+            self.assertNotIn('EnvironmentFiles', original)
+            query.assert_called_once_with([
+                '/usr/bin/busctl', '--system', '--no-pager', '--timeout=10s',
+                'get-property', 'org.freedesktop.systemd1',
+                '/org/freedesktop/systemd1/unit/' + object_name,
+                'org.freedesktop.systemd1.Service', 'EnvironmentFiles',
+            ], timeout=15)
+
+    def test_typed_nonempty_wrong_type_and_query_failure_never_mean_empty(self):
+        private = b'PRIVATE_SENTINEL'
+        for raw in (b'', b'as 0', b'a(sb) 1 "' + private + b'" false',
+                    b'a(sb) 0 ' + private, b'a(sb) 00', b'a(sb) -1'):
+            with self.subTest(raw=raw), mock.patch.object(
+                    service_environment, 'command', return_value=raw), self.assertRaisesRegex(
+                    service_environment.Refused, '^service_environment_files_not_verified$'):
+                service_environment.verified_environment_files('sshd.service', {'EnvironmentFiles': ''})
+        with mock.patch.object(service_environment, 'command', side_effect=service_environment.Refused(
+                'PRIVATE_SENTINEL')), self.assertRaisesRegex(
+                service_environment.Refused, '^service_environment_files_not_verified$'):
+            service_environment.verified_environment_files('sshd.service', {})
+
+    def test_unexpected_unit_or_nonempty_display_is_not_queried_or_normalized(self):
+        with mock.patch.object(service_environment, 'command') as query:
+            with self.assertRaisesRegex(service_environment.Refused, 'unit_unsupported'):
+                service_environment.verified_environment_files('other.service', {})
+            for existing in ('/private/environment (ignore_errors=no)', None):
+                with self.assertRaisesRegex(service_environment.Refused, 'files_not_empty'):
+                    service_environment.verified_environment_files('sshd.service', {'EnvironmentFiles': existing})
+        query.assert_not_called()
+
+    def test_observation_callers_verify_fixed_services_including_external_consumer(self):
+        for unit in ('docker.service', 'containerd.service', 'sshd.service',
+                     native_service.ROLES['external'][3]):
+            owner = docker_ready if unit in docker_ready.UNITS else native_service
+            observe = owner.properties if owner is docker_ready else owner.service_properties
+            with self.subTest(unit=unit), mock.patch.object(
+                    owner, 'command', return_value=b'Environment=\nPassEnvironment=\n'), mock.patch.object(
+                    service_environment, 'command', return_value=b'a(sb) 0\n') as query:
+                self.assertEqual(observe(unit)['EnvironmentFiles'], '')
+                self.assertEqual(query.call_count, 1)
+        with mock.patch.object(docker_ready, 'command', return_value=b'LoadState=loaded\n'), mock.patch.object(
+                service_environment, 'command') as query:
+            self.assertNotIn('EnvironmentFiles', docker_ready.properties('docker.socket'))
+        query.assert_not_called()
 
 
 class DockerReadinessTests(unittest.TestCase):
