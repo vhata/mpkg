@@ -11,8 +11,9 @@ import sys
 import uuid
 
 OLD_SHA256 = '7b570707869fc9e3e54cbcf6ae5d01d89d4fbaf33ac761ab2c31e52c8f549ab8'
-NEW_SHA256 = '645822526f899506a9f0b6e13c27945003b111ed6d9b065e1df992095acf5961'
+NEW_SHA256 = 'fbb713c105ed23fe140d2ccc9443eca6295d34e5b788e2e58c994c821638f7b6'
 ENVIRONMENT_SHA256 = '91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502'
+DEFAULTS_SHA256 = '4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'
 REPLACEMENT_BASE64 = None  # Filled only by the fixed host transport.
 
 
@@ -115,6 +116,7 @@ def main():
     if hashlib.sha256(data).hexdigest() != NEW_SHA256:
         raise RuntimeError('replacement payload differs from reviewed helper')
     read_bound_file(directory / 'service_environment.py', ENVIRONMENT_SHA256)
+    read_bound_file(directory / 'account_defaults.py', DEFAULTS_SHA256)
     target = directory / 'native_service.py'
     old, identity = read_bound_file(target, OLD_SHA256)
     spec = importlib.util.spec_from_file_location('previous_native_service', target)
@@ -135,6 +137,7 @@ def main():
                 'old_sha256': OLD_SHA256, 'new_sha256': NEW_SHA256,
                 'old_identity': identity, 'old_bytes': str(receipt / 'previous.py'),
                 'service_environment_sha256': ENVIRONMENT_SHA256,
+                'account_defaults_sha256': DEFAULTS_SHA256,
                 'untouched_service': observed, 'executed': False}
     write_new(receipt / 'prepared.json', (json.dumps(evidence, sort_keys=True) + '\n').encode())
     publish_replacement(target, data, identity)

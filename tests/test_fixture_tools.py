@@ -371,7 +371,7 @@ class FixtureProofAdditionTests(unittest.TestCase):
             root=Path(tmp);(root/'scripts/proofs').mkdir(parents=True)
             for name,filename in [('docker-ready','docker_ready.py'),('docker-baseline','docker_baseline.py'),
                                   ('native-conflict','native_conflict.py'),('service-environment','service_environment.py'),
-                                  ('docker-resume','docker_resume.py')]:
+                                  ('docker-resume','docker_resume.py'),('account-defaults','account_defaults.py')]:
                 (root/'scripts/proofs'/filename).write_bytes(b'changed reviewed source')
                 with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(module,'qmp_query') as qmp:
                     with self.assertRaises(ValueError):module.console(addition=name)
@@ -380,9 +380,10 @@ class FixtureProofAdditionTests(unittest.TestCase):
     def test_each_generated_addition_binds_its_own_reviewed_bytes_and_filename(self):
         module=self.load()
         expected={'service-environment':('service_environment.py','91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502'),
+                  'account-defaults':('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
                   'docker-resume':('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05'),
                   'docker-ready':('docker_ready.py','5efbc61753dbf873d26801f760c3e47f5a48831b1c3c0b02ba43a3c7c7e08a07'),
-                  'docker-baseline':('docker_baseline.py','ef9385b2a0f55f3074ccb7522ae14719fc97fddf1fd95e3d8f4796c53bfbbdb2'),
+                  'docker-baseline':('docker_baseline.py','f6af324e2d0844a6159f0e6dcf1e72c766679953dc4e4ec5c093ff42271bbeca'),
                   'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b')}
         for name,(filename,digest) in expected.items():
             with self.subTest(name=name):
@@ -431,7 +432,7 @@ class FixtureNativeServiceReplacementTests(unittest.TestCase):
             root=Path(tmp);(root/'scripts/proofs').mkdir(parents=True)
             (root/'scripts/proofs/native_service.py').write_bytes(b'unreviewed')
             with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(vm,'qmp_query') as qmp:
-                with self.assertRaises(ValueError):vm.console(replacement=True)
+                with self.assertRaises(ValueError):vm.console(replacement='native-service')
                 qmp.assert_not_called()
         program=ast.parse(vm.native_service_replacement_payload())
         assignment=next(n for n in program.body if isinstance(n,ast.Assign)
@@ -492,6 +493,58 @@ class FixtureNativeServiceReplacementTests(unittest.TestCase):
             previous.PUBLIC.symlink_to(root/'missing')
             with self.assertRaises(RuntimeError):module.require_fresh_state('guest',previous)
             previous.command.assert_not_called()
+
+
+class FixtureDockerBaselineReplacementTests(unittest.TestCase):
+    def load(self):
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/guest_docker_baseline_replace.py'
+        spec=importlib.util.spec_from_file_location('fixture_docker_replacement',path)
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        return module
+
+    def test_docker_replacement_binds_current_reviewed_bytes_and_rejects_other_modes(self):
+        vm=FixtureProofAdditionTests().load();module=self.load()
+        program=ast.parse(vm.docker_baseline_replacement_payload())
+        assignment=next(n for n in program.body if isinstance(n,ast.Assign)
+                        and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='REPLACEMENT_BASE64')
+        self.assertEqual(hashlib.sha256(base64.b64decode(assignment.value.value)).hexdigest(),module.NEW_SHA256)
+        with mock.patch.object(vm,'qmp_query') as qmp:
+            for name in ('../native-service','arbitrary.py',True):
+                with self.assertRaises(ValueError):vm.console(replacement=name)
+            qmp.assert_not_called()
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'scripts/proofs').mkdir(parents=True)
+            (root/'scripts/proofs/docker_baseline.py').write_bytes(b'unreviewed')
+            with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(vm,'qmp_query') as qmp:
+                with self.assertRaises(ValueError):vm.console(replacement='docker-baseline')
+                qmp.assert_not_called()
+
+    def test_docker_existing_state_broken_symlink_or_account_refuses_correction(self):
+        module=self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            with mock.patch.object(module,'Path',side_effect=lambda p:root/str(p).lstrip('/')), \
+                 mock.patch.object(module.pwd,'getpwnam',side_effect=KeyError), \
+                 mock.patch.object(module.pwd,'getpwuid',side_effect=KeyError), \
+                 mock.patch.object(module.grp,'getgrnam',side_effect=KeyError), \
+                 mock.patch.object(module.grp,'getgrgid',side_effect=KeyError) as group:
+                module.require_fresh_state('guest')
+                target=root/'opt/docker';target.parent.mkdir();target.symlink_to(root/'missing')
+                with self.assertRaises(RuntimeError):module.require_fresh_state('guest')
+                target.unlink()
+                state=root/'var/lib/mpkg-proofs/guest/docker-baseline';state.mkdir(parents=True)
+                with self.assertRaises(RuntimeError):module.require_fresh_state('guest')
+                state.rmdir();group.side_effect=None;group.return_value=SimpleNamespace(gr_gid=962)
+                with self.assertRaises(RuntimeError):module.require_fresh_state('guest')
+
+    def test_docker_atomic_publication_refuses_old_identity_change(self):
+        module=self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            target=Path(tmp)/'docker_baseline.py';target.write_bytes(b'original')
+            with mock.patch.object(module,'NEW_SHA256',hashlib.sha256(b'corrected').hexdigest()), \
+                 mock.patch.object(module,'read_bound_file',return_value=(b'original',('changed',))):
+                with self.assertRaises(RuntimeError):module.publish_replacement(target,b'corrected',('expected',))
+            self.assertEqual(target.read_bytes(),b'original')
 
 
 class FixtureNativeAdoptionTests(unittest.TestCase):

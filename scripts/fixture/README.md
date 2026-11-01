@@ -143,7 +143,8 @@ missing completion is not proof of success. A running build blocks another
 heavy build, while a successful exited Python unit may retain its status.
 
 `vm.py install-docker-ready`, `install-docker-baseline` and
-`install-native-conflict`, `install-service-environment` and
+`install-native-conflict`, `install-service-environment`,
+`install-account-defaults` and
 `install-docker-resume` add only their fixed reviewed, digest-pinned helpers
 after Python is available. Each generates the installer payload
 at runtime and uses the existing verified console transport.
@@ -152,14 +153,22 @@ precede publication. An existing target is refused, and a private record
 binds the added file's digest. The operation does not run the new helper
 or modify the immutable source disk.
 
-Install the shared service environment observer before Docker readiness or
-the native-service correction. `vm.py replace-native-service` replaces
+Install the shared service environment observer before Docker readiness,
+and the account-defaults validator before corrected baseline helpers.
+`vm.py replace-native-service` replaces
 only the exact original `native_service.py` with its reviewed correction.
 It requires untouched native fixture paths, accounts, packaged SSH unit
 and configuration, no SSH listener, and an inactive disabled service.
 It preserves the old helper bytes and a prepared receipt before atomic
 publication, then records completion. An unexpected old digest or any
 prior replacement evidence blocks replay; no replacement helper is run.
+
+`vm.py replace-docker-baseline` separately corrects only the original
+unused Docker baseline helper. It requires exact original/replacement
+digests, the account-defaults validator, absent Compose account and fixed
+application/state paths. It preserves old bytes and receipts before atomic
+publication. It neither calls the helper nor contacts Docker. Neither
+pristine replacement route can resume a partially created native fixture.
 
 The Docker resume addition only installs its helper. Its separate runtime
 entrypoint requires the successful initial engine/import evidence and
