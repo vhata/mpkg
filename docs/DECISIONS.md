@@ -15,6 +15,7 @@ Keep the existing `mpkg` helper usable while the replacement is developed
 in the `mpkg_manager` Python 3.12 namespace. The implemented command
 validates a closed TOML model and produces an immutable nonsecret snapshot.
 Separate libraries provide [durable recording](manager-store.md),
+[verified host policy and bounded capture](manager-capture.md),
 [native](manager-observations.md) and
 [Compose](manager-compose-observations.md) observations,
 [non-executable comparisons](manager-planning.md), and protected
@@ -26,6 +27,9 @@ from retained host history. Observations carry explicit identity, source
 and time; they do not grant authority. Matching properties do not imply
 application readiness or successful functional checks. Imported report
 JSON and transformed candidate bytes cannot authorize host effects.
+Protected capture freshness currently uses the recorded decision and
+capture name. Resolving declaration reference UUIDs to stored captures
+remains separate work; successful capture is not proof of that binding.
 
 Combined library checks use private temporary stores and synthetic query
 responses, including unavailable evidence, retained data, relinquishment

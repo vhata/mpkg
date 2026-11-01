@@ -32,6 +32,12 @@ checks and product acceptance.
   Its [store guide](docs/manager-store.md) defines recording and ownership
   boundaries; an installed recorder and authorization dispatcher are
   separate work.
+- `mpkg_manager.host_policy` loads and verifies host identity, engine
+  aliases and allowed input roots. `mpkg_manager.protected_capture` reads
+  bounded regular files beneath a verified policy handle. The
+  [capture guide](docs/manager-capture.md) defines path, metadata and
+  ownership checks and their concurrency limits. Trusted fixture path/UID
+  overrides are not a production privilege boundary.
 - `mpkg_manager.observe_native` and `mpkg_manager.observe_compose` collect
   time-bounded observations through closed read-only queries. Their
   [native](docs/manager-observations.md) and
@@ -70,7 +76,8 @@ checks and product acceptance.
   timestamp. It is not a production observation coordinator or status CLI.
   Protected Sonarr candidates are also checked against stored capture
   evidence without turning a pure transformation into observation or
-  application authority.
+  application authority. Temporary loaded policies and actual XML reads
+  exercise capture-to-store freshness and stale candidate refusal.
 - `scripts/fixture/` owns private runner acquisition, disposable guest
   assembly, supervised builds and bounded input/artifact transport.
   `scripts/proofs/` contains guarded mechanism experiments. These tools
@@ -99,6 +106,13 @@ satisfying the complete mandate or infer a backward-compatible API
 requirement. Synthetic integration checks establish how the library
 interfaces compose, not real Arch/Docker behavior, production privilege
 isolation or the first-release acceptance scenarios.
+
+Protected-input storage currently relates captured bytes to a decision
+revision and capture name. The declaration's protected `reference` UUID
+is not resolved to a generated stored capture identity. Tests exercise
+the decision/name API explicitly and retain unavailable reference
+resolution and input-freshness limits; recording bytes does not prove
+that a declaration's protected inputs have been bound or replayed.
 
 ## Worktree isolation
 

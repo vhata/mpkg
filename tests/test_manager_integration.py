@@ -11,13 +11,15 @@ import unittest
 from unittest.mock import patch
 
 from mpkg_manager.declarations import load_declaration
+from mpkg_manager.host_policy import load_host_policy
 from mpkg_manager.observations import ObservationBatch
 from mpkg_manager.observe_compose import (CONTAINER_QUERY, ENGINE_QUERY, IMAGE_QUERY,
                                            LIST_QUERY, PROJECT_FILTER, observe_compose)
 from mpkg_manager.observe_native import PACKAGE_EXPLICIT, PACKAGE_VERSIONS, SERVICE_QUERY, observe_resources
 from mpkg_manager.planning import build_report
+from mpkg_manager.protected_capture import CaptureError, capture_protected
 from mpkg_manager.query_process import QueryResult
-from mpkg_manager.sonarr_xml import transform_port
+from mpkg_manager.sonarr_xml import SonarrXmlError, transform_port
 from mpkg_manager.store import HostStore, ProtectedInput
 
 
@@ -177,6 +179,11 @@ def check_results(row):
     return {(check["role"], check["id"]): check["result"] for check in row["checks"]}
 
 
+def stored_files(path):
+    return {item.name: (item.read_bytes(), item.stat().st_mtime_ns, item.stat().st_mode)
+            for item in path.iterdir()}
+
+
 class ManagerIntegrationTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -216,8 +223,38 @@ class ManagerIntegrationTests(unittest.TestCase):
                             host_id=HOST, engine_aliases=ALIASES, now=NOW, **kwargs)
 
     def files(self):
-        return {path.name: (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_mode)
-                for path in self.path.iterdir()}
+        return stored_files(self.path)
+
+    def capture_fixture(self):
+        inputs = self.root / "inputs"
+        inputs.mkdir(mode=0o700)
+        source = inputs / "config.xml"
+        original = ("<Config>\r\n  <Port>8989</Port><ApiKey>" + PRIVATE + "</ApiKey>\r\n</Config>").encode()
+        source.write_bytes(original)
+        source.chmod(0o600)
+        policy_dir = self.root / "policy"
+        policy_dir.mkdir(mode=0o700)
+        policy_path = policy_dir / "host-policy.toml"
+        policy_path.write_text(f'schema=1\nhost_id="{HOST}"\nengine_aliases={{local="{ENGINE}"}}\n'
+                               f'allowed_input_roots={json.dumps([str(inputs)])}\n')
+        policy_path.chmod(0o600)
+        declaration = load_declaration(f'''schema=1
+components=[]
+[[resources]]
+id="sonarr"
+kind="sonarr_xml"
+identity={{path="{source}"}}
+desired={{port=8990}}
+manage=["port"]
+input={{bundle="xml"}}
+[[inputs]]
+id="xml"
+base_directory="{inputs}"
+files=[{{path="config.xml",classification="protected",reference="{REFERENCE}"}}]
+'''.encode())
+        request = {"root": str(inputs), "relative_path": "config.xml", "name": "sonarr-config",
+                   "purpose": "Integration fixture XML"}
+        return policy_path, source, original, declaration, request
 
     def test_real_recording_observers_and_comparison_keep_separate_evidence(self):
         before = self.files()
@@ -366,6 +403,71 @@ manage=["port"]
             self.assertNotIn(PRIVATE.encode(), value)
             self.assertNotIn(hashlib.sha256(original).hexdigest().encode(), value)
         self.assertEqual(self.files(), before)
+
+    def test_loaded_policy_capture_store_and_candidate_keep_reference_resolution_unavailable(self):
+        policy_path, source, original, target, request = self.capture_fixture()
+        store_path = self.root / "captured-records"
+        with patch("subprocess.Popen", side_effect=AssertionError("Live process invocation")), \
+             load_host_policy(path=policy_path, owner_uid=os.geteuid()) as loaded:
+            capture = capture_protected(loaded, **request)
+            policy = loaded.policy
+            with HostStore.create(store_path, policy.host_id, engine_aliases=policy.engine_aliases,
+                                  owner_uid=os.geteuid()) as store:
+                store.adopt(target, 0, ["sonarr"], protected_inputs=[capture])
+                before = stored_files(store_path)
+                current = capture_protected(loaded, **request)
+                self.assertEqual(store.compare_protected(1, current.name, current.raw,
+                                                        current.source_identity), "same")
+                # The existing lookup is (decision, capture name). Declared
+                # protected-reference UUIDs are not resolved by this API;
+                # capturing and recording bytes does not close that gap.
+                self.assertEqual(store.compare_protected(1, REFERENCE, current.raw,
+                                                        current.source_identity), "unavailable")
+                self.assertEqual(target.model["inputs"][0]["files"][0]["reference"], REFERENCE)
+                candidate = transform_port(current.raw, 8990, expected_original=capture.raw)
+                native = NativeQueries()
+                evidence = observe_resources(target.model["resources"], host_id=policy.host_id,
+                                             observed_at=WHEN, runner=native)
+                report = build_report(target, store.current(), evidence.as_dict(), host_id=policy.host_id,
+                                      engine_aliases=policy.engine_aliases, now=NOW).as_dict()
+                self.assertEqual(native.calls, [])
+                self.assertEqual(property_result(report, "sonarr", "port")["comparison"], "unknown")
+                self.assertIn("input_freshness_unverified", report["blockers"])
+                self.assertFalse(report["executable"])
+                self.assertFalse(candidate.as_dict()["apply_authorized"])
+                self.assertEqual(candidate.candidate_bytes, original.replace(b"8989", b"8990"))
+                self.assertEqual(source.read_bytes(), original)
+                self.assertEqual(stored_files(store_path), before)
+                for public in (report, store.history(), candidate.as_dict()):
+                    self.assertNotIn(PRIVATE, json.dumps(public))
+                    self.assertNotIn(REFERENCE, json.dumps(public))
+                    self.assertNotIn(hashlib.sha256(original).hexdigest(), json.dumps(public))
+
+    def test_changed_real_capture_and_policy_block_stale_candidate_without_store_changes(self):
+        policy_path, source, original, target, request = self.capture_fixture()
+        store_path = self.root / "captured-records"
+        with load_host_policy(path=policy_path, owner_uid=os.geteuid()) as loaded:
+            capture = capture_protected(loaded, **request)
+            policy = loaded.policy
+            with HostStore.create(store_path, policy.host_id, engine_aliases=policy.engine_aliases,
+                                  owner_uid=os.geteuid()) as store:
+                store.record_intent(target, 0, protected_inputs=[capture])
+                before = stored_files(store_path)
+                changed_bytes = original.replace(b"8989", b"8991")
+                source.write_bytes(changed_bytes)
+                changed = capture_protected(loaded, **request)
+                self.assertEqual(store.compare_protected(1, changed.name, changed.raw,
+                                                        changed.source_identity), "changed")
+                with self.assertRaises(SonarrXmlError) as stale:
+                    transform_port(changed.raw, 8990, expected_original=capture.raw)
+                self.assertEqual(stale.exception.code, "original_changed")
+                policy_path.write_bytes(policy_path.read_bytes() + b"\n# changed policy\n")
+                with self.assertRaises(CaptureError) as invalidated:
+                    capture_protected(loaded, **request)
+                self.assertEqual(invalidated.exception.code, "policy_unavailable")
+                self.assertNotIn(PRIVATE, str(invalidated.exception))
+                self.assertEqual(source.read_bytes(), changed_bytes)
+                self.assertEqual(stored_files(store_path), before)
 
 
 if __name__ == "__main__":

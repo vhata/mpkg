@@ -16,6 +16,8 @@ The replacement Python libraries provide these foundations:
 
 - [Durable host records](docs/manager-store.md) for intent, adoption,
   relinquishment, protected captures and original accepted checks.
+- [Verified host policy and protected capture](docs/manager-capture.md)
+  for bounded reads beneath explicitly allowed input roots.
 - Read-only [native](docs/manager-observations.md) and
   [Compose](docs/manager-compose-observations.md) observations with
   explicit identity, scope, time and unavailable evidence.
@@ -27,6 +29,8 @@ The replacement Python libraries provide these foundations:
 These are library interfaces. There is no installed privileged helper,
 application worker or apply command; comparison reports remain
 non-executable, and transformed candidate bytes carry no apply authority.
+Protected captures currently bind a recording decision and capture name;
+declaration reference UUIDs are not yet resolved to stored captures.
 
 This repository currently contains an Arch Linux metapackage helper and
 five `vhata-*` package groups. `mpkg` is a Python executable; its
