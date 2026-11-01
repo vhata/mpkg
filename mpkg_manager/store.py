@@ -621,10 +621,17 @@ class HostStore:
             revision = self._revision()
             row = self._db.execute("SELECT snapshot_id FROM decisions ORDER BY revision DESC LIMIT 1").fetchone()
             snapshot_id = row[0] if row else None
+            snapshot = None
             declared = []
             unresolved_engine = False
             if snapshot_id:
-                for resource in self._load_snapshot(snapshot_id).model["resources"]:
+                declaration = self._load_snapshot(snapshot_id)
+                snapshot = {"id": snapshot_id,
+                            "source_sha256": hashlib.sha256(declaration.source_bytes).hexdigest(),
+                            "canonical_sha256": declaration.sha256,
+                            "schema_version": declaration.schema_version,
+                            "normalization_version": declaration.normalization_version}
+                for resource in declaration.model["resources"]:
                     try:
                         declared.append(self._physical(resource))
                     except StoreError:
@@ -643,7 +650,7 @@ class HostStore:
                                   "pending_disposition": item["active"] and state == "absent",
                                   "observation": {"state": "unknown", "reason": "not_observed"}})
             return {"host_id": self.host_id, "revision": revision,
-                    "snapshot_id": snapshot_id, "resources": resources}
+                    "snapshot_id": snapshot_id, "snapshot": snapshot, "resources": resources}
 
     def history(self):
         """Sanitized decision history excludes protected references and content."""

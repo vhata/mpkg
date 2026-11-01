@@ -72,7 +72,7 @@ class HostStoreTests(unittest.TestCase):
     def test_create_is_explicit_private_and_binds_host(self):
         store = self.create()
         self.assertEqual(store.current(), {"host_id": self.host, "revision": 0,
-                                          "snapshot_id": None, "resources": []})
+                                          "snapshot_id": None, "snapshot": None, "resources": []})
         self.assertEqual(stat.S_IMODE(self.directory.stat().st_mode), 0o700)
         for name in ("state.sqlite3", "state.lock"):
             self.assertEqual(stat.S_IMODE((self.directory / name).stat().st_mode), 0o600)
@@ -189,6 +189,9 @@ class HostStoreTests(unittest.TestCase):
         self.assertNotEqual(one["snapshot_id"], two["snapshot_id"])
         self.assertEqual(store.snapshot(one["snapshot_id"]), self.declaration)
         self.assertEqual(store.snapshot(two["snapshot_id"]), changed)
+        self.assertEqual(store.current()["snapshot"], {
+            "id": two["snapshot_id"], "source_sha256": hashlib.sha256(changed.source_bytes).hexdigest(),
+            "canonical_sha256": changed.sha256, "schema_version": 1, "normalization_version": 1})
 
     def test_forged_declaration_cannot_bypass_validation(self):
         store = self.create()

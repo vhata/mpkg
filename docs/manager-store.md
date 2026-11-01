@@ -58,6 +58,13 @@ and refused rather than silently repaired.
   latest snapshot and decision revision, and missing-declaration
   dispositions. `history()` projects the append-only decision sequence.
 
+The `current()` projection includes `snapshot_id` and a `snapshot`
+metadata object containing `id`, `source_sha256`, `canonical_sha256`,
+`schema_version` and `normalization_version` (both fields are null before
+the first decision). These identify explicitly nonsecret declaration
+content, so a planner can bind exact input without exposing the source.
+Protected input digests and tokens are never included.
+
 Each write compares the expected revision inside the transaction. A
 stale request publishes neither a new decision nor its snapshot or
 protected inputs. Physical identity is bound to the host UUID and
