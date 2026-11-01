@@ -216,10 +216,49 @@ before any system mutation.
 - `guest-image-import.sh`: archive import, then observed image manifest.
 - `guest-native-proof.sh`: actual native manifest, then prepare-only proof.
 - `guest-compose-proof.sh`: fixed Sonarr/Radarr experiment.
+- `guest-docker-baseline.sh`: assemble the separate running adoption fixture.
+- `guest-docker-baseline-check.sh`: check that fixture after assembly/restore.
 
 The wrappers do not transfer or install code. A newly added Python helper
 must first be installed root-owned under `/opt/mpkg-proofs` through the
 separately reviewed transport; the immutable source image is not modified.
+
+### Running Docker adoption baseline
+
+`docker_baseline.py setup --guest-id <UUID>` implements the ordinary
+host-network/bind fixture from the
+[fixture specification](../../docs/specs/2026-10-31-first-release-fixture.md).
+Unlike the mechanism experiment, it keeps both applications running.
+It requires verified image/engine bindings, Docker readiness, and the
+native fixture's exact accounts/media group and shared sentinel first.
+It refuses any collision with compose UID963/GID962 or the fresh
+application paths, rather than reusing or renumbering another account.
+
+Projects are `mpkg-fixture-sonarr` and `mpkg-fixture-radarr`; ports are
+18989 and 17878, with 18990 checked for the later managed change. Source
+and config directories are `/opt/docker/{sonarr,radarr}`; each config
+root is 963:1001 with mode 2770. The existing native shared root is preserved;
+new Radarr directories use the exact declared synthetic sentinel.
+Both services use explicit preacquired digest/platform bindings, host
+networking, `unless-stopped`, and the specified PUID/PGID/UMASK/timezone.
+Setup enables only guest `docker.service` for later offline restoration.
+
+The private assembly journal captures source inputs, rendered Compose,
+generated-credential XML and accepted post-startup XML. It is separate
+from product history. Checks bind actual containers/mounts, full process
+UID/GID slots/groups, namespace mappings, capabilities and every covering
+listener. Attributed anonymous ping and Radarr's authenticated root-folder
+registration/discovery use the existing bounded HTTP helper. Supplemental
+read-only file probes drop to the measured credentials; those probes are
+reported separately from Radarr's actual application discovery.
+
+`check` preserves all accepted XML values and checks source/render drift,
+metadata, copied-credential sentinel reads and the live Radarr predicate.
+It requires completed assembly history; an interrupted setup cannot
+become an accepted baseline merely by running the check command. Setup
+does not stop/retire applications, create snapshots, or claim product
+adoption or A1–A12 success. The coordinator records an offline checkpoint
+only after observed success. Volume/network variants remain separate.
 
 ### Native service baseline
 

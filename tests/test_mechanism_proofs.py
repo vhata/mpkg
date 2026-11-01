@@ -32,6 +32,7 @@ import native_manifest
 import native_service
 import run as proof_run
 import docker_ready
+import docker_baseline
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -104,6 +105,43 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout)['status'], 'refused')
             self.assertEqual(result.stderr, '')
             self.assertEqual(list(Path(temporary).iterdir()), [])
+
+    def test_docker_baseline_setup_refuses_host_before_system_changes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            result = subprocess.run([
+                sys.executable, '-I', str(PROOFS / 'docker_baseline.py'), 'setup',
+                '--guest-id', str(uuid.uuid4()),
+            ], cwd=temporary, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 73)
+            self.assertEqual(json.loads(result.stdout)['status'], 'refused')
+            self.assertEqual(result.stderr, '')
+            self.assertEqual(list(Path(temporary).iterdir()), [])
+
+
+class DockerBaselineTests(unittest.TestCase):
+    def test_initial_protected_and_unmanaged_values_survive_serialization(self):
+        initial = b'<Config><Port>18989</Port><ApiKey>fixture-only</ApiKey><Other>kept</Other></Config>'
+        current = b'<Config>\n<Other>kept</Other><Port>18989</Port><ApiKey>fixture-only</ApiKey><Added>default</Added></Config>'
+        docker_baseline.preserve_initial_values(initial, current)
+        for changed in (current.replace(b'fixture-only', b'changed'), current.replace(b'kept', b'changed')):
+            with self.assertRaisesRegex(docker_baseline.Refused, 'protected_or_unmanaged_xml_changed'):
+                docker_baseline.preserve_initial_values(initial, changed)
+
+    def test_shared_check_requires_actual_directory_identity_not_only_accessible_root(self):
+        expected = {'id': 1, 'path': str(docker_baseline.RADARR_ROOT), 'accessible': True,
+                    'unmappedFolders': [{'name': docker_baseline.SENTINEL.name,
+                                        'path': str(docker_baseline.SENTINEL)}]}
+        docker_baseline.validate_shared_response(200, expected, 1)
+        for field, value in [('unmappedFolders', []), ('id', 2), ('accessible', False)]:
+            with self.subTest(field=field), self.assertRaisesRegex(
+                    docker_baseline.Refused, 'unmanaged_shared_check_failed'):
+                docker_baseline.validate_shared_response(200, dict(expected, **{field: value}), 1)
+
+    def test_runtime_xml_rejects_duplicate_protected_fields_and_entities(self):
+        for raw in (b'<Config><ApiKey>a</ApiKey><ApiKey>b</ApiKey></Config>',
+                    b'<!DOCTYPE Config><Config/>'):
+            with self.subTest(raw=raw), self.assertRaises(docker_baseline.Refused):
+                docker_baseline.xml_values(raw)
 
     def test_console_wrappers_require_expected_uuid_before_execution(self):
         for script in PROOFS.glob('guest-*.sh'):
