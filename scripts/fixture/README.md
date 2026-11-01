@@ -128,6 +128,15 @@ Its durable result describes a separate bootstrap-only adoption baseline;
 it creates no product state or product attempt. The ack build likewise
 marks `perl-file-next` as the dependency of the explicit ack request.
 
+`guest_native_update_before.py` starts from successful native adoption and
+the completed gitstatus artifact import. It adds only the remaining seven
+frozen repository prerequisites as dependencies and gitstatus as explicit,
+preserving the previous 212 package reasons. It verifies all 217 October
+30 repository packages plus the three actual AUR builds, including ack's
+precise metadata reconciliation, and retains GnuPG 2.4.9-3. Its durable
+220-package result is bootstrap-only `native-update-before` evidence;
+it does not create or claim a product `native-applied` state.
+
 Each build has durable `started`, `exit`, `complete` and private log
 evidence. Manager timeouts can interrupt before an exit marker is written;
 missing completion is not proof of success. A running build blocks another

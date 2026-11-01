@@ -383,4 +383,55 @@ class FixtureNativeAdoptionTests(unittest.TestCase):
         self.assertEqual(tuple(re.findall(r"'([^']+)'",body)),module.CLI_REQUESTS)
 
 
+class FixtureNativeUpdateBeforeTests(unittest.TestCase):
+    def load(self):
+        import json
+        root=Path(__file__).resolve().parents[1]
+        spec=importlib.util.spec_from_file_location('core',root/'scripts/proofs/core.py')
+        core=importlib.util.module_from_spec(spec);spec.loader.exec_module(core)
+        with mock.patch.dict(sys.modules,{'core':core,'native_manifest':SimpleNamespace(validate_build=None),
+                'native_service':SimpleNamespace(check=None,trusted_path=None)}):
+            spec=importlib.util.spec_from_file_location('fixture_native_update',root/'scripts/fixture/guest_native_update_before.py')
+            module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        source=json.loads((root/'docs/fixtures/2026-10-31-arch-native-inputs.json').read_text())
+        names=set(source['resolutions']['native_change']['resolved_package_names'])|{'tmux','ripgrep','libutempter'}
+        before={p['name']:{'version':p['version'],'reason':'dependency'} for p in source['repository_packages'] if p['name'] in names}
+        before.update({p['package_base']:{'version':p['srcinfo_version'],'reason':'explicit' if p['package_base']=='ack' else 'dependency'}
+                       for p in source['aur_packages'] if p['package_base'] in {'ack','perl-file-next'}})
+        before['glibc']['reason']='explicit'  # Independently wanted existing package.
+        return module,source,before
+
+    def test_update_baseline_is_exactly220_with_old_gnupg_and_preserved_reasons(self):
+        module,source,before=self.load()
+        selected,expected=module.plan(source,before)
+        self.assertEqual(len(before),212);self.assertEqual(len(expected),220)
+        self.assertEqual({p['name'] for p in selected},module.BUILD_DEPENDENCIES)
+        self.assertEqual(expected['gnupg']['version'],'2.4.9-3')
+        self.assertEqual({n:expected[n] for n in before},before)
+        self.assertTrue(all(expected[n]['reason']=='dependency' for n in module.BUILD_DEPENDENCIES))
+        self.assertEqual(expected['gitstatus']['reason'],'explicit')
+        changed=copy.deepcopy(before);changed['gnupg']['version']='2.4.9-4'
+        with self.assertRaises(module.Refused):module.plan(source,changed)
+        with self.assertRaises(module.Refused):module.plan(source,before|{'cmake':{'version':'unexpected','reason':'explicit'}})
+
+    def test_update_provenance_requires_ack_false_match_and_exact_reconciliation(self):
+        module,source,_=self.load();aur=FixtureAurBoundaryTests().load()
+        guest='00000000-0000-4000-8000-000000000000'
+        recipe=next(p for p in source['aur_packages'] if p['package_base']=='ack')
+        record={'schema':1,'guest_id':guest,'package_base':'ack','recipe_commit':recipe['recipe_commit'],
+                'recipe_files':{n:v['sha256_computed'] for n,v in recipe['recipe_files'].items()},
+                'sources':[{'filename':s['filename'],'algorithm':a,'digest':d,'verified':True}
+                           for s in recipe['sources'] for a,d in s['digests_published_in_recipe'].items()],
+                'build_uid':1502,'source_verification_exit_code':0,'build_exit_code':0,
+                'check_status':'passed','generated_metadata_matches':False,
+                'metadata_reconciliation':dict(aur.ACK_URL_RECONCILIATION),
+                'artifact':{'name':'ack','version':recipe['srcinfo_version'],'sha256':'a'*64,'size':1}}
+        with mock.patch.dict(sys.modules,{'guest_aur':aur}):
+            self.assertEqual(module.aur_provenance(record,source,'ack',guest),record['artifact'])
+            claimed_equal=copy.deepcopy(record);claimed_equal['generated_metadata_matches']=True
+            with self.assertRaises(module.Refused):module.aur_provenance(claimed_equal,source,'ack',guest)
+            drift=copy.deepcopy(record);drift['metadata_reconciliation']['generated_value']='http://other.invalid/'
+            with self.assertRaises(module.Refused):module.aur_provenance(drift,source,'ack',guest)
+
+
 if __name__ == '__main__':unittest.main()

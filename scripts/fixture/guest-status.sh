@@ -74,18 +74,21 @@ for kind in ack gitstatus; do
         fi
     fi
 done
-if [[ -f /var/lib/mpkg-fixture/native-adoption/started && ! -L /var/lib/mpkg-fixture/native-adoption/started ]]; then
-    printf 'NATIVE_ADOPTION_STATUS\n'
-    SYSTEMD_COLORS=0 systemctl --no-pager --plain show --property=ActiveState,SubState,Result,ExecMainStatus mpkg-fixture-native-adoption.service
+for kind in native-adoption native-update-before; do
+  state=/var/lib/mpkg-fixture/$kind
+  if [[ -f $state/started && ! -L $state/started ]]; then
+    printf 'NATIVE_FIXTURE_STATUS=%s\n' "$kind"
+    SYSTEMD_COLORS=0 systemctl --no-pager --plain show --property=ActiveState,SubState,Result,ExecMainStatus "mpkg-fixture-$kind.service"
     for name in exit complete; do
-        if [[ -f /var/lib/mpkg-fixture/native-adoption/$name && ! -L /var/lib/mpkg-fixture/native-adoption/$name ]]; then
-            printf 'present native-adoption/%s\n' "$name"
+        if [[ -f $state/$name && ! -L $state/$name ]]; then
+            printf 'present %s/%s\n' "$kind" "$name"
         fi
     done
-    if [[ -f /var/lib/mpkg-fixture/native-adoption/build.log && ! -L /var/lib/mpkg-fixture/native-adoption/build.log ]]; then
-        tail -n 8 /var/lib/mpkg-fixture/native-adoption/build.log
+    if [[ -f $state/build.log && ! -L $state/build.log ]]; then
+        tail -n 8 "$state/build.log"
     fi
-fi
+  fi
+done
 ps -eo pid=,comm= | awk '$2 ~ /^(pacstrap|pacman|gpg|gpg-agent|make|cc1|ld|ldconfig|mkinitcpio)$/ {print}'
 lsblk -o NAME,SIZE,TYPE,SERIAL,MOUNTPOINTS
 if [[ -f /var/lib/mpkg-fixture/bootstrap-complete ]]; then
