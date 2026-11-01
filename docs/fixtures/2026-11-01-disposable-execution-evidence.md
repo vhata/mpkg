@@ -551,6 +551,29 @@ These current observations verify the corrected access predicates; they
 do not reconstruct the original exception or complete the setup attempt.
 Independent review verified the fresh interval and preserved records.
 
+A separately reviewed diagnostic then issued only attributed Radarr GET
+requests. Naming returned HTTP 200 with the expected object and format;
+the root-folder list returned HTTP 200 and an empty array. Credential
+bindings, listener attribution and the prior journal hash remained valid.
+The observed absence of a current registration does not reveal the lost
+POST response or establish its cause. No registration was replayed.
+Independent review matched the result to its fresh serial interval,
+exit zero and idle prompt.
+
+After orderly shutdown, `failed-volume-keep-stage-v2` preserved this
+failed setup, its diagnostics and the completed protected-output proof
+as offline snapshot ID `20`, with no memory state. Its firmware variables
+SHA-256 is
+`850fb33fbf7a3376a3f9acb5df8471c3906ed7b4ace6d9e02b889e99ff078f89`.
+Independent review verified shutdown, the checkpoint and saved firmware.
+
+The next reviewed helper validates response status and object shape
+before field access. Its failure report includes only a fixed setup
+stage, bounded error category/errno and trusted source coordinates, plus
+safe HTTP status/type when available. It retains no raw response or
+exception message and adds no retry or lifecycle action. These changes
+improve future observations without reclassifying the old failure.
+
 The six supplemental resource/update variants remain runtime gates.
 Applied product restore points remain unavailable until actual product
 operations create them.
