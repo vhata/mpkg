@@ -60,8 +60,17 @@ with its evidence in TODO and investigate the failure.
 
 The [first-release milestones](../plans/2026-10-31-server-environment-milestones.md)
 require disposable Arch demonstrations with real repository and AUR
-packages plus Docker. This workflow does not supply those demonstrations
+packages plus Docker. Routine checks do not supply those demonstrations
 or authorize running them on the production host.
+
+The [disposable run record](fixtures/2026-11-01-disposable-execution-evidence.md)
+tracks separate execution status and evidence for the
+[fixture tooling](../scripts/fixture/README.md) and
+[mechanism experiments](../scripts/proofs/README.md).
+Routine checks exercise their host-safe boundaries and primitives only;
+they never start a guest or invoke real package/service/Docker operations.
+Acquisition, guest bootstrap, builds and each experiment have distinct
+observations and failure states. None substitutes for A1–A12 acceptance.
 
 ## Review inputs
 

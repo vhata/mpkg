@@ -330,7 +330,7 @@ Generate and bind a complete fixture Compose input bundle with:
 | --- | --- |
 | Sonarr project/service | `mpkg-fixture-sonarr` / `sonarr`; absolute project directory and ordered files |
 | Engine | Guest-local Unix engine; record actual engine and socket identity |
-| Image/platform | Pinned amd64 manifest above; explicit `linux/amd64` |
+| Image/platform | Immutable index reference above with explicit `linux/amd64`; acquired child manifest and config must match the separately pinned identities |
 | Network/restart | `host`; `unless-stopped`; no invented Sonarr project network |
 | Binds | Guest `/opt/docker/sonarr/config:/config` and `/mnt/media:/mnt/media`, read-write, with fresh synthetic contents |
 | Identity inputs | `PUID=963`, `PGID=1001`, `UMASK=002`, `TZ=America/Los_Angeles` |

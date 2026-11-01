@@ -138,7 +138,10 @@ selects concrete mechanisms, and the
 [fixture design](../docs/specs/2026-10-31-first-release-fixture.md)
 binds source metadata and assembly/check choices. Artifact acquisition,
 guest assembly, mechanism proofs and all acceptance executions remain
-separate gates.
+separate gates. The
+[execution record](../docs/fixtures/2026-11-01-disposable-execution-evidence.md)
+records the authorized disposable work against those gates; fixture or
+mechanism success does not imply a product acceptance result.
 
 The [architecture direction](../docs/specs/2026-10-31-server-environment-architecture.md)
 selects direct native tooling and excludes Ansible and similar frameworks.

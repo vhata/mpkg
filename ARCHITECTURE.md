@@ -12,8 +12,10 @@ The [storage and execution design](docs/specs/2026-10-31-first-release-storage-a
 selects proposed encoding, persistence and native operation boundaries;
 its mechanism proofs remain prerequisites to implementation.
 The [disposable fixture design](docs/specs/2026-10-31-first-release-fixture.md)
-binds source inputs and proposed assembly/checks without claiming that
-the guest or replacement has been built.
+binds source inputs and proposed assembly/checks. The separate
+[execution record](docs/fixtures/2026-11-01-disposable-execution-evidence.md)
+records actual acquisition and guest outcomes without claiming that the
+replacement manager has been implemented.
 
 ## Current boundaries
 
@@ -31,7 +33,12 @@ the guest or replacement has been built.
   the helper's metapackage discovery and rewriting scope.
 - `tests/test_mpkg.py` copies the helper to temporary repositories and
   substitutes package tools. It exercises real Git behavior there.
-- `scripts/`, `.githooks/`, and `.github/` own repository validation.
+- `scripts/fixture/` owns private runner acquisition, disposable guest
+  assembly, supervised builds and bounded input/artifact transport.
+  `scripts/proofs/` contains guarded mechanism experiments. These tools
+  run separately from routine checks and do not expose a product CLI.
+- The top-level `scripts/` entrypoints, `.githooks/`, and `.github/`
+  own repository validation.
   `docket/` is vendored workflow machinery, updated only by its
   installer.
 - `docs/specs/` and `plans/` retain the design requirements and
