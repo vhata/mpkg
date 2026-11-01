@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """Acquire only index-bound amd64 attestation metadata; never contact Docker."""
 import datetime
+import base64
 import hashlib
 import io
 import json
 import os
 from pathlib import Path
 import resource
+import re
 import sys
 import tarfile
 import uuid
@@ -21,6 +23,8 @@ SOURCE_SHA256 = 'b7971f3427b643acb69dbe1e792dd105b3e01b4aa6f2e46ec3d7b474a2423aa
 SOURCE_BYTES = 265943040
 MANIFEST = 'application/vnd.oci.image.manifest.v1+json'
 CONFIG = 'application/vnd.oci.image.config.v1+json'
+EMPTY = 'application/vnd.oci.empty.v1+json'
+STAGE = {'stage': 'not-started'}
 ATTESTATION = 'application/vnd.in-toto+json'
 MAX_BLOB = 16*1024**2
 MAX_TOTAL = 32*1024**2
@@ -40,7 +44,12 @@ def auxiliary_records(manifest):
     if manifest.get('schemaVersion') != 2 or manifest.get('mediaType') != MANIFEST:
         raise Refused('oci_supplement_manifest_shape')
     config = manifest.get('config')
-    descriptor(config, {CONFIG}, 65536)
+    descriptor(config, {CONFIG, EMPTY}, 65536)
+    if config.get('mediaType') == EMPTY and (manifest.get('artifactType') != 'application/vnd.docker.attestation.manifest.v1+json'
+            or config.get('size') != 2
+            or config.get('digest') != 'sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a'
+            or config.get('data') != 'e30='):
+        raise Refused('oci_supplement_empty_config_changed')
     layers = manifest.get('layers', [])
     if not isinstance(layers, list) or not 1 <= len(layers) <= 8:
         raise Refused('oci_supplement_layer_count')
@@ -77,6 +86,7 @@ def source_indexes():
 
 
 def acquire():
+    STAGE.update(stage='source-indexes')
     indexes = source_indexes()
     cache = private_directory(runner.CACHE/'oci-supplements')
     directory = private_directory(cache/('acquisition-'+uuid.uuid4().hex))
@@ -90,22 +100,28 @@ def acquire():
     for name, repository, index, child, _, _ in IMAGES:
         selected = indexes[name]
         digest, size = descriptor(selected, {MANIFEST}, 65536)
+        STAGE.update(stage='attestation-manifest', fixture_name=name, digest=digest)
         raw, manifest = registry.manifest(repository, digest)
         if len(raw) != size:
             raise Refused('oci_supplement_manifest_size')
         publish_bytes(blobs, digest, raw)
         total += len(raw)
+        STAGE.update(stage='attestation-descriptors')
         records = auxiliary_records(manifest)
         acquired = [{'digest': digest, 'size': size, 'mediaType': MANIFEST}]
         for record in records:
-            digest, size = descriptor(record, {CONFIG, ATTESTATION}, MAX_BLOB)
+            digest, size = descriptor(record, {CONFIG, EMPTY, ATTESTATION}, MAX_BLOB)
+            STAGE.update(stage='auxiliary-json', digest=digest)
             total += size
             if total > MAX_TOTAL:
                 raise Refused('oci_supplement_complete_size_bound')
-            sink = io.BytesIO()
-            registry.transfer('https://lscr.io/v2/'+repository+'/blobs/'+digest,
-                              registry.headers(repository), sink, size, 120)
-            data = sink.getvalue()
+            if record['mediaType'] == EMPTY:
+                data = base64.b64decode(record['data'], validate=True)
+            else:
+                sink = io.BytesIO()
+                registry.transfer('https://lscr.io/v2/'+repository+'/blobs/'+digest,
+                                  registry.headers(repository), sink, size, 120)
+                data = sink.getvalue()
             if len(data) != size or 'sha256:'+hashlib.sha256(data).hexdigest() != digest:
                 raise Refused('oci_supplement_blob_digest_or_size')
             if not isinstance(json.loads(data), dict):
@@ -120,6 +136,7 @@ def acquire():
                           'blob_count': len(acquired), 'bytes': sum(item['size'] for item in acquired)}), flush=True)
     report['completed_utc'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
     report['descriptor_bytes_total'] = total
+    STAGE.update(stage='publish-report')
     write_new(directory/'acquisition.json', canonical(report)+b'\n')
     print(json.dumps({'status': 'acquired', 'directory': str(directory), 'bytes': total,
                       'report_sha256': digest_file(directory/'acquisition.json')[0],
@@ -131,6 +148,12 @@ if __name__ == '__main__':
     os.umask(0o077)
     try:
         acquire()
-    except Exception:
-        print(json.dumps({'status': 'unverified', 'code': 'oci_attestation_metadata_acquisition_failed'}))
+    except Exception as error:
+        code = str(error) if isinstance(error, Refused) else 'oci_attestation_metadata_acquisition_failed'
+        if not re.fullmatch('[a-z0-9_]{1,96}', code):
+            code = 'unexpected_refusal'
+        failure = {'status': 'unverified', 'code': code, 'exception_type': type(error).__name__, **STAGE}
+        if type(getattr(error, 'code', None)) is int:
+            failure['http_status'] = error.code
+        print(json.dumps(failure))
         sys.exit(74)

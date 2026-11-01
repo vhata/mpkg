@@ -1040,7 +1040,7 @@ class FixtureOciSupplementTests(unittest.TestCase):
         source=ast.parse((root/'scripts/fixture/oci_supplement.py').read_text())
         nodes=[n for n in source.body if isinstance(n,ast.FunctionDef) and n.name in {'selected_attestation','auxiliary_records'}
                or isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name)
-               and n.targets[0].id in {'MANIFEST','CONFIG','ATTESTATION','MAX_BLOB','MAX_TOTAL'}]
+               and n.targets[0].id in {'MANIFEST','CONFIG','EMPTY','ATTESTATION','MAX_BLOB','MAX_TOTAL'}]
         descriptor=next(n for n in ast.parse((root/'scripts/proofs/oci_acquire.py').read_text()).body
                         if isinstance(n,ast.FunctionDef) and n.name=='descriptor')
         scope={'Refused':ValueError,'re':re}
@@ -1064,6 +1064,10 @@ class FixtureOciSupplementTests(unittest.TestCase):
         layer={'mediaType':f['ATTESTATION'],'digest':'sha256:'+'b'*64,'size':512}
         manifest={'schemaVersion':2,'mediaType':f['MANIFEST'],'config':config,'layers':[layer]}
         self.assertEqual(f['auxiliary_records'](manifest),[config,layer])
+        empty={'mediaType':f['EMPTY'],'digest':'sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a','size':2,'data':'e30='}
+        self.assertEqual(f['auxiliary_records'](dict(manifest,config=empty,artifactType='application/vnd.docker.attestation.manifest.v1+json')),[empty,layer])
+        for field,value in [('data','bad'),('size',3),('digest','sha256:'+'c'*64)]:
+            with self.assertRaises(ValueError):f['auxiliary_records'](dict(manifest,config=dict(empty,**{field:value}),artifactType='application/vnd.docker.attestation.manifest.v1+json'))
         for replacement in ([dict(layer,mediaType='application/vnd.oci.image.layer.v1.tar+gzip')],
                             [dict(layer,size=f['MAX_BLOB']+1)],[],[layer]*9):
             with self.assertRaises(ValueError):f['auxiliary_records'](dict(manifest,layers=replacement))
