@@ -27,9 +27,13 @@ from oci_acquire import IMAGES
 from run import ENV, command, trusted_install
 
 
-# These pins can be filled only from the coordinator's successful observed
-# preparation and subsequent original image_manifest output. No CLI/env bypass.
-OBSERVED = None
+# Accepted bytes from the observed offline preparation and subsequent
+# original image_manifest output. No CLI/env override or inferred success.
+OBSERVED = {
+    'result': '4bddad8aa55415bd423f5c9d2aa8e289eb48a158f69464a943f2505c7f0c8165',
+    'journal': '0024131b28e8f07ed2baede69069cfa6e9d48fe87b147dfeb35ad32eef4f2285',
+    'compose': '6da996ed7da6d6db6cc92c87684f7c5214755e01d5225560e9a26d928b0b0548',
+}
 PREPARATION = 'image-attestation-offline-preparation'
 ROOT_INDEX_SHA256 = '5d7f4116edc95dbdfbda27b9961228b26b4a8bd2fc4b7dc5dcba5404cedfc4b0'
 MANIFEST = 'application/vnd.oci.image.manifest.v1+json'

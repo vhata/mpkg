@@ -248,10 +248,11 @@ image-manifest output before using the same fixed disabled-unit startup
 checks. Its separate one-shot journal leaves uncertain startup unresolved;
 it never loads, pulls, retags, deletes or starts application containers.
 
-The successful preparation, journal and Compose-manifest acceptance hashes
-are intentionally unset until those bytes have actually been observed.
-There is no environment or command-line override. Source review alone does
-not authorize execution: the final observed hashes and fixed guest delivery
+The successful offline preparation, closed journal and Compose-manifest
+acceptance hashes bind the observed checkpoint. There is no environment or
+command-line override. The accepted preparation retains all three original
+index associations and three child images; it does not create application
+data or product history. The final observed hashes and fixed guest delivery
 need review before this helper can resume a stopped checkpoint. The earlier
 `docker_resume.py` eligibility rules remain unchanged.
 
