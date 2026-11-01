@@ -250,6 +250,7 @@ before any system mutation.
 - `guest-native-service-recover.sh`: exact observed one-group setup continuation.
 - `guest-native-service-observe.sh`: verify the running recovered fixture.
 - `guest-image-import.sh`: archive import, then observed image manifest.
+- `guest-image-manifest.sh`: record associations after a separate verified import.
 - `guest-native-proof.sh`: actual native manifest, then prepare-only proof.
 - `guest-native-conflict.sh`: real frozen audio-package conflict preparation.
 - `guest-compose-proof.sh`: fixed Sonarr/Radarr experiment.
