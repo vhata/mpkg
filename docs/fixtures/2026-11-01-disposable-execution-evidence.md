@@ -18,7 +18,7 @@ establish any A1–A12 product acceptance result.
 | Native transaction | Frozen prepare-only checks and conflict refusal passed; no package transaction commit inferred |
 | Ordinary Docker fixture | Assembly and repeat check passed; separate restore/reboot check pending |
 | Compose mechanism experiment | All ten asserted checks passed, with the lifecycle limits below |
-| Volume, network and image-policy variants | All four resource variants passed through retirement; two image-policy branches remain pending |
+| Volume, network and image-policy variants | All four resource variants and the allowed-tag update passed; the exact-digest branch remains pending |
 | Replacement manager and A1–A12 | Not implemented or executed by this work |
 
 ## Acquired inputs
@@ -705,6 +705,38 @@ remained valid. After orderly shutdown,
 `34`, with no memory state and firmware variables SHA-256
 `4ba5f05f3fe1214089e691d3c9887bf67e4ebacb9e92ef0743ac6271d16beddd`.
 
+The independent allowed-tag branch initialized fresh data under Sonarr
+`4.0.19.2979-ls322`. Setup and its identical separate check passed with
+the expected Radarr, configuration/access and discovery checks. The
+wanted `latest` tag with updates allowed remained separate from the
+frozen older execution digest and accepted newer candidate. This does
+not establish live resolution of the current remote tag. After orderly
+shutdown, `docker-update-allowed-tag-before` was saved as offline
+baseline ID `36`, with no memory state and firmware variables SHA-256
+`850fb33fbf7a3376a3f9acb5df8471c3906ed7b4ace6d9e02b889e99ff078f89`.
+
+Its check-only reboot passed, retaining the older Sonarr identity,
+expected Radarr, configuration/data checks and unchanged wanted policy,
+with fresh process/listener attribution, access and discovery. Independent
+review verified the saved baseline and full reboot interval before the
+explicit forward-update experiment began.
+The explicit update then passed, replacing Sonarr with the accepted
+`4.0.20.3014-ls1` image while preserving the wanted `latest`/updates-allowed
+policy. Radarr's complete attribution and discovery stayed valid, and
+the original assembly history remained unchanged. XML bytes changed,
+while the checked protected/unmanaged values and ownership/mode were
+preserved. Database checks establish a nonempty regular file with expected
+ownership and no world-write bit, plus application readiness. They do not
+establish an internal migration
+trace, full database-content integrity or downgrade safety.
+Independent review verified the actual result and these limits.
+
+After orderly shutdown, `docker-update-allowed-tag-mechanism` was saved
+as offline snapshot ID `37`, with no memory state and firmware variables
+SHA-256
+`4ba5f05f3fe1214089e691d3c9887bf67e4ebacb9e92ef0743ac6271d16beddd`.
+Independent review verified the saved result and checkpoint.
+
 The supplemental runtime gates currently stand as follows:
 
 | Variant | Assembly | Reboot check | Experiment | Retirement |
@@ -713,7 +745,7 @@ The supplemental runtime gates currently stand as follows:
 | Volume delete | Setup and check passed; baseline ID 27 saved | Passed | Port change passed | Passed; final ID 28 saved |
 | Shared network | Setup and check passed; baseline ID 30 saved | Passed | Published-port remapping passed | Passed; final ID 31 saved |
 | Exclusive network deletion | Setup and check passed; baseline ID 33 saved | Passed | Published-port remapping passed | Passed; final ID 34 saved |
-| Allowed-tag image update | Pending | Pending | Pending | Not required |
+| Allowed-tag image update | Setup and check passed; baseline ID 36 saved | Passed | Forward update passed; final ID 37 saved | Not required |
 | Exact-digest candidate refusal | Pending | Pending | Pending | Not required |
 
 Applied product restore points remain unavailable until actual product
