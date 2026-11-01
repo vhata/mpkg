@@ -3,7 +3,9 @@ import hashlib
 import json
 import unittest
 
-from mpkg_manager.declarations import DeclarationError, canonical_json, load_declaration, physical_key
+from mpkg_manager.declarations import (
+    DeclarationError, canonical_json, load_declaration, physical_key, validate_model,
+)
 
 
 def _toml(value):
@@ -25,6 +27,68 @@ def resource(identity=None, **fields):
 
 
 class DeclarationTests(unittest.TestCase):
+    def test_decoded_model_matches_toml_and_does_not_share_caller_objects(self):
+        original = dict(schema=1, resources=[resource({'path': '/srv/child/../data'})],
+                        components=[dict(id='one', purpose='Use data', resources=['data'], requirements=[
+                            dict(resource='data', property='mode', value=0o750)])])
+        before = canonical_json(original)
+        normalized = validate_model(original)
+        from_toml = declaration(original['resources'], original['components']).model
+        self.assertEqual(normalized, from_toml)
+        self.assertEqual(normalized['resources'][0]['identity']['path'], '/srv/data')
+        self.assertEqual(normalized['resources'][0]['consumers'], ['one'])
+        self.assertEqual(canonical_json(original), before)
+        normalized['components'][0]['requirements'][0]['value'] = 0o700
+        normalized['resources'][0]['desired']['mode'] = 0o700
+        self.assertEqual(canonical_json(original), before)
+        original['resources'][0]['identity']['path'] = '/elsewhere'
+        self.assertEqual(normalized['resources'][0]['identity']['path'], '/srv/data')
+        self.assertEqual(validate_model(from_toml), from_toml)
+
+    def test_decoded_model_and_toml_share_context_and_reference_errors(self):
+        component = dict(id='one', purpose='Use resource', resources=['data'], requirements=[])
+        cases = [
+            ([resource({'name': 'example'}, kind='package', desired={'source': 'aur'}, manage=[])],
+             [component | {'requirements': [dict(resource='data', property='version',
+                                                  value={'policy': 'exact', 'value': '1-1'})]}]),
+            ([resource({'path': '/fixture/config'}, kind='file', desired={}, manage=[])],
+             [component | {'requirements': [dict(resource='data', property='content_input',
+                                                  value='missing')]}]),
+            ([resource()], [component | {'resources': ['missing']}]),
+            ([resource(), resource({'path': '/srv/child/../data'}, id='other')], []),
+        ]
+        for resources, components in cases:
+            with self.subTest(resources=resources, components=components):
+                model = dict(schema=1, resources=resources, components=components)
+                before = canonical_json(model)
+                with self.assertRaises(DeclarationError) as decoded_error:
+                    validate_model(model)
+                with self.assertRaises(DeclarationError) as toml_error:
+                    declaration(resources, components)
+                self.assertEqual((decoded_error.exception.code, decoded_error.exception.path),
+                                 (toml_error.exception.code, toml_error.exception.path))
+                self.assertEqual(canonical_json(model), before)
+
+    def test_decoded_model_rejects_malformed_cycles_and_depth_with_fixed_errors(self):
+        cycle = {}
+        cycle['value'] = cycle
+        deep = []
+        for _ in range(2000):
+            deep = [deep]
+        cases = [(None, 'expected_table'), ([], 'expected_table'),
+                 ({'schema': True}, 'missing_key'),
+                 ({'schema': 1, 'components': [], 'resources': [], 'SENTINEL': True}, 'unknown_key'),
+                 ({'SENTINEL': float('nan')}, 'unsupported_value_type'),
+                 ({'SENTINEL': object()}, 'unsupported_value_type'),
+                 ({'SENTINEL': 2**63}, 'integer_out_of_range'),
+                 (cycle, 'declaration_nesting_limit'), (deep, 'declaration_nesting_limit')]
+        for value, code in cases:
+            with self.subTest(code=code), self.assertRaises(DeclarationError) as error:
+                validate_model(value)
+            self.assertEqual(error.exception.code, code)
+            self.assertNotIn('SENTINEL', str(error.exception))
+            self.assertNotIn('SENTINEL', error.exception.path)
+
     def test_snapshot_is_stable_and_projection_is_independent(self):
         source = b'''schema = 1
 [[components]]

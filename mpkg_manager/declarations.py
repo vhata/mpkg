@@ -3,6 +3,7 @@
 Parsing never reads referenced files, resolves live host identities, or invokes
 an integration. A valid declaration is intent, not an executable plan.
 """
+from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
 import json
@@ -548,6 +549,17 @@ def _validate(model):
     return result
 
 
+def validate_model(value):
+    """Normalize decoded declaration data without retaining caller objects."""
+    try:
+        # Validate fixed types before copying so caller-defined objects cannot
+        # supply copy hooks. Normalization only touches this private copy.
+        _json_value(value)
+        return _validate(deepcopy(value))
+    except RecursionError:
+        raise DeclarationError("declaration_nesting_limit") from None
+
+
 def load_declaration(raw):
     """Validate TOML bytes without reading referenced files or host facts."""
     if type(raw) is not bytes:
@@ -560,10 +572,6 @@ def load_declaration(raw):
         # tomllib can also raise plain ValueError for Python's integer
         # conversion limit; no parser diagnostics belong in public output.
         raise DeclarationError("invalid_toml") from None
-    try:
-        _json_value(parsed)
-        model = _validate(parsed)
-        encoded = canonical_json(model)
-    except RecursionError:
-        raise DeclarationError("declaration_nesting_limit") from None
+    model = validate_model(parsed)
+    encoded = canonical_json(model)
     return Declaration(raw, encoded, hashlib.sha256(encoded).hexdigest())

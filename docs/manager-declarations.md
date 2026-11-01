@@ -211,6 +211,13 @@ snapshot. Canonical JSON uses UTF-8, sorted object keys, fixed scalar types
 and meaningful array order. Original TOML bytes remain separate, and a Git
 commit is never substituted for them.
 
+`validate_model(value)` validates a decoded declaration dictionary through
+the same fixed-type, root, reference and contextual rules used by the TOML
+loader. It returns a fresh normalized dictionary without modifying or
+retaining caller objects. This supports validation of stored records and
+combined consumer constraints without a TOML round trip. Malformed values,
+cycles and excessive nesting fail through `DeclarationError`.
+
 `canonical_json(value)` is the shared fixed-type encoding operation.
 `physical_key(resource, host_id, engine_aliases)` binds an already validated
 resource to accepted host/engine context without inspecting the host.
