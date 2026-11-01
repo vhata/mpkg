@@ -274,9 +274,34 @@ did not retain stderr, so the exact failing command's diagnostic is
 unavailable. Further inspection must preserve this attempt as well as the
 original unverified import.
 
-The gitstatus build and complete image bindings
-remain unverified. Applied product restore points remain unavailable until
-actual product operations create them.
+The separate gitstatus build completed with exit zero and its matching
+guest UUID. The manager was inactive/dead with success and zero PIDs;
+its cgroup was absent and builder UID 1502 had no remaining processes.
+The exact build-state inventory was 216 packages, adding only the seven
+frozen prerequisites to the 209-package baseline. Source verification,
+generated metadata comparison and the non-root build passed. The pinned
+recipe defines no check function, so its recorded check status is
+`not-defined`.
+
+Gitstatus 1.5.5-1 produced a 1,524,392-byte archive with SHA-256
+`d027ab2a60f26688d91ad3ee633baefc735086e4e31522a6f0e81e54b2e73c8b`.
+The build record SHA-256 is
+`a384abe46896c48aa7cbc091e8a24d312eb505d7f6a7c108e208c09dc229b972`.
+The output disk contained matching artifact and record bytes, bound to
+the preserved `native-change` checkpoint.
+
+After clean shutdown, `gitstatus-build-complete` was saved as offline
+snapshot ID `6`, with firmware variables SHA-256
+`69fe94509c387f3b2cb1730e536c3a44a4b83d11f6208233af0bf9879039b29a`.
+Offline harvest revalidated the actual artifact and provenance, then
+created a read-only 128 MiB return disk with SHA-256
+`aaa56edcc9bb459412080854e846c212fb2a3392ab236bd1bc5ef2aa2919e3ba`.
+Restoring `native-change` also preserved the prior state as
+`before-restore-b3ba14330a1d4cc0`. Guest artifact import and the subsequent
+native transaction proof remain separate observations.
+
+Complete image bindings remain unverified. Applied product restore points
+remain unavailable until actual product operations create them.
 
 ## Verification and limits
 
