@@ -407,9 +407,35 @@ def native_verifier_replacement_payload():
     return template.replace(marker,'REPLACEMENT_BASE64 = '+repr(base64.b64encode(data).decode())).encode()
 
 
-def console(script=None, seconds=10, prompt=False, login_root=False, addition=None, replacement=None):
+def image_attestation_payload():
+    report_path=runner.PROJECT/'scripts/fixture/oci-supplement-inputs.json'
+    report=runner.regular_file(report_path).read_bytes()
+    digest='2e1ab12cc11766ecbde486cdadbc0ef2c51c10ff6547c17006eb6e891ca9cbd4'
+    if len(report)>65536 or hashlib.sha256(report).hexdigest()!=digest:
+        raise ValueError('attestation report differs from acquired reviewed bytes')
+    diagnostic=runner.regular_file(runner.PROJECT/'scripts/fixture/guest_image_load_diagnose.py').read_bytes()
+    if hashlib.sha256(diagnostic).hexdigest()!='544abfde7e82e03b75625a28a1d868b2ebf04c088d9ce1faf8a6c72a6ffb4e36':
+        raise ValueError('attestation capture helper differs from reviewed bytes')
+    template=runner.regular_file(runner.PROJECT/'scripts/fixture/guest_image_attestation_prepare.py').read_text()
+    if hashlib.sha256(template.encode()).hexdigest()!='9918caedf77ca6d88f1fc0ae0bd337fb74e2a8e974368b1c4a1124d97e96de58':
+        raise ValueError('attestation preparation template differs from reviewed bytes')
+    for marker,value in [('REPORT_BASE64 = None',repr(base64.b64encode(report).decode())),
+                         ('REPORT_SHA256 = None',repr(digest)),
+                         ('DIAGNOSTIC_BASE64 = None',repr(base64.b64encode(diagnostic).decode()))]:
+        if template.count(marker)!=1:
+            raise ValueError('attestation preparation template marker changed')
+        template=template.replace(marker,marker.split(' = ')[0]+' = '+value)
+    return template.encode()
+
+
+def console(script=None, seconds=10, prompt=False, login_root=False, addition=None, replacement=None, attestations=False):
     payload=None
-    if replacement:
+    if attestations:
+        if script is not None or prompt or login_root or addition is not None or replacement is not None:
+            raise ValueError('attestation preparation cannot include other console input')
+        payload=image_attestation_payload()
+        suffix='.py'
+    elif replacement:
         if script is not None or prompt or login_root or addition is not None:
             raise ValueError('native service replacement cannot include other console input')
         if replacement=='native-service':payload=native_service_replacement_payload()
@@ -470,7 +496,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','install-docker-diagnostic-resume','install-docker-variant-plan','install-docker-variants','install-docker-variant-experiment','install-docker-variant-retire','replace-native-service','replace-docker-baseline','replace-native-verifier'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','install-docker-diagnostic-resume','install-docker-variant-plan','install-docker-variants','install-docker-variant-experiment','install-docker-variant-retire','prepare-image-attestations','replace-native-service','replace-docker-baseline','replace-native-verifier'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -500,6 +526,7 @@ def main():
     elif args.operation=='install-docker-variants':console(seconds=args.seconds,addition='docker-variants')
     elif args.operation=='install-docker-variant-experiment':console(seconds=args.seconds,addition='docker-variant-experiment')
     elif args.operation=='install-docker-variant-retire':console(seconds=args.seconds,addition='docker-variant-retire')
+    elif args.operation=='prepare-image-attestations':console(seconds=args.seconds,attestations=True)
     elif args.operation=='replace-native-service':console(seconds=args.seconds,replacement='native-service')
     elif args.operation=='replace-docker-baseline':console(seconds=args.seconds,replacement='docker-baseline')
     elif args.operation=='replace-native-verifier':console(seconds=args.seconds,replacement='native-verifier')

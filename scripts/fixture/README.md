@@ -276,3 +276,44 @@ helper after its six exact direct dependencies, including the experiment
 helper. Publication remains absent-target only and does not run retirement.
 The four fixed retirement wrappers require completed corresponding port
 experiments before they can evaluate the declared keep/delete cases.
+
+`oci_supplement.py` acquires only the attestation manifests referenced by
+the three selected amd64 children, plus their exact configuration and
+in-toto JSON descriptors. It validates the preserved original archive and
+index hashes, all acquired digest/size bindings, JSON media types and
+32 MiB total/16 MiB per-blob bounds. Fresh private acquisition directories
+preserve failed runs. The OCI empty configuration accepts only the exact
+2-byte `{}` descriptor, its published digest and inline base64 value.
+The public acquisition report is frozen in `oci-supplement-inputs.json`;
+it contains no registry token or image-layer content.
+
+The actual load error names the missing selected Sonarr attestation
+manifest. Docker's [versioned import implementation](https://github.com/moby/moby/blob/docker-v29.9.2/daemon/containerd/image_exporter.go)
+uses a referrer provider. Containerd's [versioned import traversal](https://github.com/containerd/containerd/blob/v2.4.2/client/import.go)
+adds those referrers after platform filtering. The immediate error proves
+that the selected attestation manifest is required; acquiring its complete
+metadata closure also preserves the referenced auxiliary content. This
+does not require arm64 filesystem layers or change any original index.
+The empty descriptor follows the [OCI 1.1 guidance](https://github.com/opencontainers/image-spec/blob/v1.1.1/manifest.md#guidance-for-an-empty-descriptor).
+
+`vm.py prepare-image-attestations` sends a fixed generated Python payload
+bound to the acquired report and the previously reviewed diagnostic
+module. The guest downloads the same exact metadata into
+`/opt/mpkg-proof-inputs/oci-supplement`, then constructs
+`image-attestation-preparation/images.attestations.oci.tar` under its
+private proof directory. Every original prepared archive member and its
+root index bytes remain unchanged; only verified metadata members are
+added. The immutable source disk is untouched. Registry requests are
+bounded, use anonymous credentials only in memory, and never print tokens
+or redirect URLs.
+
+Preparation has a new journal and bounded private load capture. It binds
+the existing running engine and all earlier incomplete histories before
+and after the new load. Success requires actual original index references,
+linux/amd64 identity and measured public version labels. Retained child
+images are recorded without deleting them. The result distinguishes this
+new preparation from the preserved unverified import, unknown earlier
+preparation and unverified diagnostic load. Failure does not trigger a
+retry, tag operation, image cleanup or service restart. The exact earlier
+182-byte error can be read only through `guest_image_error_read.py`, whose
+fixed file, size and digest prevent arbitrary diagnostic disclosure.

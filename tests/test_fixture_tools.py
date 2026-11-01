@@ -1073,4 +1073,106 @@ class FixtureOciSupplementTests(unittest.TestCase):
             with self.assertRaises(ValueError):f['auxiliary_records'](dict(manifest,layers=replacement))
 
 
+class FixtureAttestationPreparationTests(unittest.TestCase):
+    def load(self):
+        import json
+        root=Path(__file__).resolve().parents[1]
+        source=ast.parse((root/'scripts/fixture/guest_image_attestation_prepare.py').read_text())
+        nodes=[n for n in source.body if isinstance(n,ast.FunctionDef)
+               and n.name in {'report_scope','manifest_matches','copy_archive'}
+               or isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name)
+               and n.targets[0].id in {'MANIFEST','CONFIG','EMPTY','ATTESTATION','MAX_TOTAL','ROOT_INDEX_SHA256'}]
+        owning=ast.parse((root/'scripts/proofs/oci_acquire.py').read_text())
+        descriptor=next(n for n in owning.body if isinstance(n,ast.FunctionDef) and n.name=='descriptor')
+        images=ast.literal_eval(next(n.value for n in owning.body if isinstance(n,ast.Assign)
+                                    and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='IMAGES'))
+        raw=(root/'scripts/fixture/oci-supplement-inputs.json').read_bytes()
+        scope={'Refused':ValueError,'re':re,'hashlib':hashlib,'io':io,'json':json,'tarfile':tarfile,
+               'IMAGES':images,'REPORT_SHA256':hashlib.sha256(raw).hexdigest()}
+        exec(compile(ast.Module(body=[descriptor,*nodes],type_ignores=[]),'attestation-functions','exec'),scope)
+        return scope,raw
+
+    def test_report_is_exact_and_cannot_select_other_subjects_or_runtime_layers(self):
+        import json
+        f,raw=self.load();report,blobs=f['report_scope'](raw)
+        self.assertEqual(report['descriptor_bytes_total'],9528774)
+        self.assertEqual(len(blobs),11)
+        with self.assertRaises(ValueError):f['report_scope'](raw+b' ')
+        for change in ('subject','layer'):
+            modified=copy.deepcopy(report)
+            if change=='subject':modified['images'][0]['selected_child_digest']='sha256:'+'f'*64
+            else:modified['images'][0]['blobs'][-1]['mediaType']='application/vnd.oci.image.layer.v1.tar+gzip'
+            data=json.dumps(modified).encode();f['REPORT_SHA256']=hashlib.sha256(data).hexdigest()
+            with self.assertRaises(ValueError):f['report_scope'](data)
+
+    def test_archive_keeps_original_bytes_and_adds_only_declared_metadata(self):
+        import json
+        f,_=self.load()
+        new_raw=b'{}';digest='sha256:'+hashlib.sha256(new_raw).hexdigest()
+        desc={'mediaType':f['MANIFEST'],'digest':digest,'size':len(new_raw)}
+        original_index=json.dumps({'manifests':[desc]}).encode()
+        original_digest='sha256:'+hashlib.sha256(original_index).hexdigest()
+        root_raw=b'{"schemaVersion":2,"manifests":[]}'
+        f['ROOT_INDEX_SHA256']=hashlib.sha256(root_raw).hexdigest()
+        report={'images':[{'original_index_digest':original_digest,'attestation_descriptor':desc,'blobs':[desc]}]}
+        old={'index.json':root_raw,'oci-layout':b'{"imageLayoutVersion":"1.0.0"}',
+             'blobs/sha256/'+original_digest[7:]:original_index,
+             'blobs/sha256/'+hashlib.sha256(b'runtime').hexdigest():b'runtime'}
+        def archive():
+            result=io.BytesIO()
+            with tarfile.open(fileobj=result,mode='w') as tar:
+                for name,data in old.items():
+                    member=tarfile.TarInfo(name);member.size=len(data);tar.addfile(member,io.BytesIO(data))
+            result.seek(0);return result
+        output=io.BytesIO();self.assertEqual(f['copy_archive'](archive(),output,report,{digest:new_raw}),(4,1))
+        output.seek(0)
+        with tarfile.open(fileobj=output,mode='r:') as tar:
+            observed={m.name:tar.extractfile(m).read() for m in tar}
+        self.assertEqual(observed,old|{'blobs/sha256/'+digest[7:]:new_raw})
+        for acquired in ({digest:b'changed'}, {digest:new_raw,'sha256:'+'e'*64:b'extra'}):
+            with self.assertRaises(ValueError):f['copy_archive'](archive(),io.BytesIO(),report,acquired)
+        wrong=copy.deepcopy(report);wrong['images'][0]['attestation_descriptor']['size']=10
+        with self.assertRaises(ValueError):f['copy_archive'](archive(),io.BytesIO(),wrong,{digest:new_raw})
+
+    def test_load_rechecks_idle_engine_and_prior_bytes_before_invoking_docker(self):
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/guest_image_attestation_prepare.py'
+        function=next(n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='guarded_load')
+        scope={'Refused':ValueError,'remaining':lambda:600}
+        exec(compile(ast.Module(body=[function],type_ignores=[]),'preload-guard','exec'),scope)
+        for failure in ('build','engine','history'):
+            diagnostic=SimpleNamespace(require_builds_idle=mock.Mock(),check_engine=mock.Mock(),
+                small=mock.Mock(return_value=b'old'),capture_load=mock.Mock())
+            if failure=='build':diagnostic.require_builds_idle.side_effect=ValueError('active build')
+            if failure=='engine':diagnostic.check_engine.side_effect=ValueError('restarted engine')
+            if failure=='history':diagnostic.small.return_value=b'changed'
+            with self.subTest(failure=failure),self.assertRaises(ValueError):
+                scope['guarded_load'](diagnostic,None,Path('/fixed'),{}, {}, {'child'}, {'prior':b'old'},None,3,{})
+            diagnostic.capture_load.assert_not_called()
+        diagnostic=SimpleNamespace(require_builds_idle=mock.Mock(),check_engine=mock.Mock(),
+            small=mock.Mock(return_value=b'old'),capture_load=mock.Mock(return_value={'complete':True}))
+        self.assertEqual(scope['guarded_load'](diagnostic,None,Path('/fixed'),{}, {}, {'child'},
+            {'prior':b'old'},None,3,{}),{'complete':True})
+        diagnostic.check_engine.assert_called_once_with(None,{}, {}, {'child'},initial=True)
+        diagnostic.capture_load.assert_called_once_with(None,3,{},timeout=600)
+
+    def test_transport_binds_report_template_capture_code_and_excludes_other_console_modes(self):
+        vm=FixtureProofAdditionTests().load()
+        payload=vm.image_attestation_payload();self.assertLess(len(payload),262144)
+        assignments={n.targets[0].id:n.value for n in ast.parse(payload).body
+                     if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name)}
+        report=base64.b64decode(assignments['REPORT_BASE64'].value,validate=True)
+        capture=base64.b64decode(assignments['DIAGNOSTIC_BASE64'].value,validate=True)
+        self.assertEqual(hashlib.sha256(report).hexdigest(),'2e1ab12cc11766ecbde486cdadbc0ef2c51c10ff6547c17006eb6e891ca9cbd4')
+        self.assertEqual(hashlib.sha256(capture).hexdigest(),'544abfde7e82e03b75625a28a1d868b2ebf04c088d9ce1faf8a6c72a6ffb4e36')
+        with mock.patch.object(vm,'qmp_query') as qmp:
+            with self.assertRaises(ValueError):vm.console(script='other.py',attestations=True)
+            qmp.assert_not_called()
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'scripts/fixture').mkdir(parents=True)
+            (root/'scripts/fixture/oci-supplement-inputs.json').write_bytes(b'changed')
+            with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(vm,'qmp_query') as qmp:
+                with self.assertRaises(ValueError):vm.console(attestations=True)
+                qmp.assert_not_called()
+
+
 if __name__ == '__main__':unittest.main()
