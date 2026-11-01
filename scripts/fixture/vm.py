@@ -428,9 +428,33 @@ def image_attestation_payload():
     return template.encode()
 
 
-def console(script=None, seconds=10, prompt=False, login_root=False, addition=None, replacement=None, attestations=False):
+def image_attestation_offline_payload():
+    # Verify the frozen report and both previous sources using their existing
+    # producer gate, without executing the resulting payload.
+    image_attestation_payload()
+    directory=runner.PROJECT/'scripts/fixture'
+    template=runner.regular_file(directory/'guest_image_attestation_offline.py').read_text()
+    if hashlib.sha256(template.encode()).hexdigest()!='51d4e51ba50804dad85718366ea53f04d3d32822894d68b735118e17c241a08c':
+        raise ValueError('offline attestation template differs from reviewed bytes')
+    for marker,filename in [('PREPARATION_BASE64 = None','guest_image_attestation_prepare.py'),
+                            ('REPORT_BASE64 = None','oci-supplement-inputs.json'),
+                            ('DIAGNOSTIC_BASE64 = None','guest_image_load_diagnose.py')]:
+        data=runner.regular_file(directory/filename).read_bytes()
+        if template.count(marker)!=1:
+            raise ValueError('offline attestation template marker changed')
+        template=template.replace(marker,marker.split(' = ')[0]+' = '+repr(base64.b64encode(data).decode()))
+    return template.encode()
+
+
+def console(script=None, seconds=10, prompt=False, login_root=False, addition=None, replacement=None,
+            attestations=False, offline_attestations=False):
     payload=None
-    if attestations:
+    if offline_attestations:
+        if script is not None or prompt or login_root or addition is not None or replacement is not None or attestations:
+            raise ValueError('offline attestation preparation cannot include other console input')
+        payload=image_attestation_offline_payload()
+        suffix='.py'
+    elif attestations:
         if script is not None or prompt or login_root or addition is not None or replacement is not None:
             raise ValueError('attestation preparation cannot include other console input')
         payload=image_attestation_payload()
@@ -496,7 +520,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','install-docker-diagnostic-resume','install-docker-variant-plan','install-docker-variants','install-docker-variant-experiment','install-docker-variant-retire','prepare-image-attestations','replace-native-service','replace-docker-baseline','replace-native-verifier'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','install-docker-diagnostic-resume','install-docker-variant-plan','install-docker-variants','install-docker-variant-experiment','install-docker-variant-retire','prepare-image-attestations','prepare-image-attestations-offline','replace-native-service','replace-docker-baseline','replace-native-verifier'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -527,6 +551,7 @@ def main():
     elif args.operation=='install-docker-variant-experiment':console(seconds=args.seconds,addition='docker-variant-experiment')
     elif args.operation=='install-docker-variant-retire':console(seconds=args.seconds,addition='docker-variant-retire')
     elif args.operation=='prepare-image-attestations':console(seconds=args.seconds,attestations=True)
+    elif args.operation=='prepare-image-attestations-offline':console(seconds=args.seconds,offline_attestations=True)
     elif args.operation=='replace-native-service':console(seconds=args.seconds,replacement='native-service')
     elif args.operation=='replace-docker-baseline':console(seconds=args.seconds,replacement='docker-baseline')
     elif args.operation=='replace-native-verifier':console(seconds=args.seconds,replacement='native-verifier')

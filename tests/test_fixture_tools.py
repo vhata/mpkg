@@ -1219,4 +1219,118 @@ class FixtureAcquisitionDiagnosticTests(unittest.TestCase):
             with self.assertRaises(OSError):f(link,4,trusted=False)
 
 
+class FixtureOfflineMetadataTests(unittest.TestCase):
+    def functions(self):
+        import json
+        import select
+        import stat
+        import time
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/guest_image_attestation_offline.py'
+        names={'transfer_remaining','write_port','read_port','receive_metadata','guarded_offline_load'}
+        nodes=[n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef) and n.name in names]
+        scope={'Refused':ValueError,'os':os,'select':select,'time':time,'hashlib':hashlib,'json':json,
+               'REPORT_SHA256':'a'*64,'canonical':lambda v:json.dumps(v,sort_keys=True).encode(),
+               'private_directory':lambda p:(p.mkdir(parents=True,exist_ok=True),p)[1],
+               'Path':Path,'stat':stat}
+        proofs=path.parents[1]/'proofs'
+        for file,nameset in [('oci_acquire.py',{'publish_bytes','digest_file'}),('core.py',{'write_new'})]:
+            nodes.extend(n for n in ast.parse((proofs/file).read_text()).body
+                         if isinstance(n,ast.FunctionDef) and n.name in nameset)
+        exec(compile(ast.Module(body=nodes,type_ignores=[]),'offline-metadata','exec'),scope)
+        return scope
+
+    def test_receive_binds_guest_report_exact_bytes_and_end_before_acceptance(self):
+        import socket
+        guest='c81ea47f-3ca6-4966-ab55-1626068a4789'
+        raw=b'{}';digest='sha256:'+hashlib.sha256(raw).hexdigest()
+        expected={digest:{'size':2}}
+        report={'images':[{'blobs':[{'digest':digest}]}]}
+        header=('MPKG-OCI-SUPPLEMENT/1\n'+guest+'\n'+'a'*64+'\n').encode()
+        for failure in (None,'header','bytes','end'):
+            f=self.functions();helper=SimpleNamespace(manifest_matches=mock.Mock())
+            with tempfile.TemporaryDirectory() as tmp:
+                f['SUPPLEMENT']=Path(tmp)/'new'
+                receiver,sender=socket.socketpair();receiver.setblocking(False)
+                fd=receiver.detach();f['open_control']=lambda:fd
+                try:
+                    sender.sendall((header if failure!='header' else b'X'+header[1:])+
+                                   (raw if failure!='bytes' else b'[]')+
+                                   (b'END\n' if failure!='end' else b'NO!\n'))
+                    if failure:
+                        with self.assertRaises(ValueError):f['receive_metadata'](helper,report,expected,guest,'attempt')
+                        helper.manifest_matches.assert_not_called()
+                    else:
+                        self.assertEqual(f['receive_metadata'](helper,report,expected,guest,'attempt'),{digest:raw})
+                        helper.manifest_matches.assert_called_once_with(raw,report['images'][0])
+                        published=f['SUPPLEMENT']/'blobs/sha256'/digest[7:]
+                        self.assertEqual(published.read_bytes(),raw)
+                        self.assertEqual(published.stat().st_mode & 0o777,0o400)
+                    if failure=='header':self.assertFalse(f['SUPPLEMENT'].exists())
+                finally:sender.close()
+
+    def test_failed_attempt_drift_prevents_the_existing_live_load_guard(self):
+        f=self.functions();helper=SimpleNamespace(guarded_load=mock.Mock())
+        f['failed_acquisition']=mock.Mock(side_effect=ValueError('prior failed state changed'))
+        with self.assertRaises(ValueError):
+            f['guarded_offline_load'](helper,None,None,Path('/fixed'),{}, {},set(),{},None,3,{})
+        helper.guarded_load.assert_not_called()
+
+    def test_socket_transfer_runs_both_protocol_sides_and_real_publication(self):
+        import concurrent.futures
+        import json
+        import socket
+        import time
+        import uuid
+        f=self.functions()
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/metadata_transfer.py'
+        names={'timeout','line','send','validate_ready'}
+        nodes=[n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef) and n.name in names]
+        host={'time':time,'json':json,'uuid':uuid,'REPORT_SHA256':'a'*64}
+        exec(compile(ast.Module(body=nodes,type_ignores=[]),'metadata-host-protocol','exec'),host)
+        guest=str(uuid.uuid4());attempt=str(uuid.uuid4())
+        data=sorted((('sha256:'+hashlib.sha256(raw).hexdigest(),raw)
+                     for raw in (b'{}',json.dumps({'public':'x'*131072}).encode())))
+        expected={digest:{'size':len(raw)} for digest,raw in data}
+        report={'images':[{'blobs':[{'digest':data[0][0]}]}]}
+        helper=SimpleNamespace(manifest_matches=mock.Mock())
+        with tempfile.TemporaryDirectory() as tmp, concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            receiver,sender=socket.socketpair();receiver.setblocking(False)
+            f['SUPPLEMENT']=Path(tmp)/'new';fd=receiver.detach();f['open_control']=lambda:fd
+            future=pool.submit(f['receive_metadata'],helper,report,expected,guest,attempt)
+            try:
+                deadline=time.monotonic()+10
+                ready=host['line'](sender,deadline)
+                self.assertEqual(host['validate_ready'](ready,guest),attempt)
+                host['send'](sender,('MPKG-OCI-SUPPLEMENT/1\n'+guest+'\n'+'a'*64+'\n').encode(),deadline)
+                for _,raw in data:host['send'](sender,raw,deadline)
+                host['send'](sender,b'END\n',deadline)
+                self.assertEqual(host['line'](sender,deadline),dict(ready,status='metadata-verified',blobs=2))
+                self.assertEqual(future.result(timeout=10),dict(data))
+                for digest,raw in data:
+                    self.assertEqual((f['SUPPLEMENT']/'blobs/sha256'/digest[7:]).read_bytes(),raw)
+            finally:sender.close()
+
+    def test_host_receiver_binding_and_transport_template_are_closed(self):
+        import json
+        import uuid
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/metadata_transfer.py'
+        function=next(n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef) and n.name=='validate_ready')
+        scope={'uuid':uuid,'REPORT_SHA256':'a'*64}
+        exec(compile(ast.Module(body=[function],type_ignores=[]),'receiver-binding','exec'),scope)
+        guest=str(uuid.uuid4());attempt=str(uuid.uuid4())
+        ready={'schema':1,'guest_id':guest,'attempt':attempt,'report_sha256':'a'*64,'status':'ready-for-fixed-metadata'}
+        self.assertEqual(scope['validate_ready'](ready,guest),attempt)
+        for change in ({'guest_id':str(uuid.uuid4())},{'report_sha256':'b'*64},{'extra':'path'}):
+            with self.assertRaises(ValueError):scope['validate_ready'](ready|change,guest)
+        vm=FixtureProofAdditionTests().load()
+        payload=vm.image_attestation_offline_payload();self.assertLess(len(payload),262144)
+        assignments={n.targets[0].id:n.value for n in ast.parse(payload).body
+                     if isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name)}
+        self.assertEqual(hashlib.sha256(base64.b64decode(assignments['PREPARATION_BASE64'].value)).hexdigest(),
+                         '9918caedf77ca6d88f1fc0ae0bd337fb74e2a8e974368b1c4a1124d97e96de58')
+        with mock.patch.object(vm,'qmp_query') as qmp:
+            with self.assertRaises(ValueError):vm.console(attestations=True,offline_attestations=True)
+            qmp.assert_not_called()
+
+
 if __name__ == '__main__':unittest.main()

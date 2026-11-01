@@ -317,3 +317,28 @@ preparation and unverified diagnostic load. Failure does not trigger a
 retry, tag operation, image cleanup or service restart. The exact earlier
 182-byte error can be read only through `guest_image_error_read.py`, whose
 fixed file, size and digest prevent arbitrary diagnostic disclosure.
+
+`guest_image_acquisition_diagnose.py` observes the failed metadata attempt,
+partial-file hashes, manager/process state and numeric resolver/network
+facts. It makes no network queries and reports absent or dangling resolver
+files without inventing a DNS failure cause.
+
+`metadata_transfer.py` and `vm.py prepare-image-attestations-offline` use
+the existing dedicated `org.mpkg.fixture.control` virtio port. Start the
+host sender first, wait for its bounded waiting message, then launch the
+fixed guest preparation through the console. Both sides bind the guest
+UUID and frozen report, and the guest hashes all eleven metadata blobs
+before accepting them. The 300-second transfer has fixed frame lengths,
+no caller-supplied paths and no archive extraction. Local socket tests
+exercise both protocol sides and actual immutable blob publication.
+
+This creates separate `oci-supplement-offline` inputs and an
+`image-attestation-offline-preparation` journal/archive. The failed HTTPS
+attempt remains unknown, its two exact files and empty partial directory
+remain intact, and seventeen earlier evidence files remain byte-bound.
+The previous archive verifier, referrer closure validation, immediate
+pre-load live guards and bounded private load capture are reused from
+their hash-bound source. No DNS setting, host mount, network acquisition,
+VM restart or old attempt replay is performed. Successful console output
+includes hashes of the seven preparation records after journal closure;
+delivery alone never claims that the Docker load succeeded.
