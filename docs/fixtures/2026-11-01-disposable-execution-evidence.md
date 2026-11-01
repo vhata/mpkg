@@ -18,7 +18,7 @@ establish any A1–A12 product acceptance result.
 | Native transaction | Frozen prepare-only checks and conflict refusal passed; no package transaction commit inferred |
 | Ordinary Docker fixture | Assembly, repeat check and separate restore/reboot check passed; final stopped state ID 41 saved |
 | Compose mechanism experiment | All ten asserted checks passed, with the lifecycle limits below |
-| Volume, network and image-policy variants | All four resource variants and the allowed-tag update passed; the exact-digest setup stopped with an attributed observation error, and its mechanism remains unverified |
+| Volume, network and image-policy variants | All six completed setup, repeat and reboot checks plus their selected mechanisms; four resource retirements passed; stopped baseline and final states preserved |
 | Replacement manager and A1–A12 | Not implemented or executed by this work |
 
 ## Acquired inputs
@@ -781,6 +781,35 @@ snapshot ID `43`, with no memory state and firmware variables SHA-256
 `36b4ee16785f54cc2424a9632ef217725a5cb2c5e172384f857be24444168361`.
 The failed exact-digest state in ID `39` was not replayed.
 
+The fresh ID `43` branch passed its cold resume, one-shot exact-digest
+setup and identical separate check. It initialized independent older
+Sonarr data under the declared exact digest, with updates disabled and
+the newer candidate kept separate. Both application identity/readiness,
+configuration/data checks and Radarr directory discovery passed.
+After orderly shutdown, `docker-exact-digest-before` was saved as offline
+baseline ID `45`, with no memory state and firmware variables SHA-256
+`850fb33fbf7a3376a3f9acb5df8471c3906ed7b4ace6d9e02b889e99ff078f89`.
+Its check-only reboot passed with the same exact image policy, resources,
+data and configuration, fresh application attribution and working Radarr
+directory discovery. Independent review verified the full sequence.
+
+The candidate-refusal experiment then passed with exit zero. The declared
+older exact digest with updates disabled blocked the newer candidate,
+reporting `image_change_requested: false`. This branch issued no stop,
+recreation or image-change operation. Before/after application and resource
+observations matched, with original assembly database and manifest bytes
+preserved. This proves the selected exact-digest/disabled-update policy;
+it does not exercise every independent policy combination.
+
+After orderly shutdown, `docker-exact-digest-mechanism` was saved as
+offline snapshot ID `46`, with no memory state and firmware variables
+SHA-256
+`4ba5f05f3fe1214089e691d3c9887bf67e4ebacb9e92ef0743ac6271d16beddd`.
+Independent review verified the refusal result, saved checkpoint and
+firmware. The guest is stopped. All six selected variant sequences and
+the separate ordinary-fixture reboot check are complete; earlier failed
+attempts remain preserved under their original outcomes.
+
 The supplemental runtime gates currently stand as follows:
 
 | Variant | Assembly | Reboot check | Experiment | Retirement |
@@ -790,7 +819,7 @@ The supplemental runtime gates currently stand as follows:
 | Shared network | Setup and check passed; baseline ID 30 saved | Passed | Published-port remapping passed | Passed; final ID 31 saved |
 | Exclusive network deletion | Setup and check passed; baseline ID 33 saved | Passed | Published-port remapping passed | Passed; final ID 34 saved |
 | Allowed-tag image update | Setup and check passed; baseline ID 36 saved | Passed | Forward update passed; final ID 37 saved | Not required |
-| Exact-digest candidate refusal | First setup stopped with an attributed observation error | Pending | Pending | Not required |
+| Exact-digest candidate refusal | Fresh setup and check passed; baseline ID 45 saved; earlier failure preserved | Passed | Candidate refused; final ID 46 saved | Not required |
 
 Applied product restore points remain unavailable until actual product
 operations create them.
@@ -800,8 +829,8 @@ operations create them.
 Repository setup selected Python 3.12 and enabled the tracked hooks via
 the authorized elevated Git configuration operation. At checkpoint
 `e75d90c`, the combined checks passed 193 tests, syntax,
-eight queue entries and relative links. Subsequent edits require final
-checks and independent integration review. Host tests
+eight queue entries and relative links. Final integration checks and
+independent review are recorded separately with the reviewed revision. Host tests
 exercise isolated primitives and refusal paths; they do not establish
 real guest behavior.
 
