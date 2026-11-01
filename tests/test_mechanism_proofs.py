@@ -410,6 +410,37 @@ class DockerBaselineTests(unittest.TestCase):
                 self.assertEqual(result.stdout, '')
                 self.assertEqual(list(Path(temporary).iterdir()), [])
 
+    def test_manifest_hash_observer_guards_before_read_and_emits_no_file_contents(self):
+        script = (PROOFS / 'guest-image-manifest.sh').read_text()
+        program = script.split("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
+        code = compile(ast.parse(program), '<manifest-hash-observer>', 'exec')
+        guard = mock.Mock(return_value='guest')
+        read = mock.Mock(return_value=({'schema': 1, 'guest_id': 'guest', 'private': 'PRIVATE_SENTINEL'}, 'a' * 64))
+        install = mock.Mock()
+        def terminate(status):
+            raise SystemExit(status)
+        modules = {'core': SimpleNamespace(Refused=core.Refused, require_guest=guard),
+                   'native_manifest': SimpleNamespace(trusted_json=read),
+                   'run': SimpleNamespace(trusted_install=install),
+                   'sys': SimpleNamespace(path=[], argv=['-', 'guest'], exit=terminate),
+                   'resource': SimpleNamespace(RLIMIT_CORE=4, setrlimit=mock.Mock())}
+        with mock.patch.dict(sys.modules, modules):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                exec(code, {})
+            self.assertEqual(json.loads(output.getvalue()),
+                             {'status': 'observed', 'guest_id': 'guest', 'compose_sha256': 'a' * 64})
+            read.assert_called_once_with('compose.json')
+            self.assertNotIn('PRIVATE_SENTINEL', output.getvalue())
+            read.reset_mock()
+            install.reset_mock()
+            guard.side_effect = core.Refused('wrong_guest')
+            with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as caught:
+                exec(code, {})
+            self.assertEqual(caught.exception.code, 73)
+            read.assert_not_called()
+            install.assert_not_called()
+
 
 class RealNativeConflictTests(unittest.TestCase):
     def test_real_conflict_cannot_be_replaced_by_synthetic_or_unresolved_failure(self):
