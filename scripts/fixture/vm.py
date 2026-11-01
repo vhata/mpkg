@@ -227,7 +227,8 @@ def qmp_query(operation):
 
 def proof_install_payload(name):
     additions={
-        'docker-ready':('docker_ready.py','c45f93c6011d12486dbc7e912d07e9de0bf858048a0e683395ca0c969458af40'),
+        'docker-ready':('docker_ready.py','5efbc61753dbf873d26801f760c3e47f5a48831b1c3c0b02ba43a3c7c7e08a07'),
+        'service-environment':('service_environment.py','91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502'),
         'docker-baseline':('docker_baseline.py','ef9385b2a0f55f3074ccb7522ae14719fc97fddf1fd95e3d8f4796c53bfbbdb2'),
         'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b'),
     }
@@ -265,6 +266,7 @@ def publish_new_file(target, data):
 def install():
     if sys.version_info[:2]!=(3,12) or os.geteuid()!=0 or os.getegid()!=0:
         raise RuntimeError('installed guest Python and root required')
+    sys.dont_write_bytecode=True
     target_directory=Path('/opt/mpkg-proofs')
     protected_directory(target_directory)
     core=target_directory/'core.py'
@@ -276,6 +278,18 @@ def install():
     from core import require_guest, write_new
     guest=require_guest(os.environ.get('MPKG_GUEST_ID'))
     os.umask(0o077)
+    if ADDITION_FILENAME=='docker_ready.py':
+        dependency=target_directory/'service_environment.py'
+        fd=os.open(dependency,os.O_RDONLY|os.O_NOFOLLOW)
+        try:
+            info=os.fstat(fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_gid!=0
+                    or info.st_nlink!=1 or info.st_mode & 0o022 or info.st_size>262144):
+                raise RuntimeError('service environment helper is not trusted')
+            with os.fdopen(fd,'rb',closefd=False) as stream:dependency_data=stream.read(262145)
+            if hashlib.sha256(dependency_data).hexdigest()!='91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502':
+                raise RuntimeError('service environment helper differs from reviewed bytes')
+        finally:os.close(fd)
     data=base64.b64decode(PAYLOAD_BASE64,validate=True)
     digest=ADDITION_DIGEST
     if hashlib.sha256(data).hexdigest()!=digest:
@@ -304,9 +318,26 @@ install()
             .replace('ADDITION_RECORD',repr(name+'.json')).encode())
 
 
-def console(script=None, seconds=10, prompt=False, login_root=False, addition=None):
+def native_service_replacement_payload():
+    source=runner.PROJECT/'scripts/proofs/native_service.py'
+    data=runner.regular_file(source).read_bytes()
+    if hashlib.sha256(data).hexdigest()!='645822526f899506a9f0b6e13c27945003b111ed6d9b065e1df992095acf5961':
+        raise ValueError('native service replacement differs from reviewed bytes')
+    template=runner.regular_file(runner.PROJECT/'scripts/fixture/guest_native_service_replace.py').read_text()
+    marker='REPLACEMENT_BASE64 = None'
+    if template.count(marker)!=1:
+        raise ValueError('native service replacement template changed')
+    return template.replace(marker,'REPLACEMENT_BASE64 = '+repr(base64.b64encode(data).decode())).encode()
+
+
+def console(script=None, seconds=10, prompt=False, login_root=False, addition=None, replacement=False):
     payload=None
-    if addition is not None:
+    if replacement:
+        if script is not None or prompt or login_root or addition is not None:
+            raise ValueError('native service replacement cannot include other console input')
+        payload=native_service_replacement_payload()
+        suffix='.py'
+    elif addition is not None:
         if script is not None or prompt or login_root:
             raise ValueError('proof installation cannot include other console input')
         payload=proof_install_payload(addition)
@@ -359,7 +390,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','replace-native-service'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -379,6 +410,8 @@ def main():
     elif args.operation=='install-docker-ready':console(seconds=args.seconds,addition='docker-ready')
     elif args.operation=='install-docker-baseline':console(seconds=args.seconds,addition='docker-baseline')
     elif args.operation=='install-native-conflict':console(seconds=args.seconds,addition='native-conflict')
+    elif args.operation=='install-service-environment':console(seconds=args.seconds,addition='service-environment')
+    elif args.operation=='replace-native-service':console(seconds=args.seconds,replacement=True)
     else:print(json.dumps(qmp_query('query-status' if args.operation=='status' else 'system_powerdown')))
 
 

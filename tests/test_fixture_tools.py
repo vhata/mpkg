@@ -305,7 +305,7 @@ class FixtureProofAdditionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);(root/'scripts/proofs').mkdir(parents=True)
             for name,filename in [('docker-ready','docker_ready.py'),('docker-baseline','docker_baseline.py'),
-                                  ('native-conflict','native_conflict.py')]:
+                                  ('native-conflict','native_conflict.py'),('service-environment','service_environment.py')]:
                 (root/'scripts/proofs'/filename).write_bytes(b'changed reviewed source')
                 with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(module,'qmp_query') as qmp:
                     with self.assertRaises(ValueError):module.console(addition=name)
@@ -313,7 +313,8 @@ class FixtureProofAdditionTests(unittest.TestCase):
 
     def test_each_generated_addition_binds_its_own_reviewed_bytes_and_filename(self):
         module=self.load()
-        expected={'docker-ready':('docker_ready.py','c45f93c6011d12486dbc7e912d07e9de0bf858048a0e683395ca0c969458af40'),
+        expected={'service-environment':('service_environment.py','91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502'),
+                  'docker-ready':('docker_ready.py','5efbc61753dbf873d26801f760c3e47f5a48831b1c3c0b02ba43a3c7c7e08a07'),
                   'docker-baseline':('docker_baseline.py','ef9385b2a0f55f3074ccb7522ae14719fc97fddf1fd95e3d8f4796c53bfbbdb2'),
                   'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b')}
         for name,(filename,digest) in expected.items():
@@ -348,6 +349,82 @@ class FixtureProofAdditionTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):publish(alias,b'follow symlink')
             self.assertTrue(alias.is_symlink())
             self.assertEqual(target.read_bytes(),b'reviewed bytes')
+
+
+class FixtureNativeServiceReplacementTests(unittest.TestCase):
+    def load(self):
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/guest_native_service_replace.py'
+        spec=importlib.util.spec_from_file_location('fixture_service_replacement',path)
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        return module
+
+    def test_host_payload_refuses_unreviewed_replacement_before_transport(self):
+        vm=FixtureProofAdditionTests().load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'scripts/proofs').mkdir(parents=True)
+            (root/'scripts/proofs/native_service.py').write_bytes(b'unreviewed')
+            with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(vm,'qmp_query') as qmp:
+                with self.assertRaises(ValueError):vm.console(replacement=True)
+                qmp.assert_not_called()
+        program=ast.parse(vm.native_service_replacement_payload())
+        assignment=next(n for n in program.body if isinstance(n,ast.Assign)
+                        and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='REPLACEMENT_BASE64')
+        self.assertEqual(hashlib.sha256(base64.b64decode(assignment.value.value)).hexdigest(),self.load().NEW_SHA256)
+
+    def test_replacement_preserves_changed_target_and_rejects_wrong_payload(self):
+        module=self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            target=Path(tmp)/'native_service.py';target.write_bytes(b'old')
+            expected=('old-identity',)
+            with mock.patch.object(module,'NEW_SHA256',hashlib.sha256(b'new').hexdigest()), \
+                 mock.patch.object(module,'read_bound_file',return_value=(b'old',expected)) as read:
+                with self.assertRaises(RuntimeError):module.publish_replacement(target,b'wrong',expected)
+                read.assert_not_called()
+                read.return_value=(b'changed',('new-identity',))
+                with self.assertRaises(RuntimeError):module.publish_replacement(target,b'new',expected)
+                self.assertEqual(target.read_bytes(),b'old')
+                read.side_effect=[(b'old',expected),(b'changed',('new-identity',))]
+                with self.assertRaises(RuntimeError):module.publish_replacement(target,b'new',expected)
+                self.assertEqual(target.read_bytes(),b'old')
+                read.side_effect=None;read.return_value=(b'old',expected)
+                module.publish_replacement(target,b'new',expected)
+                self.assertEqual(target.read_bytes(),b'new')
+                self.assertEqual(target.stat().st_mode & 0o7777,0o644)
+
+    def test_bound_file_rejects_digest_drift_and_symlink_without_atime_false_positive(self):
+        module=self.load();real_fstat=os.fstat
+        def root_metadata(fd):
+            info=real_fstat(fd)
+            return SimpleNamespace(**{name:0 if name in ('st_uid','st_gid') else getattr(info,name)
+                for name in ('st_dev','st_ino','st_mode','st_nlink','st_uid','st_gid','st_size','st_mtime_ns','st_ctime_ns')})
+        with tempfile.TemporaryDirectory() as tmp:
+            target=Path(tmp)/'helper.py';target.write_bytes(b'bound');target.chmod(0o644)
+            os.utime(target,ns=(1,target.stat().st_mtime_ns))
+            with mock.patch.object(module,'protected_directory'),mock.patch.object(module.os,'fstat',side_effect=root_metadata):
+                self.assertEqual(module.read_bound_file(target,hashlib.sha256(b'bound').hexdigest())[0],b'bound')
+                with self.assertRaises(RuntimeError):module.read_bound_file(target,'0'*64)
+                alias=Path(tmp)/'alias';alias.symlink_to(target)
+                with self.assertRaises(OSError):module.read_bound_file(alias,hashlib.sha256(b'bound').hexdigest())
+
+    def test_existing_fixture_or_changed_unit_blocks_readonly_preflight(self):
+        module=self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            previous=SimpleNamespace(**{name:root/name for name in (
+                'PUBLIC','EXTERNAL_UNIT','EXCLUSIVE','SHARED','MANAGED_DROPINS')},
+                state_root=lambda guest:root/'state',preflight=mock.Mock(),command=mock.Mock())
+            manager=b'ActiveState=inactive\nSubState=dead\nMainPID=0\nControlPID=0\nUnitFileState=disabled\nDropInPaths=\nFragmentPath=/usr/lib/systemd/system/sshd.service\n'
+            previous.command.return_value=manager
+            module.require_fresh_state('guest',previous)
+            previous.preflight.assert_called_once_with(root/'state')
+            previous.preflight.reset_mock()
+            previous.command.return_value=manager.replace(b'ControlPID=0',b'ControlPID=123')
+            with self.assertRaises(RuntimeError):module.require_fresh_state('guest',previous)
+            previous.preflight.assert_not_called()
+            previous.command.reset_mock()
+            previous.PUBLIC.symlink_to(root/'missing')
+            with self.assertRaises(RuntimeError):module.require_fresh_state('guest',previous)
+            previous.command.assert_not_called()
 
 
 class FixtureNativeAdoptionTests(unittest.TestCase):

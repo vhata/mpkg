@@ -143,14 +143,23 @@ missing completion is not proof of success. A running build blocks another
 heavy build, while a successful exited Python unit may retain its status.
 
 `vm.py install-docker-ready`, `install-docker-baseline` and
-`install-native-conflict` add only their fixed reviewed, digest-pinned
-`docker_ready.py`, `docker_baseline.py` and `native_conflict.py` helpers
+`install-native-conflict` and `install-service-environment` add only their
+fixed reviewed, digest-pinned helpers
 after Python is available. Each generates the installer payload
 at runtime and uses the existing verified console transport.
 The installed guest/root disk guard and root-protected directory checks
 precede publication. An existing target is refused, and a private record
 binds the added file's digest. The operation does not run the new helper
 or modify the immutable source disk.
+
+Install the shared service environment observer before Docker readiness or
+the native-service correction. `vm.py replace-native-service` replaces
+only the exact original `native_service.py` with its reviewed correction.
+It requires untouched native fixture paths, accounts, packaged SSH unit
+and configuration, no SSH listener, and an inactive disabled service.
+It preserves the old helper bytes and a prepared receipt before atomic
+publication, then records completion. An unexpected old digest or any
+prior replacement evidence blocks replay; no replacement helper is run.
 
 Relevant tool behavior is documented by the authoritative
 [bubblewrap manual](https://man.archlinux.org/man/bwrap.1.en),
