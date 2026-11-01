@@ -408,10 +408,38 @@ guest. Its actual `compose.json` SHA-256 is
 Independent review matched these results to complete serial captures
 and reconstructed the canonical result and manifest hashes.
 
-Image preparation is verified, but no application container has started.
-Cold resumption and application fixtures remain separate runtime gates.
-Applied product restore points remain unavailable until actual product
-operations create them.
+The reviewed resume and four variant helpers were installed with exact
+hashes and `executed: false` receipts. After orderly shutdown,
+`image-ready` was saved as offline snapshot ID `11`, with no memory state
+and firmware variables SHA-256
+`51d177a74e45bc0faa2c6433ec69813827e25a6092db039fdf4b5e5700c44a46`.
+Cold resumption then completed with exit zero: the same engine and all
+six image views matched, all 27 recorded hashes remained unchanged, and
+containers/volumes were absent with only default networks and disabled
+startup. Independent review verified the complete capture and checkpoint.
+
+The ordinary Sonarr/Radarr baseline subsequently completed with exit zero,
+followed by a separate successful check. Both used the expected original
+image references, application UID 963/GID 1001 and attributed listeners.
+The checks verified configuration values, declared ownership/modes,
+supplemental sentinel reads under copied credentials, and Radarr's actual
+authenticated root-folder accessibility and sentinel-directory discovery.
+Application serialization changed XML bytes while preserving the checked
+protected and unmanaged values. These observations establish directory
+discovery, not media-file reads or imports. Docker startup was enabled
+for this application fixture.
+
+After orderly shutdown, `docker-adoption` was saved as offline snapshot
+ID `12`, with no memory state and firmware variables SHA-256
+`36b4ee16785f54cc2424a9632ef217725a5cb2c5e172384f857be24444168361`.
+The repeat check preceded shutdown; a separate reboot check of this
+snapshot has not been performed. Restoring `image-ready` for the distinct
+Compose proof preserved the application state again as
+`before-restore-36e63e5d95ef4abe`.
+
+The separate Compose mechanism proof and supplemental resource/update
+variants remain runtime gates. Applied product restore points remain
+unavailable until actual product operations create them.
 
 ## Verification and limits
 
