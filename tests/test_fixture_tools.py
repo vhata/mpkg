@@ -839,4 +839,94 @@ class FixtureNativeUpdateBeforeTests(unittest.TestCase):
             with self.assertRaises(module.Refused):module.aur_provenance(drift,source,'ack',guest)
 
 
+class FixtureImageLoadDiagnosticTests(unittest.TestCase):
+    def load(self):
+        import selectors
+        import time
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/guest_image_load_diagnose.py'
+        nodes=[n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef)
+               and n.name in {'capture_load','error_summary','activation_scope'}]
+        namespace={'os':os,'subprocess':subprocess,'selectors':selectors,'time':time,
+                   'hashlib':hashlib,'re':re,'Refused':ValueError,
+                   'ENGINE':'engine','SOURCE_SHA256':'a'*64,'PREPARED_SHA256':'b'*64,
+                   'IMAGES':(('fixture','repository','index','child','config','version'),),
+                   'HASHES':{'known/result.json':'c'*64},'validate_child':mock.Mock()}
+        exec(compile(ast.Module(body=nodes,type_ignores=[]),'image-load-functions','exec'),namespace)
+        return namespace
+
+    def capture(self, code, *, timeout=2, limit=1048576):
+        functions=self.load();actual_popen=subprocess.Popen
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);source=root/'archive';source.write_bytes(b'fixed input')
+            with source.open('rb') as stream:
+                def harmless(argv, **kwargs):
+                    self.assertEqual(argv,['/usr/bin/docker','--host','unix:///run/docker.sock',
+                        'image','load','--quiet','--platform','linux/amd64','--input',
+                        '/proc/self/fd/'+str(stream.fileno())])
+                    self.assertEqual(kwargs['pass_fds'],(stream.fileno(),))
+                    self.assertEqual(kwargs['stdin'],subprocess.DEVNULL)
+                    return actual_popen([sys.executable,'-c',code],**kwargs)
+                with mock.patch.object(subprocess,'Popen',side_effect=harmless):
+                    result=functions['capture_load'](root,stream.fileno(),{'PATH':'/usr/bin'},timeout,limit)
+            output={name:(root/(name+'.private')).read_bytes() for name in ('stdout','stderr')}
+            for name,raw in output.items():
+                self.assertEqual((root/(name+'.private')).stat().st_mode & 0o777,0o600)
+                self.assertEqual(result['output'][name]['bytes'],len(raw))
+                self.assertEqual(result['output'][name]['sha256'],hashlib.sha256(raw).hexdigest())
+            return result,output
+
+    def test_fixed_load_retains_both_streams_and_real_nonzero_exit_without_disclosure(self):
+        result,output=self.capture('import os;os.write(1,b"normal output");os.write(2,b"private error");raise SystemExit(7)')
+        self.assertEqual(result['capture_status'],'exited')
+        self.assertTrue(result['command_completed']);self.assertEqual(result['client_exit_code'],7)
+        self.assertEqual(output,{'stdout':b'normal output','stderr':b'private error'})
+        self.assertNotIn('private error',str(result))
+        self.assertFalse(result['daemon_cancellation_claimed'])
+
+    def test_output_bound_and_timeout_preserve_bytes_but_never_claim_completion(self):
+        result,output=self.capture('import os;os.write(2,b"x"*4096)',limit=128)
+        self.assertEqual(result['capture_status'],'output-bound')
+        self.assertFalse(result['command_completed']);self.assertEqual(output['stderr'],b'x'*128)
+        result,output=self.capture('import os,time;os.write(2,b"started");time.sleep(5)',timeout=0.1)
+        self.assertEqual(result['capture_status'],'timeout')
+        self.assertFalse(result['command_completed']);self.assertEqual(output['stderr'],b'started')
+        self.assertFalse(result['daemon_cancellation_claimed'])
+
+    def test_existing_output_or_symlink_prevents_process_start_and_overwrite(self):
+        functions=self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);outside=root/'preserved';outside.write_bytes(b'original')
+            (root/'stdout.private').symlink_to(outside)
+            with mock.patch.object(subprocess,'Popen') as child:
+                with self.assertRaises(FileExistsError):functions['capture_load'](root,1,{})
+                child.assert_not_called()
+            self.assertEqual(outside.read_bytes(),b'original')
+
+    def test_public_error_summary_excludes_raw_paths_tokens_and_control_bytes(self):
+        functions=self.load()
+        raw=b'no such file or directory /secret/private API_KEY=hidden \x1b[31m /proc/self/fd/9 blobs/sha256/'+b'a'*64
+        summary=functions['error_summary'](raw)
+        self.assertEqual(summary['categories'],['missing_path'])
+        self.assertEqual(summary['public_path_candidates'],['/proc/self/fd/9','blobs/sha256/'+'a'*64])
+        self.assertNotIn('hidden',str(summary));self.assertNotIn('/secret',str(summary))
+        self.assertFalse(summary['raw_output_disclosed'])
+
+    def test_completed_diagnostic_activation_does_not_erase_prior_incomplete_state(self):
+        functions=self.load()
+        value={'schema':1,'guest_id':'guest','status':'unverified','diagnostic_status':'observed',
+               'diagnostic_only':True,'engine_id':'engine','original_index_associations':'unverified',
+               'prior_import_remains_unverified':True,'preparation_attempt_remains_unknown':True,
+               'prior_records_unchanged':True,'source_archive_sha256':'a'*64,
+               'prepared_archive_sha256':'b'*64,'containers':0,'volumes':0,'enabled_services':False,
+               'product_acceptance':False,'child_images':[{}],
+               'prior_record_sha256':{'known/result.json':'c'*64,'image-index-preparation/state.sqlite3':'d'*64}}
+        functions['activation_scope'](value,'guest')
+        for key,changed in [('status','observed'),('preparation_attempt_remains_unknown',False),
+                            ('engine_id','other'),('containers',False),('child_images',[])]:
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                functions['activation_scope'](dict(value,**{key:changed}),'guest')
+        altered=copy.deepcopy(value);altered['prior_record_sha256']['known/result.json']='e'*64
+        with self.assertRaises(ValueError):functions['activation_scope'](altered,'guest')
+
+
 if __name__ == '__main__':unittest.main()

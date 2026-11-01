@@ -221,3 +221,22 @@ and [pacstrap manual](https://man.archlinux.org/man/pacstrap.8.en).
 The mocked host-boundary tests do not establish that the guest boots,
 that acquisition succeeds or that any acceptance scenario passes. Record
 those actual outcomes separately with their artifact/guest identities.
+
+`guest_image_load_diagnose.py` performs one new local load after the
+separate cold diagnostic activation. It binds that activation's completed
+journal, the unchanged earlier unverified import and unknown preparation,
+the running engine/process/socket identities, and the exact prepared
+archive. Builds and other Docker clients must be quiescent. It never
+restarts services, repacks bytes, pulls, tags, deletes or retries.
+
+The new `image-index-load-diagnostic` directory retains private stdout and
+stderr, limited to 1 MiB each, plus byte counts, hashes, the real client
+exit code and closed error categories. The load has a 600-second timeout;
+the whole helper has an 1800-second deadline. A timeout or output limit
+leaves the new attempt unknown and makes no claim that daemon work
+stopped. A completed client with a nonzero exit remains unverified even
+if some image identities changed. Only actual successful loading and
+original index/platform association checks can complete this new attempt;
+all prior attempt records remain unchanged. Raw error text is never
+printed on the console, and this diagnostic does not establish product
+acceptance.
