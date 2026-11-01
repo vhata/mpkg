@@ -205,6 +205,40 @@ class ProtectedOutputTests(unittest.TestCase):
 
 
 class DockerVariantPrimitiveTests(unittest.TestCase):
+    def test_radarr_response_status_and_shape_precede_field_access(self):
+        self.assertEqual(docker_variants.response_object(201, b'{"id":1}', 201), {'id': 1})
+        for status, raw, shape in ((400, b'[{"message":"PRIVATE_SENTINEL"}]', 'array'),
+                                   (400, b'{"id":1,"secret":"PRIVATE_SENTINEL"}', 'object'),
+                                   (201, b'"PRIVATE_SENTINEL"', 'string'),
+                                   (201, b'PRIVATE_SENTINEL', 'unparseable')):
+            with self.subTest(status=status, shape=shape), self.assertRaises(
+                    docker_variants.ResponseMismatch) as failure:
+                docker_variants.response_object(status, raw, 201)
+            with mock.patch.object(docker_variants, 'FAILURE_STAGE', 'radarr_rootfolder_validate'):
+                public = docker_variants.failure_evidence(failure.exception)
+            self.assertEqual(public['http_status'], status)
+            self.assertEqual(public['json_type'], shape)
+            self.assertNotIn('PRIVATE_SENTINEL', str(failure.exception) + json.dumps(public))
+        # The previous field-access expression raises a generic exception.
+        with self.assertRaises(AttributeError):
+            json.loads(b'[{"message":"PRIVATE_SENTINEL"}]').get('id')
+
+    def test_variant_failure_projection_never_formats_exception_values(self):
+        local = {}
+        exec(compile("def attribution():\n    raise FileNotFoundError(2, 'PRIVATE_SENTINEL', '/private/key')\n",
+                     '/opt/mpkg-proofs/docker_variants.py', 'exec'), local)
+        try:
+            local['attribution']()
+        except FileNotFoundError as error:
+            with mock.patch.object(docker_variants, 'FAILURE_STAGE', 'radarr_rootfolder_post'):
+                result = docker_variants.failure_evidence(error)
+        self.assertEqual(result, {'stage': 'radarr_rootfolder_post', 'exception_type': 'FileNotFoundError',
+            'errno': 2, 'fixed_source_frames': [{'source': 'docker_variants.py', 'function': 'attribution', 'line': 2}]})
+        self.assertNotIn('PRIVATE_SENTINEL', json.dumps(result))
+        self.assertNotIn('/private/key', json.dumps(result))
+        with self.assertRaisesRegex(docker_variants.Refused, 'diagnostic_stage_invalid'):
+            docker_variants.stage('PRIVATE_SENTINEL')
+
     def test_retirement_entrypoint_refuses_host_before_removal_or_prior_history_reads(self):
         with tempfile.TemporaryDirectory() as temporary:
             result = subprocess.run([sys.executable, '-I', str(PROOFS / 'docker_variant_retire.py'),

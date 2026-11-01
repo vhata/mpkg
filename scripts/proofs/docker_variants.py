@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import pwd
+import re
 import resource
 import socket
 import stat
@@ -27,6 +28,68 @@ from image_import import validate_acquisition
 from native_manifest import trusted_json
 from native_service import identity as native_identity, trusted_path
 from run import ENV, command, trusted_install
+
+
+FAILURE_STAGE = 'entrypoint'
+STAGES = ('entrypoint', 'guest_guard', 'open_attempt', 'fresh_baseline', 'begin_attempt',
+          'compose_group', 'compose_user', 'compose_directory', 'shared_media',
+          'network_create', 'volume_initialize', 'seed_sonarr', 'seed_radarr',
+          'inventory_resources', 'radarr_key', 'radarr_naming_get', 'radarr_naming_validate',
+          'radarr_rootfolder_post', 'radarr_rootfolder_validate', 'write_baseline',
+          'enable_docker', 'verify_baseline', 'complete_attempt', 'read_complete_baseline')
+
+
+def stage(name):
+    global FAILURE_STAGE
+    if name not in STAGES:
+        raise Refused('docker_variant_diagnostic_stage_invalid')
+    FAILURE_STAGE = name
+
+
+class ResponseMismatch(Refused):
+    def __init__(self, status, shape):
+        super().__init__('docker_variant_radarr_response_mismatch')
+        self.status = status if type(status) is int and 100 <= status <= 599 else None
+        self.shape = shape if shape in ('object', 'array', 'string', 'number', 'boolean', 'null',
+                                       'unparseable', 'other') else 'other'
+
+
+def response_object(code, raw, expected_status):
+    """Validate status/shape before accessing fields; retain no response bytes."""
+    try:
+        value = json.loads(raw)
+    except (ValueError, UnicodeError):
+        raise ResponseMismatch(code, 'unparseable') from None
+    shape = {dict: 'object', list: 'array', str: 'string', int: 'number', float: 'number',
+             bool: 'boolean', type(None): 'null'}.get(type(value), 'other')
+    if code != expected_status or type(value) is not dict:
+        raise ResponseMismatch(code, shape)
+    return value
+
+
+def failure_evidence(error):
+    """Only fixed stage, error kind and trusted source coordinates are public."""
+    kinds = ('FileNotFoundError', 'PermissionError', 'ProcessLookupError', 'OSError',
+             'KeyError', 'TypeError', 'ValueError', 'IndexError', 'AttributeError',
+             'JSONDecodeError', 'OperationalError', 'Refused', 'ResponseMismatch')
+    result = {'stage': FAILURE_STAGE, 'exception_type': type(error).__name__
+              if type(error).__name__ in kinds else 'other',
+              'errno': error.errno if isinstance(error, OSError) and type(error.errno) is int else None}
+    frames, frame = [], error.__traceback__
+    while frame is not None:
+        code = frame.tb_frame.f_code
+        path = Path(code.co_filename)
+        if (str(path.parent) == '/opt/mpkg-proofs' and path.name in
+                ('docker_variants.py', 'docker_baseline.py', 'core.py', 'run.py', 'compose_proof.py',
+                 'docker_variant_plan.py', 'docker_ready.py', 'native_service.py', 'service_environment.py')
+                and re.fullmatch(r'[A-Za-z_][A-Za-z_0-9]*', code.co_name)):
+            frames.append({'source': path.name, 'function': code.co_name, 'line': frame.tb_lineno})
+        frame = frame.tb_next
+    result['fixed_source_frames'] = frames[-12:]
+    if isinstance(error, ResponseMismatch):
+        result['http_status'] = error.status
+        result['json_type'] = error.shape
+    return result
 
 
 def reserve(path):
@@ -517,43 +580,63 @@ class Variant(Baseline):
         return result
 
     def setup(self):
+        stage('fresh_baseline')
         self.fresh()
         attempt = str(uuid.uuid4())
+        stage('begin_attempt')
         self.journal.begin(attempt)
+        stage('compose_group')
         command(['/usr/bin/groupadd', '--gid', '962', 'compose'])
+        stage('compose_user')
         command(useradd_arguments('compose'))
+        stage('compose_directory')
         make_directory(BASE, 963, 962, 0o750)
         assert_compose_account()
         if 'radarr' in self.specs:
+            stage('shared_media')
             for path in (RADARR_ROOT, SENTINEL):
                 make_directory(path, 963, 1001, 0o2770)
             make_file(SENTINEL / 'sentinel', ('mpkg fixture ' + self.guest + ' media\n').encode(), 963, 1001, 0o640)
         if self.plan['bridge']:
+            stage('network_create')
             self.network_id = self.docker('network', 'create', '--driver', 'bridge', '--label', 'mpkg.fixture=' + self.guest,
                                            '--label', 'mpkg.variant=' + self.plan['variant'], NETWORK).decode().strip()
             if len(self.network_id) != 64 or any(char not in '0123456789abcdef' for char in self.network_id):
                 raise Refused('docker_variant_network_identity_invalid')
         if self.plan['volume']:
+            stage('volume_initialize')
             self.prepare_volume()
         manifest = {'schema': 1, 'guest_id': self.guest, 'plan': self.plan, 'images': self.image_ids,
                     'network_id': self.network_id, 'inputs': {}, 'radarr_root_id': None}
         for role in self.specs:
+            stage('seed_' + role)
             manifest['inputs'][role] = self.seed(role)
+        stage('inventory_resources')
         manifest['resources'] = self.objects()
         if 'radarr' in self.specs:
+            stage('radarr_key')
             key = xml_values(self.protected(manifest['inputs']['radarr']['initial_xml']))['ApiKey']
+            stage('radarr_naming_get')
             code, raw = self.request('radarr', '/api/v3/config/naming', key=key)
-            if code != 200 or json.loads(raw).get('movieFolderFormat') != '{Movie Title} ({Release Year})':
+            stage('radarr_naming_validate')
+            naming = response_object(code, raw, 200)
+            if naming.get('movieFolderFormat') != '{Movie Title} ({Release Year})':
                 raise Refused('docker_variant_radarr_naming_changed')
+            stage('radarr_rootfolder_post')
             code, raw = self.request('radarr', '/api/v3/rootfolder', key=key, body={'path': str(RADARR_ROOT)})
-            root_id = json.loads(raw).get('id')
-            if code != 201 or type(root_id) is not int or root_id <= 0:
+            stage('radarr_rootfolder_validate')
+            root_id = response_object(code, raw, 201).get('id')
+            if type(root_id) is not int or root_id <= 0:
                 raise Refused('docker_variant_radarr_registration_unverified')
             manifest['radarr_root_id'] = root_id
+        stage('write_baseline')
         write_new(self.root / 'baseline.json', canonical(manifest) + b'\n')
+        stage('enable_docker')
         command(['/usr/bin/systemctl', 'enable', 'docker.service'])
         self.enabled = True
+        stage('verify_baseline')
         result = self.inspect(manifest)
+        stage('complete_attempt')
         self.journal.finish(attempt, 'observed-complete')
         return result
 
@@ -565,18 +648,22 @@ def main():
     parser.add_argument('--variant', choices=VARIANTS, required=True)
     parser.add_argument('--guest-id', required=True)
     args = parser.parse_args()
+    stage('guest_guard')
     guest = require_guest(args.guest_id)
     trusted_install()
     os.umask(0o077)
+    stage('open_attempt')
     fixture = Variant(guest, args.variant, setup=args.action == 'setup')
     try:
         if args.action == 'setup':
             result = fixture.setup()
         else:
+            stage('read_complete_baseline')
             attempts = fixture.journal.export()
             if len(attempts) != 1 or attempts[0]['state'] != 'observed-complete':
                 raise Refused('docker_variant_setup_incomplete')
             raw, _ = read_regular(fixture.root / 'baseline.json')
+            stage('verify_baseline')
             result = fixture.inspect(json.loads(raw))
         print(json.dumps(result, sort_keys=True))
     finally:
@@ -587,8 +674,10 @@ if __name__ == '__main__':
     try:
         main()
     except Refused as error:
-        print(json.dumps({'status': 'refused', 'code': str(error), 'product_acceptance': False}))
+        print(json.dumps({'status': 'refused', 'code': str(error), 'failure': failure_evidence(error),
+                          'product_acceptance': False}))
         sys.exit(73)
-    except Exception:
-        print(json.dumps({'status': 'unverified', 'code': 'docker_variant_failed', 'product_acceptance': False}))
+    except Exception as error:
+        print(json.dumps({'status': 'unverified', 'code': 'docker_variant_failed',
+                          'failure': failure_evidence(error), 'product_acceptance': False}))
         sys.exit(74)

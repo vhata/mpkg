@@ -543,6 +543,17 @@ with abort-on-error semantics in [sftp](https://man.openbsd.org/sftp).
 Actual package compatibility and authenticated behavior require the guest
 run; host-safe configuration tests cannot establish either.
 
+Variant setup failures expose a closed phase name, exception class/errno
+and trusted module/function/line coordinates, without exception messages,
+locals or application response bytes. Radarr responses must have the
+expected HTTP status and an object shape before field access; validation
+arrays or malformed responses retain only status and shape in the failure.
+This avoids collapsing a response-shape failure into an unexplained
+generic exception. It does not infer the lost cause of an earlier failed
+attempt, authorize a repeated POST or complete an unknown journal entry.
+Separate fixed read-only diagnostics inspect preserved phase evidence and
+attributed GET responses without replaying setup or registration.
+
 ## Protected output boundary
 
 `guest-protected-output.sh` runs a separate one-shot proof after the full
