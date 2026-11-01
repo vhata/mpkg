@@ -66,6 +66,32 @@ baseline with required local package signatures, restores installation
 reasons and verifies the six initial absences. A detected virtual machine
 alone is insufficient authority.
 
+`sources.py` acquires pinned Python and AUR recipe/source bytes without
+executing them. `source_inputs.py --oci-snapshot <private-snapshot>` builds
+a second read-only disk containing those bytes, verified OCI acquisition
+inputs and the tracked proof scripts. `guest-install-sources.sh` binds the
+installed root disk, DMI identity and source disk serial before checking
+the complete payload and installing it into private guest input paths.
+The Python source is placed at
+`/opt/mpkg-proof-inputs/sources/python/Python-3.12.16.tar.xz`.
+
+The initial ISO keyring must be initialized before package verification.
+`guest-resume-bootstrap.sh` covers only the recorded formatted but empty
+target state; it never repartitions or reformats a partially installed
+disk. `guest-repair-public-permissions.sh` corrects the known bootstrap
+umask defect only after a successful installation. Its fixed public
+directory expectations come from `public-directory-modes.json`, extracted
+from verified package metadata; private fixture permissions remain strict.
+Fresh bootstrap runs use a public umask only for package/public config
+creation. Status collection is read-only and requires an idle shell.
+
+Each VM start retains a separate private serial log. Console transfer
+requires successful complete decoding and an exact payload digest before
+execution. `snapshot.py create <name>` and `restore <name>` require the
+VM operator lock, so checkpoints cannot mutate a running disk. Restores
+preserve the prior disk and firmware checkpoint; interrupted restore
+markers block further snapshots and boot until explicitly reconciled.
+
 Relevant tool behavior is documented by the authoritative
 [bubblewrap manual](https://man.archlinux.org/man/bwrap.1.en),
 [QEMU invocation reference](https://www.qemu.org/docs/master/system/invocation.html)

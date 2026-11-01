@@ -104,7 +104,13 @@ def prepare():
         print(json.dumps(vm_identity()))
 
 
-def qemu_arguments(identity, installer, inputs=False):
+def require_no_restore_pending():
+    for name in ('restore-vars.pending','restore.pending.json'):
+        if (VM/name).exists() or (VM/name).is_symlink():
+            raise ValueError('interrupted checkpoint restore requires evidence reconciliation')
+
+
+def qemu_arguments(identity, installer, inputs=False, sources=False, console_log=None):
     arguments = ['/usr/bin/qemu-system-x86_64', '-no-user-config', '-nodefaults',
                  '-display', 'none', '-machine', 'q35,accel=tcg,dump-guest-core=off', '-cpu', 'qemu64',
                  '-smp', '4', '-m', '8192', '-uuid', identity['guest_id'],
@@ -114,7 +120,8 @@ def qemu_arguments(identity, installer, inputs=False):
                  '-drive', 'if=none,id=os,format=qcow2,file=/run/mpkg-fixture/disk.qcow2',
                  '-device', 'virtio-blk-pci,drive=os,serial='+identity['disk_serial'],
                  '-netdev', 'user,id=n0', '-device', 'virtio-net-pci,netdev=n0',
-                 '-chardev', 'socket,id=console,path=/run/mpkg-fixture/c.sock,server=on,wait=off',
+                 '-chardev', 'socket,id=console,path=/run/mpkg-fixture/c.sock,server=on,wait=off'+
+                 (',logfile=/run/mpkg-fixture/'+console_log+',logappend=on' if console_log else ''),
                  '-serial', 'chardev:console',
                  '-qmp', 'unix:/run/mpkg-fixture/q.sock,server=on,wait=off',
                  '-device', 'virtio-serial-pci',
@@ -123,6 +130,10 @@ def qemu_arguments(identity, installer, inputs=False):
     if inputs:
         arguments += ['-drive', 'if=none,id=inputs,format=raw,readonly=on,file=/run/mpkg-fixture/inputs.img',
                       '-device', 'virtio-blk-pci,drive=inputs,serial=mpkgin'+uuid.UUID(identity['guest_id']).hex[:14]]
+    if sources:
+        if not inputs:raise ValueError('source disk requires the original input disk binding')
+        arguments += ['-drive', 'if=none,id=sources,format=raw,readonly=on,file=/run/mpkg-fixture/sources.img',
+                      '-device', 'virtio-blk-pci,drive=sources,serial=mpkgsrc'+uuid.UUID(identity['guest_id']).hex[:13]]
     if installer:
         arguments += ['-drive', 'if=none,id=cd,format=raw,readonly=on,media=cdrom,file=/run/mpkg-fixture/installer.iso',
                       '-device', 'ide-cd,drive=cd', '-kernel', '/run/mpkg-fixture/vmlinuz',
@@ -134,6 +145,7 @@ def qemu_arguments(identity, installer, inputs=False):
 def start(installer):
     identity = vm_identity()
     with vm_lock():
+        require_no_restore_pending()
         for name in ('disk.qcow2', 'vars.fd'):
             runner.regular_file(VM/name)
         for name in ('c.sock','q.sock','g.sock'):
@@ -149,9 +161,19 @@ def start(installer):
             if (proof['guest_id']!=identity['guest_id'] or image.stat().st_size!=proof['disk_bytes']
                     or runner.sha256(image)!=proof['sha256']):
                 raise ValueError('read-only guest input disk does not match its binding')
-        command = sandbox_command(qemu_arguments(identity, installer, inputs), include_iso=installer)
+        sources = (VM/'sources-verification.json').exists()
+        if sources:
+            proof=json.loads(runner.regular_file(VM/'sources-verification.json').read_text())
+            image=runner.regular_file(VM/'sources.img')
+            if (proof['guest_id']!=identity['guest_id'] or image.stat().st_size!=proof['disk_bytes']
+                    or runner.sha256(image)!=proof['sha256']):
+                raise ValueError('read-only source disk does not match its binding')
+        console_log='serial-'+uuid.uuid4().hex+'.log'
+        runner.write_new(VM/console_log,b'')
+        command = sandbox_command(qemu_arguments(identity, installer, inputs, sources,console_log), include_iso=installer)
         print(json.dumps({'guest_id':identity['guest_id'],'boot':'installer' if installer else 'disk',
-                          'host_shared_mounts_in_guest':False,'inbound_forwarding':False}),flush=True)
+                          'host_shared_mounts_in_guest':False,'inbound_forwarding':False,
+                          'private_console_log':console_log}),flush=True)
         result = subprocess.run(command, env=runner.SAFE_ENV)
         if result.returncode:
             raise RuntimeError(f'private QEMU exited {result.returncode}')

@@ -176,4 +176,40 @@ class FixtureConsoleTransferTests(unittest.TestCase):
                 if name!='valid':self.assertIn(b'MPKG_TRANSFER_',result.stdout)
 
 
+class FixtureHandoffTests(unittest.TestCase):
+    def load(self,name):
+        sys.modules['runner']=RUNNER
+        directory=Path(__file__).resolve().parents[1]/'scripts/fixture'
+        for dependency in ('vm','native','inputs','sources',name):
+            spec=importlib.util.spec_from_file_location(dependency,directory/(dependency+'.py'))
+            module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+            sys.modules[dependency]=module
+        return module
+
+    def test_unapproved_source_directory_is_rejected_before_creation(self):
+        module=self.load('source_inputs')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            with mock.patch.object(module.subprocess,'check_output',return_value=str(root/'.git')+'\n'), \
+                 mock.patch.object(RUNNER,'private_directory') as create:
+                with self.assertRaises(ValueError):module.prepare(root/'unapproved')
+                create.assert_not_called()
+
+    def test_pending_restore_blocks_boot_and_another_snapshot(self):
+        module=self.load('snapshot');vm=module.vm
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)
+            for name in ('disk.qcow2','vars.fd'):(root/name).write_bytes(b'fixture')
+            for name in ('restore-vars.pending','restore.pending.json'):
+                with self.subTest(pending=name):
+                    pending=root/name;pending.write_bytes(b'preserve interrupted operation')
+                    with mock.patch.object(vm,'VM',root),mock.patch.object(vm,'vm_identity',return_value={}), \
+                         mock.patch.object(vm,'vm_lock'),mock.patch.object(module,'create') as create, \
+                         mock.patch.object(vm.subprocess,'run') as run:
+                        with self.assertRaises(ValueError):vm.start(False)
+                        with self.assertRaises(ValueError):module.operation('create','baseline')
+                        create.assert_not_called();run.assert_not_called()
+                    self.assertTrue(pending.exists());pending.unlink()
+
+
 if __name__ == '__main__':unittest.main()

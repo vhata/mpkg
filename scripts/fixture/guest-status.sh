@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Read only fixed nonsecret fixture status; do not print command arguments.
+set -euo pipefail
+: "${MPKG_GUEST_ID:?expected guest UUID is required}"
+[[ $(cat /sys/class/dmi/id/sys_vendor) == QEMU ]]
+[[ $(tr '[:upper:]' '[:lower:]' < /sys/class/dmi/id/product_uuid) == "$MPKG_GUEST_ID" ]]
+printf 'MPKG_STATUS_GUEST=%s\n' "$MPKG_GUEST_ID"
+for path in /run/mpkg-bootstrap.started /run/mpkg-bootstrap-resume.exit /mnt/var/lib/mpkg-fixture/bootstrap-complete /var/lib/mpkg-fixture/bootstrap-complete /var/lib/mpkg-fixture/python-3.12.16/started /var/lib/mpkg-fixture/python-3.12.16/exit /var/lib/mpkg-fixture/python-3.12.16/complete /var/lib/mpkg-fixture/python-3.12.16/result.json; do
+    if [[ -f $path && ! -L $path ]]; then
+        printf 'present %s\n' "$path"
+    else
+        printf 'absent %s\n' "$path"
+    fi
+done
+if [[ -f /run/mpkg-bootstrap-resume.exit && ! -L /run/mpkg-bootstrap-resume.exit ]]; then
+    code=$(cat /run/mpkg-bootstrap-resume.exit)
+    [[ $code =~ ^[0-9]{1,3}$ ]] && printf 'resume_exit=%s\n' "$code"
+fi
+if [[ -f /var/lib/mpkg-fixture/python-3.12.16/exit && ! -L /var/lib/mpkg-fixture/python-3.12.16/exit ]]; then
+    code=$(cat /var/lib/mpkg-fixture/python-3.12.16/exit)
+    [[ $code =~ ^[0-9]{1,3}$ ]] && printf 'python_build_exit=%s\n' "$code"
+fi
+ps -eo pid=,comm= | awk '$2 ~ /^(pacstrap|pacman|gpg|gpg-agent|make|cc1|ld|ldconfig|mkinitcpio)$/ {print}'
+lsblk -o NAME,SIZE,TYPE,SERIAL,MOUNTPOINTS
+if [[ -f /var/lib/mpkg-fixture/bootstrap-complete ]]; then
+    printf 'installed_packages='
+    pacman -Q | wc -l
+    pacman -Q pacman systemd docker docker-compose openssh gnupg
+fi

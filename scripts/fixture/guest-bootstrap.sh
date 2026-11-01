@@ -43,7 +43,7 @@ for index in "${!packages[@]}"; do
     packages[$index]="/run/mpkg-inputs/artifacts/${packages[$index]}"
 done
 [[ ${#packages[@]} == 207 ]] || { echo 'Unexpected baseline package count.' >&2; exit 1; }
-pacstrap -C /run/mpkg-inputs/pacman.conf -M -U /mnt "${packages[@]}"
+(umask 022; pacstrap -C /run/mpkg-inputs/pacman.conf -M -U /mnt "${packages[@]}")
 mapfile -t dependencies < /run/mpkg-inputs/baseline-dependencies.list
 arch-chroot /mnt pacman -D --asdeps "${dependencies[@]}"
 arch-chroot /mnt pacman -Q | LC_ALL=C sort > /run/mpkg-installed.txt
@@ -59,6 +59,7 @@ cp -R /run/mpkg-inputs/artifacts /mnt/opt/mpkg-proof-inputs/
 cp -R /run/mpkg-inputs/databases /mnt/opt/mpkg-proof-inputs/
 install -m 0600 /run/mpkg-inputs/source-inventory.json /mnt/opt/mpkg-proof-inputs/source-inventory.json
 install -m 0644 /run/mpkg-inputs/pacman.conf /mnt/etc/pacman.conf
+umask 022
 genfstab -U /mnt > /mnt/etc/fstab
 printf 'mpkg-fixture\n' > /mnt/etc/hostname
 ln -sf /usr/share/zoneinfo/America/Los_Angeles /mnt/etc/localtime
@@ -94,6 +95,7 @@ linux /vmlinuz-linux
 initrd /initramfs-linux.img
 options root=UUID=$root_uuid rw console=ttyS0,115200
 ENTRY
+umask 077
 install -d -m 0700 /mnt/var/lib/mpkg-fixture
 arch-chroot /mnt pacman -Q > /mnt/var/lib/mpkg-fixture/bootstrap-packages.txt
 arch-chroot /mnt pacman -Qe > /mnt/var/lib/mpkg-fixture/bootstrap-explicit.txt
