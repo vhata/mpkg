@@ -15,3 +15,4 @@ Findings whose fix has landed with independent verification but whose closure th
 | --- | --- | --- | --- |
 | `update-marks-raw-requirements` | [#2](https://github.com/vhata/mpkg/pull/2), `db235dd` | `/root/dependency_target_review` | Original versioned/virtual update failures reproduced; strict installed-name regressions and 202-test suite passed. |
 | `refresh-selects-unsatisfying-providers` | [#2](https://github.com/vhata/mpkg/pull/2), `db235dd` | `/root/dependency_target_review` | Incompatible-provider reproduction, 18 native-vercmp cases and mutation checks passed; [review](https://github.com/vhata/mpkg/pull/2#issuecomment-6563651617). |
+| `refresh-omits-architecture-dependencies` | [#3](https://github.com/vhata/mpkg/pull/3), `73b99b4` | `/root/three_fixes_review` | Original architecture-only and mixed failures reproduced; 208-test suite and architecture-selection mutations passed; [review](https://github.com/vhata/mpkg/pull/3#issuecomment-6563847567). |
