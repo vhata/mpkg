@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import signal
 import selectors
+import resource
 import sqlite3
 import stat
 import subprocess
@@ -151,6 +152,7 @@ def launch(guest, root, case, attempt):
 
 
 def main():
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('verb', choices=('run', 'worker', 'launch'))
     parser.add_argument('--guest-id', required=True)

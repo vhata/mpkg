@@ -8,6 +8,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 import uuid
@@ -17,6 +18,9 @@ PROOFS = Path(__file__).resolve().parents[1] / 'scripts' / 'proofs'
 SPEC = importlib.util.spec_from_file_location('proof_core', PROOFS / 'core.py')
 core = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(core)
+sys.path.insert(0, str(PROOFS))
+import compose_proof
+import native_proof
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -24,30 +28,36 @@ class GuestGuardTests(unittest.TestCase):
         self.guest = str(uuid.uuid4())
         self.marker = {'schema': 1, 'guest_id': self.guest,
                        'fixture_id': 'first-release-2026-10-31',
-                       'disposable': True}
+                       'disposable': True,
+                       'disk_serial': 'mpkg' + self.guest.replace('-', '')[:16],
+                       'disk_bytes': 42949672960}
         self.metadata = SimpleNamespace(st_mode=stat.S_IFREG | 0o600,
                                         st_uid=0, st_gid=0, st_nlink=1)
 
+    def validate(self, dmi_uuid, vendor, root_device=(254, 2)):
+        return core.validate_guest(self.guest, self.marker, self.metadata,
+                                   dmi_uuid, vendor, root_device, (254, 2),
+                                   self.marker['disk_serial'], 42949672960)
+
     def test_matching_marker_is_insufficient_without_vm_identity(self):
         with self.assertRaisesRegex(core.Refused, 'guest_machine_mismatch'):
-            core.validate_guest(self.guest, self.marker, self.metadata,
-                                str(uuid.uuid4()), 'QEMU')
+            self.validate(str(uuid.uuid4()), 'QEMU')
         with self.assertRaisesRegex(core.Refused, 'guest_machine_mismatch'):
-            core.validate_guest(self.guest, self.marker, self.metadata,
-                                self.guest, 'production vendor')
-        self.assertEqual(core.validate_guest(
-            self.guest, self.marker, self.metadata, self.guest, 'QEMU'), self.guest)
+            self.validate(self.guest, 'production vendor')
+        self.assertEqual(self.validate(self.guest, 'QEMU'), self.guest)
+
+    def test_vm_marker_does_not_allow_live_iso_or_wrong_root_disk(self):
+        with self.assertRaisesRegex(core.Refused, 'guest_root_disk_mismatch'):
+            self.validate(self.guest, 'QEMU', root_device=(0, 20))
 
     def test_marker_permissions_and_unexpected_fields_refuse(self):
         self.metadata.st_mode = stat.S_IFREG | 0o644
         with self.assertRaisesRegex(core.Refused, 'guest_marker_permissions'):
-            core.validate_guest(self.guest, self.marker, self.metadata,
-                                self.guest, 'QEMU')
+            self.validate(self.guest, 'QEMU')
         self.metadata.st_mode = stat.S_IFREG | 0o600
         self.marker['command'] = 'untrusted'
         with self.assertRaisesRegex(core.Refused, 'guest_marker_mismatch'):
-            core.validate_guest(self.guest, self.marker, self.metadata,
-                                self.guest, 'QEMU')
+            self.validate(self.guest, 'QEMU')
 
     def test_real_cli_refuses_host_before_any_experiment(self):
         # A random expected UUID cannot identify the host or an assembled guest.
@@ -105,6 +115,40 @@ class LocalMechanismTests(unittest.TestCase):
             journal.finish(attempt, 'observed-complete')
         self.assertEqual(journal.export()[0]['state'], 'unknown')
         self.assertEqual(journal.export()[0]['events'], ['started'])
+
+    def test_restored_history_does_not_authorize_or_undo_external_effect(self):
+        journal = self.journal()
+        snapshot = self.root / 'snapshot'
+        journal.backup(snapshot)
+        attempt = str(uuid.uuid4())
+        journal.begin(attempt)
+        effect = self.root / 'external-effect'
+        core.write_new(effect, b'external state remains')
+        journal.finish(attempt, 'observed-complete')
+        restored = core.Journal.restore(snapshot, self.root / 'restored')
+        self.addCleanup(restored.close)
+        self.assertEqual(restored.export(), [])
+        with self.assertRaisesRegex(core.Refused, 'history_recovery_required'):
+            restored.begin(str(uuid.uuid4()))
+        self.assertEqual(effect.read_bytes(), b'external state remains')
+        with self.assertRaisesRegex(core.Refused, 'restore_destination_exists'):
+            core.Journal.restore(snapshot, self.root / 'restored')
+
+    def test_failed_restore_does_not_publish_unguarded_history(self):
+        journal = self.journal()
+        snapshot = self.root / 'snapshot'
+        journal.backup(snapshot)
+        target = self.root / 'restore-target'
+        def interrupt():
+            raise RuntimeError('injected publication interruption')
+        with self.assertRaises(RuntimeError):
+            core.Journal.restore(snapshot, target, before_publish=interrupt)
+        self.assertFalse(target.exists())
+        staging = next(self.root.glob('.mpkg-restore-*'))
+        quarantined = core.Journal(staging)
+        self.addCleanup(quarantined.close)
+        with self.assertRaisesRegex(core.Refused, 'history_recovery_required'):
+            quarantined.begin(str(uuid.uuid4()))
 
     def test_protected_capture_replay_drift_and_projection(self):
         journal = self.journal()
@@ -199,6 +243,53 @@ class LocalMechanismTests(unittest.TestCase):
         with self.assertRaisesRegex(core.Refused, 'data_alias_unsupported'):
             core.inventory_tree(data)
         self.assertEqual(outside.read_bytes(), b'preserve')
+
+    def test_flat_directory_inventory_is_bounded(self):
+        data = core.private_directory(self.root / 'data')
+        for number in range(1001):
+            (data / str(number)).touch()
+        with self.assertRaisesRegex(core.Refused, 'data_inventory_bound'):
+            core.inventory_tree(data)
+
+    def test_ping_requires_pinned_application_json_shape(self):
+        self.assertTrue(core.ping_ok(b'{"status":"OK"}'))
+        self.assertTrue(core.ping_ok(b'{"Status":"OK"}'))
+        for raw in (b'OK', b'{"status":"Error"}', b'[]',
+                    b'{"status":"Error","Status":"OK"}'):
+            with self.subTest(raw=raw):
+                self.assertFalse(core.ping_ok(raw))
+
+    def test_covering_listeners_include_ipv4_wildcard_and_refuse_ipv6(self):
+        port = '4DB3'
+        header = 'header\n'
+        row = '0: {}:{} 00000000:0000 0A 0 0 0 0 0 {}\n'
+        table = header + row.format('0100007F', port, '101')
+        table += row.format('00000000', port, '202')
+        self.assertEqual(compose_proof.covering_listeners(table, header, 19891),
+                         {'socket:[101]', 'socket:[202]'})
+        with self.assertRaisesRegex(compose_proof.Refused, 'listener_family_ambiguous'):
+            compose_proof.covering_listeners(table, header + row.format('0' * 32, port, '303'), 19891)
+
+    def test_http_whole_request_deadline_stops_trickling_or_stalled_child(self):
+        class StalledOpener:
+            def open(self, request, timeout):
+                time.sleep(10)
+        started = time.monotonic()
+        with self.assertRaisesRegex(compose_proof.Refused, 'application_request_timeout_unknown'):
+            compose_proof.bounded_request(StalledOpener(), None, seconds=0.05)
+        self.assertLess(time.monotonic() - started, 2)
+
+    def test_exact_versions_and_coordinated_upgrade_are_required(self):
+        rows = [['I', 'gnupg', '2.4.9-3', '0'],
+                ['A', 'gnupg', '2.4.9-4', '0'], ['A', 'tmux', '3.6b-4', '0']]
+        manifest = {'targets': ['tmux'], 'exact_versions': {'tmux': '3.6b-4'},
+                    'coordinated_upgrade': {'name': 'gnupg', 'from': '2.4.9-3', 'to': '2.4.9-4'}}
+        self.assertEqual(native_proof.enforce_version_intent(rows, manifest), 'gnupg')
+        with self.assertRaisesRegex(native_proof.Refused, 'coordinated_upgrade_baseline_required'):
+            native_proof.enforce_version_intent([rows[0], rows[2]], manifest)
+        manifest['exact_versions']['tmux'] = 'unsupported-version'
+        with self.assertRaisesRegex(native_proof.Refused, 'exact_pin_unavailable'):
+            native_proof.enforce_version_intent(rows, manifest)
 
 
 if __name__ == '__main__':

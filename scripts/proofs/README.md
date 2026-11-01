@@ -16,10 +16,13 @@ pulls images, fetches sources or creates a VM. There is no host fallback.
 
 Every entrypoint requires root, Python 3.12, a regular root-owned `0600`
 marker at `/etc/mpkg-fixture/identity.json`, and an independently supplied
-expected UUID matching QEMU's DMI product UUID. The marker is exactly:
+expected UUID matching QEMU's DMI product UUID. The mounted root's actual
+major/minor must identify `/dev/vda2`, whose parent disk has the bound
+serial and 40 GiB capacity. This also refuses the live installer ISO.
+The marker is exactly:
 
 ```json
-{"schema":1,"guest_id":"<runner UUID>","fixture_id":"first-release-2026-10-31","disposable":true}
+{"schema":1,"guest_id":"<runner UUID>","fixture_id":"first-release-2026-10-31","disposable":true,"disk_serial":"mpkg<first 16 UUID hex digits>","disk_bytes":42949672960}
 ```
 
 The runner sets QEMU's UUID; copying a marker onto another machine is
@@ -51,11 +54,11 @@ does not authorize rollback, another attempt or cleanup of unknown work.
 | Experiment | Concrete observation | Limit |
 | --- | --- | --- |
 | Journal | Child exits before/after durable start and external file effect; rejected start/completion writes; unknown start blocks another attempt | Process death and SQLite query-only faults are not power-loss or filesystem durability certification |
-| Inputs | Protected byte capture/replay, full-byte/identity drift, private projection, actual SQLite `SQLITE_FULL` without publishing a reference | Plaintext private history; not a complete secret-leak audit |
+| Inputs | Protected capture/replay, drift, private projection, SQLite `SQLITE_FULL`, quarantined history restoration that cannot authorize work or undo external effects | Plaintext private history; restoration uses an explicit helper, not arbitrary root replacement of database files |
 | XML | Preserve all bytes outside the supported Port text, ownership/mode, comments and protected/unmanaged fields; reject stale or intervening edits | Only Port is implemented; exclusive writer maintenance is an explicit prerequisite |
-| Retirement | Separate retained/shared and exclusive data, changed descendant refusal, partial deletion and a fresh remaining-scope disposition | Bounded directories and declared consumers, not every native or Docker resource kind |
+| Retirement | Retained/shared and exclusive data, changed descendants/consumers, same-filesystem bind-mount refusal, partial deletion and a fresh remaining-scope disposition | Bounded directories and declared consumers, not every native or Docker resource kind |
 | Supervision | Kill initiating CLI while its systemd service completes; kill worker while a child continues; unresolved work blocks another attempt | Real manager behavior is established only by guest execution |
-| Native | Stage frozen metadata against a consistent installed DB copy; prepare again under the real guest package lock; compare full installed versions/reasons and prepared package/dependency/provider sets; reject missing dependencies/conflicts/mismatch | Prepare-only: no commit, hook, installation-reason change or coordinated upgrade execution is claimed |
+| Native | Stage frozen metadata and a real coordinated upgrade; reprepare under the guest package lock; compare installed versions/reasons and prepared effects; reject exact-pin, dependency, conflict, omitted-upgrade and scope mismatches | Prepare-only: no commit, hook, installation-reason change or coordinated upgrade execution is claimed |
 | Compose | Captured relative inputs retain canonical render and runtime env/dollar semantics; skip mutation for satisfied state; stop/edit/start same Sonarr container; actual Radarr shared-directory discovery after Sonarr retirement; daemon container survives killed worker | Exact preacquired images, host networking and bind paths only; no arbitrary Compose document support or volume/network coverage |
 
 XML rejects DTDs, duplicate elements, nested structures, hardlinked files
@@ -73,6 +76,12 @@ file and database row. Subsequent GET checks require the exact synthetic
 unmapped directory. They prove directory discovery, not media contents,
 imports or downloads. Its server-side timeout does not cancel filesystem
 work; a failed functional check stops the experiment.
+
+Authenticated HTTP uses a private child with a whole-request deadline,
+not only an inactivity timeout. All IPv4 listeners covering the target
+must belong to the selected application; this IPv4 fixture refuses any
+IPv6 listener on that port. Credentials never enter argv, output or
+core dumps. Listener/process identity is checked around the request.
 
 The Compose experiment intentionally retains Radarr and Sonarr's kept
 configuration for inspection. The separate daemon uncertainty case
@@ -101,6 +110,10 @@ Ports 19891–19893 and the private project names must initially be unused.
 - `targets`: package names including the agreed repository and AUR
   additions. The baseline must leave `libutempter` missing so omission
   of its artifact exercises a real unresolved dependency.
+- `exact_versions`: the accepted exact version for each target.
+- `coordinated_upgrade`: `name`, `from` and `to`, binding the real frozen
+  `gnupg` 2.4.9-3 to 2.4.9-4 upgrade. The guest starts from October 30;
+  staged metadata and artifacts use the October 31 target closure.
 
 All artifact paths remain below `/opt/mpkg-proof-inputs`. Repository
 archives must have usable signature sidecars and the guest keyring;
@@ -116,5 +129,6 @@ Run `bash scripts/setup.sh` and `bash scripts/check.sh` from the worktree.
 `tests/test_mechanism_proofs.py` uses temporary files/SQLite and confirms
 the real CLI rejects a mismatched guest identity before an experiment.
 It invokes no package, service, Docker, VM or guest-control operations.
-C compilation and real integrations are deliberately guest prerequisites;
-Python syntax and mocked checks cannot establish them.
+Host C syntax-only checking uses available headers without linking or
+executing libalpm. Guest linking, ABI/signatures and real integrations
+remain prerequisites; syntax and mocked checks cannot establish them.

@@ -18,6 +18,23 @@ from run import INSTALL, command
 INPUTS = Path('/opt/mpkg-proof-inputs')
 
 
+def enforce_version_intent(rows, manifest):
+    installed = {row[1]: row[2] for row in rows if row[0] == 'I'}
+    additions = {row[1]: row[2] for row in rows if row[0] == 'A'}
+    exact = manifest['exact_versions']
+    if not set(manifest['targets']) <= exact.keys():
+        raise Refused('exact_fixture_versions_required')
+    for name, version in exact.items():
+        if additions.get(name, installed.get(name)) != version:
+            raise Refused('exact_pin_unavailable')
+    upgrade = manifest['coordinated_upgrade']
+    if (upgrade['from'] == upgrade['to']
+            or installed.get(upgrade['name']) != upgrade['from']
+            or additions.get(upgrade['name']) != upgrade['to']):
+        raise Refused('coordinated_upgrade_baseline_required')
+    return upgrade['name']
+
+
 def artifact_path(record):
     path = Path(record['path'])
     if not path.is_absolute() or not path.is_relative_to(INPUTS):
@@ -126,6 +143,11 @@ def run(guest, root):
     if accepted.startswith(b'BLOCK '):
         raise Refused('staged_transaction_blocked')
     rows = [line.split('\t') for line in accepted.decode().splitlines()]
+    upgrade_name = enforce_version_intent(rows, manifest)
+    wrong_pin = dict(manifest, exact_versions=dict(manifest['exact_versions']))
+    wrong_pin['exact_versions'][targets[0]] += '.unavailable-fixture'
+    from experiments import expect_refusal
+    expect_refusal('exact_pin_unavailable', lambda: enforce_version_intent(rows, wrong_pin))
     version_rows = [row for row in rows if row[0] == 'V']
     if len(version_rows) != 1 or version_rows[0][1] != manifest['libalpm_version']:
         raise Refused('libalpm_version_mismatch')
@@ -142,6 +164,11 @@ def run(guest, root):
     journal.begin(attempt)
     if probe('compare') != b'MATCH\n':
         raise Refused('live_prepared_set_differs')
+    omitted_upgrade = [item for item in selected if item['name'] != upgrade_name]
+    (directory / 'packages.list').write_bytes(package_lines(omitted_upgrade))
+    if probe('compare') != b'BLOCK prepared-set-mismatch\n':
+        raise Refused('partial_coordinated_upgrade_not_blocked')
+    (directory / 'packages.list').write_bytes(package_lines(selected))
     (directory / 'accepted.plan').write_bytes(accepted + b'I\tinvented\t0\t0\n')
     if probe('compare') != b'BLOCK prepared-set-mismatch\n':
         raise Refused('accepted_scope_mismatch_not_blocked')
@@ -172,6 +199,7 @@ def run(guest, root):
     journal.close()
     return {'status': 'observed', 'prepared_add_count': len(added),
             'exact_staged_live_match': True, 'scope_mismatch_blocks': True,
+            'unavailable_exact_pin_blocks': True, 'partial_coordinated_upgrade_blocks': True,
             'missing_dependency_blocks': True, 'native_conflict_blocks': True,
             'live_sync_and_local_unchanged': True,
             'libalpm_version': manifest['libalpm_version'],

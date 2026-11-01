@@ -3,7 +3,9 @@ import json
 import os
 from pathlib import Path
 import re
+import select
 import socket
+import struct
 import subprocess
 import time
 import urllib.error
@@ -11,7 +13,7 @@ import urllib.request
 import uuid
 import xml.etree.ElementTree as ET
 
-from core import (Journal, Refused, canonical, private_directory, read_regular,
+from core import (Journal, Refused, canonical, ping_ok, private_directory, read_regular,
                   replace_xml, write_new)
 from experiments import expect_refusal, fresh, wait_for, worker_argv
 from run import ENV, command
@@ -28,6 +30,89 @@ CONFIG_DIGESTS = {
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, request, response, code, message, headers, url):
         return None
+
+
+def covering_listeners(tcp, tcp6, port):
+    """Conservatively reject IPv6 wildcard coverage of the IPv4 probe."""
+    inodes = set()
+    for family, table in ((4, tcp), (6, tcp6)):
+        for row in table.splitlines()[1:]:
+            fields = row.split()
+            address, encoded_port = fields[1].split(':')
+            if int(encoded_port, 16) != port or fields[3] != '0A':
+                continue
+            # No IPv6 listener is needed by this IPv4-only fixture. Refuse all
+            # rather than assume an unobserved IPV6_V6ONLY socket setting.
+            if family == 6:
+                raise Refused('listener_family_ambiguous')
+            if family == 4 and address in ('00000000', '0100007F'):
+                inodes.add('socket:[' + fields[9] + ']')
+    return inodes
+
+
+def bounded_request(opener, request, seconds=10):
+    """A private child permits a wall-clock bound even on trickling HTTP."""
+    read_fd, write_fd = os.pipe()
+    pid = os.fork()
+    if pid == 0:
+        os.close(read_fd)
+        try:
+            try:
+                response = opener.open(request, timeout=seconds)
+            except urllib.error.HTTPError as error:
+                response = error
+            with response:
+                raw = response.read(65537)
+                payload = struct.pack('!II', response.status, len(raw)) + raw
+        except Exception:
+            payload = struct.pack('!II', 0, 0)
+        try:
+            while payload:
+                written = os.write(write_fd, payload)
+                payload = payload[written:]
+        finally:
+            os.close(write_fd)
+            os._exit(0)
+    os.close(write_fd)
+    deadline = time.monotonic() + seconds
+    output = bytearray()
+    waited = False
+    try:
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise Refused('application_request_timeout_unknown')
+            readable, _, _ = select.select([read_fd], [], [], remaining)
+            if not readable:
+                raise Refused('application_request_timeout_unknown')
+            chunk = os.read(read_fd, 65536)
+            if not chunk:
+                break
+            output.extend(chunk)
+            if len(output) > 65544:
+                raise Refused('application_response_bound')
+        while time.monotonic() < deadline:
+            finished, _ = os.waitpid(pid, os.WNOHANG)
+            if finished:
+                waited = True
+                break
+            time.sleep(0.01)
+        if not waited:
+            raise Refused('application_request_timeout_unknown')
+        if len(output) < 8:
+            raise Refused('application_request_failed')
+        code, length = struct.unpack('!II', output[:8])
+        if not code or length != len(output) - 8 or length > 65536:
+            raise Refused('application_request_failed')
+        return code, bytes(output[8:])
+    finally:
+        os.close(read_fd)
+        if not waited:
+            try:
+                os.kill(pid, 9)
+            except ProcessLookupError:
+                pass
+            os.waitpid(pid, 0)
 
 
 def config_xml(port, secret):
@@ -56,12 +141,14 @@ def run(guest, root):
 
     if docker('info', '--format', '{{.ID}}').decode().strip() != manifest['engine_id']:
         raise Refused('engine_identity_changed')
+    image_ids = {}
     for image in (SONARR, RADARR):
         data = json.loads(docker('image', 'inspect', image))[0]
         if (data.get('Os') != 'linux' or data.get('Architecture') != 'amd64'
                 or image not in data.get('RepoDigests', [])
                 or data.get('Id') not in (CONFIG_DIGESTS[image], image.split('@')[1])):
             raise Refused('preacquired_image_identity_mismatch')
+        image_ids[image] = data['Id']
     for port in (19891, 19892, 19893):
         with socket.socket() as listener:
             listener.bind(('127.0.0.1', port))
@@ -99,11 +186,17 @@ def run(guest, root):
     journal = Journal(directory)
 
     def action(operation):
+        if docker('info', '--format', '{{.ID}}').decode().strip() != manifest['engine_id']:
+            raise Refused('engine_identity_changed')
         attempt = str(uuid.uuid4())
         journal.begin(attempt)
         value = operation()
         journal.finish(attempt, 'observed-complete')
         return value
+
+    alias = 'mpkg-proof-sonarr:' + guest.replace('-', '')
+    action(lambda: docker('image', 'tag', SONARR, alias))
+    environment['PROOF_IMAGE'] = alias
 
     def compose(base, name, *arguments):
         return docker('compose', '--project-name', name,
@@ -131,7 +224,11 @@ def run(guest, root):
                      'label=com.docker.compose.project=' + name).decode().splitlines()
         if len(ids) != 1:
             raise Refused('container_scope_changed')
-        return json.loads(docker('inspect', ids[0]))[0]
+        data = json.loads(docker('inspect', ids[0]))[0]
+        expected_image = SONARR if name == project else RADARR
+        if data['Image'] != image_ids[expected_image]:
+            raise Refused('container_image_changed')
+        return data
 
     def attributed_request(name, process_name, port, route, *, key=None, body=None):
         before = container(name)
@@ -151,13 +248,12 @@ def run(guest, root):
                 or set(values['Gid'].split()) != {'1001'}
                 or int(values['CapEff'], 16) != 0):
             raise Refused('application_credentials_changed')
-        inodes = set()
-        for row in Path('/proc/net/tcp').read_text().splitlines()[1:]:
-            fields = row.split()
-            if fields[1] == '0100007F:' + format(port, '04X') and fields[3] == '0A':
-                inodes.add('socket:[' + fields[9] + ']')
+        def listeners():
+            return covering_listeners(Path('/proc/net/tcp').read_text(),
+                                      Path('/proc/net/tcp6').read_text(), port)
+        inodes = listeners()
         owned = {os.readlink(path) for path in Path('/proc/' + str(pid) + '/fd').iterdir()}
-        if len(inodes & owned) != 1:
+        if not inodes or not inodes <= owned:
             raise Refused('listener_not_attributed')
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect)
         headers = {'Accept': 'application/json'}
@@ -169,13 +265,10 @@ def run(guest, root):
             headers['Content-Type'] = 'application/json'
         request = urllib.request.Request('http://127.0.0.1:' + str(port) + route,
                                          data=payload, headers=headers)
-        with opener.open(request, timeout=10) as response:
-            raw = response.read(65537)
-            code = response.status
-        if len(raw) > 65536:
-            raise Refused('application_response_bound')
+        code, raw = bounded_request(opener, request)
         after = container(name)
-        if (before['Id'] != after['Id'] or before['State']['StartedAt'] != after['State']['StartedAt']
+        if (listeners() != inodes or before['Id'] != after['Id']
+                or before['State']['StartedAt'] != after['State']['StartedAt']
                 or process_start.split(b') ', 1)[1].split()[19] !=
                 Path('/proc/' + str(pid) + '/stat').read_bytes().split(b') ', 1)[1].split()[19]):
             raise Refused('application_changed_during_probe')
@@ -185,8 +278,14 @@ def run(guest, root):
         def check():
             try:
                 code, raw = attributed_request(name, process, port, '/ping')
-                return code == 200 and raw.strip() == b'OK'
-            except (Refused, OSError):
+                return code == 200 and ping_ok(raw)
+            except Refused as error:
+                if str(error) not in ('application_not_running',
+                                      'application_process_ambiguous',
+                                      'listener_not_attributed'):
+                    raise
+                return False
+            except OSError:
                 return False
         wait_for(check, 120)
 
@@ -198,6 +297,11 @@ def run(guest, root):
             or environment_values.get('TOKEN') != runtime_secret):
         raise Refused('compose_runtime_literal_changed')
     # Already-satisfied desired state intentionally dispatches no up/start call.
+    environment['PROOF_IMAGE'] = SONARR
+    digest_intent = json.loads(compose(staged, project, 'config', '--format', 'json'))
+    if (digest_intent['services']['sonarr']['image'] == original['services']['sonarr']['image']
+            or json.loads(docker('image', 'inspect', alias))[0]['Id'] != image_ids[SONARR]):
+        raise Refused('tag_digest_equivalence_not_established')
     ready(project, 'Sonarr', 19891)
     after = container(project)
     if before['Id'] != after['Id'] or before['State']['StartedAt'] != after['State']['StartedAt']:
@@ -289,6 +393,7 @@ def run(guest, root):
     docker('rm', daemon['Id'])
     return {'status': 'observed', 'captured_render_equivalent': True,
             'runtime_env_and_dollars_preserved': True, 'satisfied_no_op_keeps_container': True,
+            'tag_to_digest_same_image_keeps_container': True,
             'offline_port_change_keeps_container': True, 'protected_unmanaged_values_kept': True,
             'application_serialization_changed': normalized,
             'kept_data_and_unmanaged_radarr_discovery': True,

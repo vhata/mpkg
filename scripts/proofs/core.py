@@ -1,5 +1,7 @@
 """Small mechanisms under test, not a product API or privileged dispatcher."""
 import hashlib
+import ctypes
+import errno
 import hmac
 import json
 import os
@@ -24,7 +26,8 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':')).encode()
 
 
-def validate_guest(expected, marker, metadata, dmi_uuid, vendor):
+def validate_guest(expected, marker, metadata, dmi_uuid, vendor,
+                   root_device, disk_root_device, disk_serial, disk_bytes):
     try:
         expected = str(uuid.UUID(expected))
         actual = str(uuid.UUID(dmi_uuid.strip()))
@@ -36,10 +39,15 @@ def validate_guest(expected, marker, metadata, dmi_uuid, vendor):
         raise Refused('guest_marker_permissions')
     if marker != {'schema': 1, 'guest_id': expected,
                   'fixture_id': 'first-release-2026-10-31',
-                  'disposable': True}:
+                  'disposable': True,
+                  'disk_serial': 'mpkg' + expected.replace('-', '')[:16],
+                  'disk_bytes': 42949672960}:
         raise Refused('guest_marker_mismatch')
     if actual != expected or vendor.strip() != 'QEMU':
         raise Refused('guest_machine_mismatch')
+    if (root_device != disk_root_device or disk_serial.strip() != marker['disk_serial']
+            or disk_bytes != marker['disk_bytes']):
+        raise Refused('guest_root_disk_mismatch')
     return expected
 
 
@@ -60,10 +68,15 @@ def require_guest(expected):
             marker = json.loads(raw)
         finally:
             os.close(fd)
+        root_device = os.stat('/').st_dev
         return validate_guest(
             expected, marker, metadata,
             Path('/sys/class/dmi/id/product_uuid').read_text(),
             Path('/sys/class/dmi/id/sys_vendor').read_text(),
+            (os.major(root_device), os.minor(root_device)),
+            tuple(int(part) for part in Path('/sys/class/block/vda2/dev').read_text().strip().split(':')),
+            Path('/sys/class/block/vda/serial').read_text(),
+            int(Path('/sys/class/block/vda/size').read_text()) * 512,
         )
     except (OSError, ValueError, TypeError):
         raise Refused('guest_identity_unavailable') from None
@@ -149,10 +162,13 @@ class Journal:
                 id TEXT PRIMARY KEY, bytes BLOB NOT NULL,
                 identity BLOB NOT NULL, token BLOB NOT NULL);
             CREATE TABLE IF NOT EXISTS private_key(key BLOB NOT NULL);
+            CREATE TABLE IF NOT EXISTS store_guard(recovery_required INTEGER NOT NULL);
         ''')
         if not self.db.execute('SELECT 1 FROM private_key').fetchone():
             self.db.execute('INSERT INTO private_key VALUES(?)',
                             (os.urandom(32),))
+        if not self.db.execute('SELECT 1 FROM store_guard').fetchone():
+            self.db.execute('INSERT INTO store_guard VALUES(0)')
 
     def close(self):
         self.db.close()
@@ -173,6 +189,8 @@ class Journal:
             raise Refused('attempt_identity_invalid')
 
         def record():
+            if self.db.execute('SELECT recovery_required FROM store_guard').fetchone()[0]:
+                raise Refused('history_recovery_required')
             if self.db.execute(
                     'SELECT 1 FROM attempts WHERE terminal IS NULL').fetchone():
                 raise Refused('unresolved_attempt')
@@ -180,6 +198,59 @@ class Journal:
             self.db.execute('INSERT INTO events(attempt,kind) VALUES(?,?)',
                             (attempt, 'started'))
         self.transaction(record)
+
+    def backup(self, destination):
+        directory = private_directory(destination)
+        path = directory / 'state.sqlite3'
+        write_new(path, b'')
+        target = sqlite3.connect(path)
+        try:
+            self.db.backup(target)
+        finally:
+            target.close()
+        with path.open('rb') as stream:
+            os.fsync(stream.fileno())
+
+    @classmethod
+    def restore(cls, source, destination, *, before_publish=None):
+        destination = Path(destination)
+        if destination.exists() or destination.is_symlink():
+            raise Refused('restore_destination_exists')
+        parent = private_directory(destination.parent)
+        staging = parent / ('.mpkg-restore-' + uuid.uuid4().hex)
+        restored = cls(staging)
+        snapshot = sqlite3.connect((Path(source) / 'state.sqlite3').as_uri() + '?mode=ro',
+                                   uri=True)
+        try:
+            snapshot.backup(restored.db)
+            restored.transaction(lambda: restored.db.execute(
+                'UPDATE store_guard SET recovery_required=1'))
+        finally:
+            snapshot.close()
+            restored.close()
+        with (staging / 'state.sqlite3').open('rb') as stream:
+            os.fsync(stream.fileno())
+        if before_publish:
+            before_publish()
+        descriptor = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            libc = ctypes.CDLL(None, use_errno=True)
+            rename = getattr(libc, 'renameat2', None)
+            if rename is None:
+                raise Refused('atomic_restore_publication_unavailable')
+            rename.argtypes = [ctypes.c_int, ctypes.c_char_p,
+                               ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
+            rename.restype = ctypes.c_int
+            if rename(descriptor, os.fsencode(staging.name), descriptor,
+                      os.fsencode(destination.name), 1):
+                code = ctypes.get_errno()
+                if code == errno.EEXIST:
+                    raise Refused('restore_destination_exists')
+                raise Refused('atomic_restore_publication_failed')
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        return cls(destination)
 
     def finish(self, attempt, outcome):
         if outcome not in ('observed-complete', 'failed', 'unverified'):
@@ -298,15 +369,46 @@ def replace_xml(path, expected_raw, expected_identity, port, *, before_publish=N
     return replacement
 
 
+def mount_identity(descriptor):
+    for line in Path('/proc/self/fdinfo/' + str(descriptor)).read_text().splitlines():
+        if line.startswith('mnt_id:'):
+            return int(line.split(':', 1)[1])
+    raise Refused('mount_identity_unavailable')
+
+
+def ping_ok(raw):
+    try:
+        value = json.loads(raw)
+    except (ValueError, UnicodeError):
+        return False
+    if not isinstance(value, dict):
+        return False
+    statuses = [value[key] for key in ('status', 'Status') if key in value]
+    return statuses == ['OK']
+
+
 def inventory_tree(path):
     result = []
     root = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     device = os.fstat(root).st_dev
+    mount = mount_identity(root)
+    visited = 0
 
     def walk(directory, prefix, depth):
-        if depth > 12 or len(result) > 1000:
+        nonlocal visited
+        if depth > 12:
             raise Refused('data_inventory_bound')
-        for name in sorted(os.listdir(directory)):
+        before = identity(os.fstat(directory))
+        names = []
+        with os.scandir(directory) as entries:
+            for entry in entries:
+                if visited + len(names) >= 1000:
+                    raise Refused('data_inventory_bound')
+                names.append(entry.name)
+        for name in sorted(names):
+            visited += 1
+            if visited > 1000:
+                raise Refused('data_inventory_bound')
             info = os.stat(name, dir_fd=directory, follow_symlinks=False)
             relative = prefix + [name]
             if info.st_dev != device:
@@ -315,16 +417,29 @@ def inventory_tree(path):
                 child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
                                 dir_fd=directory)
                 try:
+                    if mount_identity(child) != mount:
+                        raise Refused('data_mount_changed')
                     walk(child, relative, depth + 1)
                 finally:
                     os.close(child)
             elif not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
                 raise Refused('data_alias_unsupported')
+            else:
+                child = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=directory)
+                try:
+                    if mount_identity(child) != mount:
+                        raise Refused('data_mount_changed')
+                    if identity(os.fstat(child)) != identity(info):
+                        raise Refused('data_inventory_changed')
+                finally:
+                    os.close(child)
             result.append({'parts': relative, 'identity': identity(info),
                            'directory': stat.S_ISDIR(info.st_mode)})
+        if identity(os.fstat(directory)) != before:
+            raise Refused('data_inventory_changed')
     try:
         walk(root, [], 0)
-        return {'root': identity(os.fstat(root)), 'entries': result}
+        return {'root': identity(os.fstat(root)), 'mount_id': mount, 'entries': result}
     finally:
         os.close(root)
 

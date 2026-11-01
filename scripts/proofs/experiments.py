@@ -113,9 +113,23 @@ def prove_inputs(guest, root):
     after = journal.db.execute('SELECT COUNT(*) FROM protected').fetchone()[0]
     if before != after:
         raise Refused('failed_capture_published_reference')
+    # Restore a prior history through the explicit quarantining path.
+    snapshot = directory / 'snapshot'
+    journal.backup(snapshot)
+    effect = directory / 'external-effect'
+    write_new(effect, b'external state survives history restoration')
+    restored = Journal.restore(snapshot, directory / 'restored')
+    try:
+        expect_refusal('history_recovery_required',
+                       lambda: restored.begin(str(uuid.uuid4())))
+        if effect.read_bytes() != b'external state survives history restoration':
+            raise Refused('history_restoration_changed_external_state')
+    finally:
+        restored.close()
     journal.close()
     return {'status': 'observed', 'exact_replay': True, 'drift_blocks': True,
             'failed_capture_has_no_reference': True, 'export_has_no_secret': True,
+            'restored_history_requires_recovery': True, 'external_effect_not_rolled_back': True,
             'limits': ['Protected bytes remain plaintext in a private store.',
                        'This checks the prototype projection, not every product error path.']}
 
@@ -151,8 +165,11 @@ def prove_retirement(guest, root):
     kept = private_directory(directory / 'keep')
     write_new(kept / 'sentinel', b'kept')
     accepted = inventory_tree(kept)
+    consumers = directory / 'consumers.json'
+    write_new(consumers, b'[]')
+    consumers.write_bytes(b'["external:radarr"]')
     expect_refusal('data_shared',
-                   lambda: delete_inventory(kept, accepted, ['external:radarr']))
+                   lambda: delete_inventory(kept, accepted, json.loads(consumers.read_bytes())))
     if (kept / 'sentinel').read_bytes() != b'kept':
         raise Refused('shared_retention_failed')
     deleted = private_directory(directory / 'delete')
@@ -178,7 +195,16 @@ def prove_retirement(guest, root):
     removed = delete_inventory(deleted, remaining, [])
     journal.finish(attempt, 'observed-complete')
     journal.close()
+    mounted = private_directory(directory / 'mount-check')
+    point = private_directory(mounted / 'point')
+    origin = private_directory(directory / 'mount-origin')
+    command(['/usr/bin/mount', '--bind', str(origin), str(point)])
+    try:
+        expect_refusal('data_mount_changed', lambda: inventory_tree(mounted))
+    finally:
+        command(['/usr/bin/umount', str(point)])
     return {'status': 'observed', 'kept_shared_sentinel': True,
+            'changed_consumers_block': True, 'same_filesystem_bind_mount_blocks': True,
             'new_descendant_blocks': True, 'partial_outcome': 'unverified',
             'fresh_disposition_removed_entries': removed,
             'limits': ['Directory experiment only; no product retirement claim.',
@@ -215,6 +241,17 @@ def prove_supervision(guest, root):
                 state = 'observed-complete'
             else:
                 wait_for(lambda: (directory / 'child-effect').exists(), 15)
+                def lock_released():
+                    descriptor = os.open(directory / 'apply.lock', os.O_RDWR | os.O_NOFOLLOW)
+                    try:
+                        try:
+                            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                        except BlockingIOError:
+                            return False
+                        return True
+                    finally:
+                        os.close(descriptor)
+                wait_for(lock_released)
                 journal = Journal(directory)
                 try:
                     if journal.export()[0]['state'] != 'unknown':

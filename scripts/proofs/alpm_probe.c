@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/sysmacros.h>
 #include <unistd.h>
 
 static int questions;
@@ -74,6 +75,26 @@ static void guard(const char *guest, const char *fd_text) {
     if (!file || !fgets(vendor, sizeof vendor, file)) fail();
     fclose(file);
     if (strcmp(vendor, "QEMU\n")) fail();
+    unsigned int device_major, device_minor;
+    file = fopen("/sys/class/block/vda2/dev", "r");
+    if (!file || fscanf(file, "%u:%u", &device_major, &device_minor) != 2) fail();
+    fclose(file);
+    if (stat("/", &info) || major(info.st_dev) != device_major ||
+        minor(info.st_dev) != device_minor) fail();
+    char serial[32] = "mpkg", observed_serial[128];
+    size_t position = 4;
+    for (size_t i = 0; guest[i] && position < 20; i++)
+        if (guest[i] != '-') serial[position++] = guest[i];
+    serial[position] = 0;
+    file = fopen("/sys/class/block/vda/serial", "r");
+    if (!file || !fgets(observed_serial, sizeof observed_serial, file)) fail();
+    fclose(file);
+    observed_serial[strcspn(observed_serial, "\r\n")] = 0;
+    if (strcmp(serial, observed_serial)) fail();
+    unsigned long long sectors;
+    file = fopen("/sys/class/block/vda/size", "r");
+    if (!file || fscanf(file, "%llu", &sectors) != 1 || sectors != 83886080ULL) fail();
+    fclose(file);
     char *end;
     long descriptor = strtol(fd_text, &end, 10);
     if (*end || descriptor < 3 || descriptor > 1024 ||
