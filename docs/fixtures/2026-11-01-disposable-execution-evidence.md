@@ -8,6 +8,19 @@ Host effects are private acquisition/runner files and isolated QEMU
 execution. The work does not implement the replacement manager or
 establish any A1–A12 product acceptance result.
 
+## Current evidence
+
+| Scope | Observed result |
+| --- | --- |
+| Acquired inputs, guest bootstrap, Python and AUR builds | Completed; exact identities and upstream test limitations recorded below |
+| Native service and starting states | Authenticated checks and separate 209-, 212- and 220-package states completed |
+| Journal, protected replay, XML, supervision and bounded retirement | Focused experiments passed; Git-object and child-error secrecy checks remain pending |
+| Native transaction | Frozen prepare-only checks and conflict refusal passed; no package transaction commit inferred |
+| Ordinary Docker fixture | Assembly and repeat check passed; separate restore/reboot check pending |
+| Compose mechanism experiment | All ten asserted checks passed, with the lifecycle limits below |
+| Volume, network and image-policy variants | Six independent runtime branches remain pending |
+| Replacement manager and A1–A12 | Not implemented or executed by this work |
+
 ## Acquired inputs
 
 | Input | Actual observation |
@@ -491,7 +504,24 @@ initialization step lost setgid.
 The separate delivery procedure accepts only the pristine image state,
 verifies the complete helper dependency set and preserves the original
 helper with a durable receipt before replacement. Source and delivery
-review do not establish successful guest execution.
+review remain distinct from guest execution.
+
+The actual replacement then completed with exit zero and an idle prompt,
+recording `executed: false` for the corrected helper. All 27 history/input
+hashes matched, and supplemental resumption remained unused. After
+orderly shutdown, `image-ready-variants-v2` was saved as offline snapshot
+ID `18`, with no memory state and firmware variables SHA-256
+`36b4ee16785f54cc2424a9632ef217725a5cb2c5e172384f857be24444168361`.
+Independent review verified the exact serial interval, replacement
+receipt and stopped checkpoint. The original image checkpoint and the
+failed volume checkpoint remain preserved.
+
+On a fresh branch of the corrected checkpoint, cold resumption passed
+with the same image and history bindings. Its subsequent `volume-keep`
+setup returned `unverified`, code `docker_variant_failed`, and exit 74.
+Independent review verified the fresh serial interval and idle prompt.
+The generic result establishes neither the cause nor successful assembly;
+the running guest and failed attempt were retained for separate diagnosis.
 
 The six supplemental resource/update variants remain runtime gates.
 Applied product restore points remain unavailable until actual product
