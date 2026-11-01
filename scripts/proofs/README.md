@@ -233,6 +233,7 @@ before any system mutation.
 - `guest-docker-ready.sh`: fixed daemon readiness/start.
 - `guest-docker-resume.sh`: resume only the bound image-ready checkpoint.
 - `guest-native-service.sh`: native SSH baseline setup/check.
+- `guest-native-service-recover.sh`: exact observed one-group setup continuation.
 - `guest-image-import.sh`: archive import, then observed image manifest.
 - `guest-native-proof.sh`: actual native manifest, then prepare-only proof.
 - `guest-native-conflict.sh`: real frozen audio-package conflict preparation.
@@ -340,6 +341,19 @@ The closed account helper preserves the specified names, IDs, homes and
 shells. It does not pass `CREATE_MAIL_SPOOL` through `-K`: upstream
 [shadow 4.20.0](https://github.com/shadow-maint/shadow/blob/4.20.0/src/useradd.c)
 uses that option for a separate set of `login.defs` keys and rejects it.
+
+`native_service_recover.py` is a separate, one-shot continuation for the
+observed unsupported-option failure only. It requires the exact installed
+native-helper revision, one unknown started attempt with no protected
+records, unchanged package config/unit evidence, an empty native group
+1500 and media group 1001, no fixture users or later resources, and an
+inactive disabled SSH service with unused fixture ports. It preserves a
+private copy of the original journal, starts a separate recovery journal,
+and continues after the already completed group creation. The original
+attempt remains unknown, including after successful authenticated checks.
+Any failure in this continuation remains unresolved and blocks another
+invocation. It does not rerun generic setup, erase history, reinstall
+packages or alter the independently completed build state.
 
 `check` validates `sshd -t`, effective configuration, exact memberships,
 service state/enablement, protected inputs and metadata, then performs

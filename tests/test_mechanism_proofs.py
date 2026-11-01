@@ -39,6 +39,7 @@ import native_conflict
 import service_environment
 import docker_resume
 import account_defaults
+import native_service_recover
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -90,7 +91,7 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(list(Path(temporary).iterdir()), [])
 
     def test_guest_image_entrypoints_refuse_host_before_docker(self):
-        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py', 'native_conflict.py', 'docker_resume.py'):
+        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py', 'native_conflict.py', 'docker_resume.py', 'native_service_recover.py'):
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as temporary:
                 result = subprocess.run([
                     sys.executable, '-I', str(PROOFS / filename),
@@ -388,6 +389,60 @@ class DockerReadinessTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaisesRegex(
                     docker_ready.Refused, 'docker_engine_baseline_mismatch'):
                 docker_ready.validate_engine(dict(value, **{field: replacement}))
+
+
+class NativeRecoveryTests(unittest.TestCase):
+    def test_partial_group_guard_rejects_a_user_or_changed_group(self):
+        groups = [SimpleNamespace(gr_name='fixture-native', gr_gid=1500, gr_mem=[]),
+                  SimpleNamespace(gr_name='media', gr_gid=1001, gr_mem=[])]
+        with mock.patch.object(native_service_recover.grp, 'getgrall', return_value=groups), \
+                mock.patch.object(native_service_recover.pwd, 'getpwall', return_value=[]) as users, \
+                mock.patch.object(native_service_recover, 'absent'):
+            native_service_recover.partial_accounts()
+            users.return_value = [SimpleNamespace(pw_name='fixture-native', pw_uid=1500, pw_gid=1500)]
+            with self.assertRaisesRegex(native_service_recover.Refused, 'account_state_changed'):
+                native_service_recover.partial_accounts()
+            users.return_value = []
+            groups[0].gr_mem = ['unexpected']
+            with self.assertRaisesRegex(native_service_recover.Refused, 'group_state_changed'):
+                native_service_recover.partial_accounts()
+
+    def test_recovery_never_recreates_native_group_before_fixed_useradd(self):
+        with mock.patch.object(native_service_recover, 'useradd_arguments', return_value=['/usr/bin/useradd', 'fixture-native']), \
+                mock.patch.object(native_service_recover, 'command', side_effect=native_service_recover.Refused('injected')) as command:
+            with self.assertRaisesRegex(native_service_recover.Refused, 'injected'):
+                native_service_recover.continue_setup('guest', Path('/unused'), b'', [], 'version', None)
+            command.assert_called_once_with(['/usr/bin/useradd', 'fixture-native'])
+
+    def test_continuation_preserves_original_unknown_and_has_its_own_terminal(self):
+        for fail in (False, True):
+            with self.subTest(fail=fail), tempfile.TemporaryDirectory() as temporary:
+                root = core.private_directory(Path(temporary) / 'native-service')
+                guest, original = str(uuid.uuid4()), str(uuid.uuid4())
+                journal = core.Journal(root)
+                journal.begin(original)
+                journal.close()
+                before = (root / 'state.sqlite3').read_bytes()
+                with mock.patch.object(native_service_recover, 'preflight', return_value=(
+                        root, original, before, b'baseline', [], 'version')), \
+                        mock.patch.object(native_service_recover, 'continue_setup',
+                            side_effect=native_service_recover.Refused('injected') if fail else None,
+                            return_value={'status': 'observed'}) as continuation:
+                    if fail:
+                        with self.assertRaisesRegex(native_service_recover.Refused, 'injected'):
+                            native_service_recover.recover(guest)
+                    else:
+                        self.assertTrue(native_service_recover.recover(guest)['original_attempt_remains_unknown'])
+                    with self.assertRaisesRegex(native_service_recover.Refused, 'fresh_attempt_required'):
+                        native_service_recover.recover(guest)
+                    self.assertEqual(continuation.call_count, 1)
+                recovery = root.parent / 'native-service-recovery'
+                self.assertEqual((recovery / 'original-state.sqlite3').read_bytes(), before)
+                original_journal, recovery_journal = core.Journal(root), core.Journal(recovery)
+                self.assertEqual(original_journal.export()[0]['state'], 'unknown')
+                self.assertEqual(recovery_journal.export()[0]['state'], 'unknown' if fail else 'observed-complete')
+                original_journal.close()
+                recovery_journal.close()
 
 
 class FixtureAccountTests(unittest.TestCase):
