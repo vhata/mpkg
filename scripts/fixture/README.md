@@ -143,8 +143,8 @@ missing completion is not proof of success. A running build blocks another
 heavy build, while a successful exited Python unit may retain its status.
 
 `vm.py install-docker-ready`, `install-docker-baseline` and
-`install-native-conflict` and `install-service-environment` add only their
-fixed reviewed, digest-pinned helpers
+`install-native-conflict`, `install-service-environment` and
+`install-docker-resume` add only their fixed reviewed, digest-pinned helpers
 after Python is available. Each generates the installer payload
 at runtime and uses the existing verified console transport.
 The installed guest/root disk guard and root-protected directory checks
@@ -160,6 +160,10 @@ and configuration, no SSH listener, and an inactive disabled service.
 It preserves the old helper bytes and a prepared receipt before atomic
 publication, then records completion. An unexpected old digest or any
 prior replacement evidence blocks replay; no replacement helper is run.
+
+The Docker resume addition only installs its helper. Its separate runtime
+entrypoint requires the successful initial engine/import evidence and
+exact image-only checkpoint bindings before starting that existing engine.
 
 Relevant tool behavior is documented by the authoritative
 [bubblewrap manual](https://man.archlinux.org/man/bwrap.1.en),

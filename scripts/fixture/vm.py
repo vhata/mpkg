@@ -230,6 +230,7 @@ def proof_install_payload(name):
         'docker-ready':('docker_ready.py','5efbc61753dbf873d26801f760c3e47f5a48831b1c3c0b02ba43a3c7c7e08a07'),
         'service-environment':('service_environment.py','91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502'),
         'docker-baseline':('docker_baseline.py','ef9385b2a0f55f3074ccb7522ae14719fc97fddf1fd95e3d8f4796c53bfbbdb2'),
+        'docker-resume':('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05'),
         'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b'),
     }
     if name not in additions:
@@ -390,7 +391,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','replace-native-service'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-docker-resume','replace-native-service'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -411,6 +412,7 @@ def main():
     elif args.operation=='install-docker-baseline':console(seconds=args.seconds,addition='docker-baseline')
     elif args.operation=='install-native-conflict':console(seconds=args.seconds,addition='native-conflict')
     elif args.operation=='install-service-environment':console(seconds=args.seconds,addition='service-environment')
+    elif args.operation=='install-docker-resume':console(seconds=args.seconds,addition='docker-resume')
     elif args.operation=='replace-native-service':console(seconds=args.seconds,replacement=True)
     else:print(json.dumps(qmp_query('query-status' if args.operation=='status' else 'system_powerdown')))
 

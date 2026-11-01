@@ -322,6 +322,37 @@ class FixtureAurDiagnosticTests(unittest.TestCase):
         self.assertNotIn('Result: FAIL',str(result))
 
 
+class FixtureImageDiagnosticTests(unittest.TestCase):
+    def load(self):
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/guest_image_diagnose.py'
+        # Test the pure output/query functions without importing guest entrypoints.
+        program=ast.parse(path.read_text())
+        nodes=[n for n in program.body if isinstance(n,ast.FunctionDef)
+               and n.name in ('identity_view','expected_queries')]
+        namespace={'re':re,'Refused':ValueError,
+                   'IMAGES':(('fixture','linuxserver/sonarr','a'*64,'b'*64,'c'*64,'version'),)}
+        exec(compile(ast.Module(body=nodes,type_ignores=[]),'image-diagnostic-functions','exec'),namespace)
+        return namespace
+
+    def test_image_output_excludes_configuration_labels_and_unbounded_fields(self):
+        diagnostic=self.load()
+        value={'Id':'sha256:'+'a'*64,'RepoTags':['public/image:tag'],
+               'RepoDigests':['public/image@sha256:'+'b'*64],'Os':'linux','Architecture':'amd64',
+               'Config':{'Env':['PRIVATE=must-not-emit'],'Labels':{'private':'must-not-emit'}}}
+        result=diagnostic['identity_view'](value)
+        self.assertEqual(set(result),{'Id','RepoTags','RepoDigests','Os','Architecture'})
+        self.assertNotIn('must-not-emit',str(result))
+        for altered in (dict(value,RepoTags=['x']*17),dict(value,RepoTags=['unsafe\nvalue']),
+                        dict(value,Id='not-a-digest'),dict(value,Architecture='x'*33)):
+            with self.assertRaises(ValueError):diagnostic['identity_view'](altered)
+
+    def test_query_set_binds_only_original_index_and_config_identity(self):
+        diagnostic=self.load()
+        self.assertEqual(diagnostic['expected_queries'](),[
+            {'fixture_name':'fixture','kind':'repository-index','reference':'lscr.io/linuxserver/sonarr@sha256:'+'a'*64},
+            {'fixture_name':'fixture','kind':'config-digest','reference':'sha256:'+'c'*64}])
+
+
 class FixtureProofAdditionTests(unittest.TestCase):
     def load(self):
         sys.modules['runner']=RUNNER
@@ -339,7 +370,8 @@ class FixtureProofAdditionTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);(root/'scripts/proofs').mkdir(parents=True)
             for name,filename in [('docker-ready','docker_ready.py'),('docker-baseline','docker_baseline.py'),
-                                  ('native-conflict','native_conflict.py'),('service-environment','service_environment.py')]:
+                                  ('native-conflict','native_conflict.py'),('service-environment','service_environment.py'),
+                                  ('docker-resume','docker_resume.py')]:
                 (root/'scripts/proofs'/filename).write_bytes(b'changed reviewed source')
                 with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(module,'qmp_query') as qmp:
                     with self.assertRaises(ValueError):module.console(addition=name)
@@ -348,6 +380,7 @@ class FixtureProofAdditionTests(unittest.TestCase):
     def test_each_generated_addition_binds_its_own_reviewed_bytes_and_filename(self):
         module=self.load()
         expected={'service-environment':('service_environment.py','91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502'),
+                  'docker-resume':('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05'),
                   'docker-ready':('docker_ready.py','5efbc61753dbf873d26801f760c3e47f5a48831b1c3c0b02ba43a3c7c7e08a07'),
                   'docker-baseline':('docker_baseline.py','ef9385b2a0f55f3074ccb7522ae14719fc97fddf1fd95e3d8f4796c53bfbbdb2'),
                   'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b')}
