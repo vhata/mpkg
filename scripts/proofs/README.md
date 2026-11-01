@@ -181,6 +181,45 @@ recipe has no check function; this record must say `not-defined`, not
 manufacture a passing check. Missing build evidence blocks publication.
 This helper installs nothing and never refreshes a package database.
 
+### Native service baseline
+
+`native_service.py setup --guest-id <UUID>` assembles only the fixed
+guest SSH baseline, before the `native-change` snapshot. It requires
+the acquired OpenSSH artifact and an unchanged package configuration,
+inactive packaged `sshd.service`, unused ports 22/22222/22223, and free
+fixture account/path identities. Setup preserves the package's original
+`/etc/ssh/sshd_config`, then configures the managed service on loopback
+22222. A separate unmanaged unit serves SFTP on loopback 22223 with
+independent generated host/client keys and enablement. Both have core
+dumps disabled. No package is installed or removed.
+
+The accounts are exactly `fixture-native` 1500:1500 and
+`fixture-external` 1501:1501, each also in `media` GID1001. Setup creates
+the specified exclusive/shared synthetic data, modes and sentinels with
+no extended ACLs. It unlocks accounts with unknown generated passwords
+through bounded private stdin; the servers permit only public-key
+authentication and force internal SFTP. Key material is captured in the
+private journal and referred to by opaque IDs, never exported or hashed
+into public results. This is disposable fixture setup, not adoption.
+
+`check` validates `sshd -t`, effective configuration, exact memberships,
+service state/enablement, protected inputs and metadata, then performs
+authenticated SFTP reads with explicitly pinned generated host keys.
+`check-external` checks only the separate consumer and shared sentinel;
+it does not require the retired managed service or exclusive directory.
+These commands write private observations, without changing services.
+Setup journals its boundary and refuses repeated setup after any partial
+attempt; failures need explicit inspection or a separate guest restore.
+The assembly owner still verifies the full package inventory, initial
+absences and snapshot identity. These checks do not establish A1–A12.
+
+OpenSSH documents the fixed server settings in
+[sshd_config](https://man.openbsd.org/sshd_config), generated Ed25519 keys
+in [ssh-keygen](https://man.openbsd.org/ssh-keygen), and batch retrieval
+with abort-on-error semantics in [sftp](https://man.openbsd.org/sftp).
+Actual package compatibility and authenticated behavior require the guest
+run; host-safe configuration tests cannot establish either.
+
 ## Validation
 
 Run `bash scripts/setup.sh` and `bash scripts/check.sh` from the worktree.

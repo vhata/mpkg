@@ -29,6 +29,8 @@ import native_proof
 import oci_acquire
 import image_import
 import native_manifest
+import native_service
+import run as proof_run
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -90,6 +92,54 @@ class GuestGuardTests(unittest.TestCase):
                 self.assertEqual(json.loads(result.stdout)['status'], 'refused')
                 self.assertEqual(result.stderr, '')
                 self.assertEqual(list(Path(temporary).iterdir()), [])
+
+    def test_native_service_setup_refuses_host_before_system_changes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            result = subprocess.run([
+                sys.executable, '-I', str(PROOFS / 'native_service.py'), 'setup',
+                '--guest-id', str(uuid.uuid4()),
+            ], cwd=temporary, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 73)
+            self.assertEqual(json.loads(result.stdout)['status'], 'refused')
+            self.assertEqual(result.stderr, '')
+            self.assertEqual(list(Path(temporary).iterdir()), [])
+
+
+class NativeServiceTests(unittest.TestCase):
+    def test_external_data_check_does_not_require_retired_exclusive_data(self):
+        visited = []
+        def metadata(path):
+            visited.append(path)
+            directory = path == native_service.SHARED
+            return SimpleNamespace(st_uid=1500, st_gid=1001,
+                                   st_mode=(stat.S_IFDIR | 0o2770) if directory else (stat.S_IFREG | 0o640))
+        with mock.patch.object(Path, 'lstat', metadata), mock.patch.object(
+                native_service.os, 'listxattr', return_value=[]):
+            result = native_service.data_inventory(external_only=True)
+        self.assertEqual(len(result), 2)
+        self.assertNotIn(native_service.EXCLUSIVE, visited)
+
+    def test_effective_config_rejects_extra_listeners_or_password_authentication(self):
+        root = Path('/var/lib/mpkg-proofs/example/native-service')
+        raw = native_service.configuration('native', root).decode().lower()
+        # sshd -T combines ListenAddress with its port and normalizes case.
+        raw = raw.replace('listenaddress 127.0.0.1\n', 'listenaddress 127.0.0.1:22222\n')
+        native_service.assert_effective(raw.encode(), 'native', root)
+        for changed in (raw + 'listenaddress 0.0.0.0:22222\n',
+                        raw.replace('passwordauthentication no', 'passwordauthentication yes')):
+            with self.assertRaisesRegex(native_service.Refused, 'fixture_effective_configuration_mismatch'):
+                native_service.assert_effective(changed.encode(), 'native', root)
+
+    def test_bounded_private_stdin_reaches_child_without_argument_exposure(self):
+        value = b'fixture-only-value\n'
+        result = proof_run.command([sys.executable, '-I', '-c',
+                                    'import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())'],
+                                   input_bytes=value)
+        self.assertEqual(result, value)
+        with mock.patch.object(proof_run.subprocess, 'Popen') as launch:
+            with self.assertRaisesRegex(proof_run.Refused, 'tool_input_bound'):
+                proof_run.command(['/unexecuted'], input_bytes=b'x' * 4097)
+            launch.assert_not_called()
 
 
 class NativeManifestTests(unittest.TestCase):

@@ -28,9 +28,12 @@ PROOFS = ('journal', 'inputs', 'xml', 'retirement', 'supervision', 'compose', 'n
 ENV = {'PATH': '/usr/bin:/bin', 'LANG': 'C.UTF-8', 'HOME': '/root'}
 
 
-def command(argv, timeout=30, *, cwd=None, env=None, pass_fds=()):
+def command(argv, timeout=30, *, cwd=None, env=None, pass_fds=(), input_bytes=None):
     """Keep raw tool diagnostics private and never inherit stdout/stderr."""
+    if input_bytes is not None and (not isinstance(input_bytes, bytes) or len(input_bytes) > 4096):
+        raise Refused('tool_input_bound')
     child = subprocess.Popen(argv, cwd=cwd, env=env or ENV, pass_fds=pass_fds,
+                             stdin=subprocess.PIPE if input_bytes is not None else subprocess.DEVNULL,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     output = bytearray()
     total = 0
@@ -39,11 +42,22 @@ def command(argv, timeout=30, *, cwd=None, env=None, pass_fds=()):
         with selectors.DefaultSelector() as selector:
             selector.register(child.stdout, selectors.EVENT_READ, True)
             selector.register(child.stderr, selectors.EVENT_READ, False)
+            if input_bytes is not None:
+                os.set_blocking(child.stdin.fileno(), False)
+                selector.register(child.stdin, selectors.EVENT_WRITE, 'input')
             while selector.get_map():
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     raise Refused('tool_timeout_external_work_unknown')
                 for key, _ in selector.select(min(remaining, 0.5)):
+                    if key.data == 'input':
+                        if input_bytes:
+                            written = os.write(child.stdin.fileno(), input_bytes)
+                            input_bytes = input_bytes[written:]
+                        if not input_bytes:
+                            selector.unregister(child.stdin)
+                            child.stdin.close()
+                        continue
                     chunk = os.read(key.fileobj.fileno(), 65536)
                     if not chunk:
                         selector.unregister(key.fileobj)
@@ -63,6 +77,8 @@ def command(argv, timeout=30, *, cwd=None, env=None, pass_fds=()):
             child.wait(timeout=5)
         child.stdout.close()
         child.stderr.close()
+        if child.stdin is not None:
+            child.stdin.close()
 
 
 def trusted_install():
