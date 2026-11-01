@@ -240,3 +240,19 @@ original index/platform association checks can complete this new attempt;
 all prior attempt records remain unchanged. Raw error text is never
 printed on the console, and this diagnostic does not establish product
 acceptance.
+
+`guest_native_assembly_diagnose.py` reads the two fixed native assembly
+jobs, defaulting to both; its optional `--state` accepts only
+`native-adoption` or `native-update-before`. Completion requires the exact
+212- or 220-package frozen inventory, original installation reasons,
+old GnuPG, result/source/checkpoint and worker bindings, UUID/exit markers,
+and zero manager or cgroup work. The update result also binds the actual
+three AUR build records and prior adoption result. Output includes hashes
+of the current version/reason inventories and bounded differences, rather
+than dumping the full result files.
+
+The collector performs current read-only account, configuration, service
+and listener observations. Authenticated before/after checks are validated
+from the completed jobs' results; it does not create another check, read
+private keys, modify journals or run package/service mutations. A live
+observation is not a stopped checkpoint.

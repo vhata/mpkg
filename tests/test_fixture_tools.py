@@ -929,4 +929,90 @@ class FixtureImageLoadDiagnosticTests(unittest.TestCase):
         with self.assertRaises(ValueError):functions['activation_scope'](altered,'guest')
 
 
+class FixtureNativeAssemblyDiagnosticTests(unittest.TestCase):
+    def load(self):
+        import json
+        root=Path(__file__).resolve().parents[1]
+        path=root/'scripts/fixture/guest_native_assembly_diagnose.py'
+        names={'STATES','CLI_SHA256','CLI','CLI_ADD','BUILD_ADD'}
+        nodes=[n for n in ast.parse(path.read_text()).body
+               if isinstance(n,ast.FunctionDef) and n.name in {'wanted_versions','valid_service_result','validate_record','complete'}
+               or isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name) and n.targets[0].id in names]
+        scope={'Refused':ValueError,'hashlib':hashlib,'SOURCE_SHA256':'bound-source'}
+        exec(compile(ast.Module(body=nodes,type_ignores=[]),'native-assembly-diagnostic','exec'),scope)
+        source=json.loads((root/'docs/fixtures/2026-10-31-arch-native-inputs.json').read_text())
+        guest='00000000-0000-4000-8000-000000000000'
+        checkpoint={'guest_id':guest,'checkpoint':'native-change'}
+        wanted=scope['wanted_versions'](source,'native-adoption')
+        before={n:{'version':v,'reason':'dependency' if n=='perl-file-next' else 'explicit'}
+                for n,v in wanted.items() if n not in scope['CLI_ADD']}
+        after=copy.deepcopy(before)
+        after.update({n:{'version':wanted[n],'reason':'dependency' if n=='libutempter' else 'explicit'}
+                      for n in scope['CLI_ADD']})
+        service={'schema':1,'guest_id':guest,'status':'observed','services':[
+            {'role':role,'authenticated_sftp_read':True,'sentinel_sha256':hashlib.sha256(
+                ('mpkg fixture '+guest+' '+kind+'\n').encode()).hexdigest()}
+            for role,kind in [('native','exclusive'),('external','shared')]]}
+        adoption={'schema':1,'guest_id':guest,'fixture_state':'native-adoption',
+            'source_inventory_sha256':'bound-source','native_change_checkpoint':checkpoint,
+            'existing_installation_reasons_preserved':True,'product_state_observed_absent':True,
+            'product_adoption_or_attempt_created':False,'native_service_before':service,'native_service_after':service,
+            'installed_before':before,'installed_after':after,'collection':'vhata-cli',
+            'collection_pkgbuild_sha256':scope['CLI_SHA256'],'declared_requests':list(scope['CLI']),
+            'request_versions':{n:wanted[n] for n in scope['CLI']},'added_packages':sorted(scope['CLI_ADD']),
+            'product_application_claimed':False}
+        return scope,source,guest,checkpoint,adoption
+
+    def test_source_bound212_requires_exact_cli_delta_and_preserved_existing_reasons(self):
+        f,source,guest,checkpoint,record=self.load()
+        self.assertEqual(len(f['validate_record'](record,source,'native-adoption',guest,checkpoint)),212)
+        for name,value in [('gnupg',{'version':'2.4.9-4','reason':'explicit'}),
+                           ('bash',dict(record['installed_after']['bash'],reason='dependency')),
+                           ('libutempter',dict(record['installed_after']['libutempter'],reason='explicit'))]:
+            altered=copy.deepcopy(record);altered['installed_after'][name]=value
+            with self.subTest(name=name),self.assertRaises(ValueError):
+                f['validate_record'](altered,source,'native-adoption',guest,checkpoint)
+        with self.assertRaises(ValueError):f['wanted_versions'](source,'../../arbitrary')
+        altered=copy.deepcopy(record);altered['native_service_after']['services'][0]['authenticated_sftp_read']=False
+        with self.assertRaises(ValueError):f['validate_record'](altered,source,'native-adoption',guest,checkpoint)
+
+    def test_update220_binds_prior_adoption_build_records_and_dependency_reasons(self):
+        f,source,guest,checkpoint,adoption=self.load()
+        versions=f['wanted_versions'](source,'native-update-before')
+        after=copy.deepcopy(adoption['installed_after'])
+        after.update({n:{'version':versions[n],'reason':'dependency'} for n in f['BUILD_ADD']})
+        after['gitstatus']={'version':versions['gitstatus'],'reason':'explicit'}
+        builds={n:{'build_record_sha256':n+'-record','artifact_sha256':n+'-artifact','version':versions[n]}
+                for n in ('ack','perl-file-next','gitstatus')}
+        record=dict(adoption,fixture_state='native-update-before',installed_before=adoption['installed_after'],
+            installed_after=after,native_adoption_result_sha256='adoption-record',repository_snapshot_date='2026-10-30',
+            repository_package_count=217,built_aur_package_count=3,installed_package_count=220,bootstrap_only=True,
+            product_native_applied_state_claimed=False,new_dependency_reasons=sorted(f['BUILD_ADD']),
+            new_explicit_requests=['gitstatus'],built_aur_inputs=builds,
+            gitstatus_build_record_sha256='gitstatus-record',gitstatus_artifact_sha256='gitstatus-artifact')
+        self.assertEqual(len(f['validate_record'](record,source,'native-update-before',guest,checkpoint,
+            adoption,'adoption-record',builds)),220)
+        for key,value in [('native_adoption_result_sha256','different'),('product_native_applied_state_claimed',True),
+                          ('gitstatus_artifact_sha256','different')]:
+            with self.subTest(key=key),self.assertRaises(ValueError):
+                f['validate_record'](dict(record,**{key:value}),source,'native-update-before',guest,checkpoint,
+                                    adoption,'adoption-record',builds)
+        altered=copy.deepcopy(record);altered['installed_after']['zsh']['reason']='explicit'
+        with self.assertRaises(ValueError):f['validate_record'](altered,source,'native-update-before',guest,
+            checkpoint,adoption,'adoption-record',builds)
+
+    def test_markers_alone_never_complete_an_active_or_changed_fixture(self):
+        f,_,guest,_,_=self.load()
+        manager={'ActiveState':'inactive','SubState':'dead','Result':'success','ExecMainStatus':'0',
+                 'MainPID':'0','ControlPID':'0'}
+        group={'present':False,'pids':[],'events':{}}
+        markers={'started':guest,'complete':guest,'exit':'0'}
+        self.assertTrue(f['complete'](manager,group,markers,guest,True,True))
+        self.assertFalse(f['complete'](dict(manager,MainPID='22'),group,markers,guest,True,True))
+        self.assertFalse(f['complete'](manager,{'present':True,'pids':[],'events':{'populated':'1'}},markers,guest,True,True))
+        self.assertFalse(f['complete'](manager,group,dict(markers,complete='other'),guest,True,True))
+        self.assertFalse(f['complete'](manager,group,markers,guest,False,True))
+        self.assertFalse(f['complete'](manager,group,markers,guest,True,False))
+
+
 if __name__ == '__main__':unittest.main()
