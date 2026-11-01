@@ -225,7 +225,94 @@ def qmp_query(operation):
         return request(operation)
 
 
-def console(script=None, seconds=10, prompt=False, login_root=False):
+def proof_install_payload(name):
+    if name != 'docker-ready':
+        raise ValueError('proof addition is not allowlisted')
+    source=runner.PROJECT/'scripts/proofs/docker_ready.py'
+    data=runner.regular_file(source).read_bytes()
+    digest='c45f93c6011d12486dbc7e912d07e9de0bf858048a0e683395ca0c969458af40'
+    if hashlib.sha256(data).hexdigest()!=digest:
+        raise ValueError('proof addition bytes differ from the reviewed digest')
+    payload=r'''import base64, hashlib, json, os, stat, sys, uuid
+from pathlib import Path
+
+def protected_directory(path, mode=None):
+    info=path.lstat()
+    if (not stat.S_ISDIR(info.st_mode) or info.st_uid!=0 or info.st_gid!=0
+            or info.st_mode & 0o022 or path.resolve()!=path
+            or (mode is not None and stat.S_IMODE(info.st_mode)!=mode)):
+        raise RuntimeError('proof addition directory is not root-protected')
+
+def publish_new_file(target, data):
+    temporary=target.with_name('.docker-ready-'+uuid.uuid4().hex+'.pending')
+    fd=os.open(temporary,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o600)
+    with os.fdopen(fd,'wb') as stream:
+        stream.write(data)
+        stream.flush()
+        os.fchmod(stream.fileno(),0o644)
+        os.fsync(stream.fileno())
+    os.link(temporary,target,follow_symlinks=False)
+    temporary.unlink()
+    directory=os.open(target.parent,os.O_RDONLY|os.O_DIRECTORY)
+    try:os.fsync(directory)
+    finally:os.close(directory)
+
+def install():
+    if sys.version_info[:2]!=(3,12) or os.geteuid()!=0 or os.getegid()!=0:
+        raise RuntimeError('installed guest Python and root required')
+    target_directory=Path('/opt/mpkg-proofs')
+    protected_directory(target_directory)
+    core=target_directory/'core.py'
+    info=core.lstat()
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid!=0 or info.st_gid!=0
+            or info.st_nlink!=1 or info.st_mode & 0o022):
+        raise RuntimeError('installed guest guard is not trusted')
+    sys.path.insert(0,str(target_directory))
+    from core import require_guest, write_new
+    guest=require_guest(os.environ.get('MPKG_GUEST_ID'))
+    os.umask(0o077)
+    data=base64.b64decode(PAYLOAD_BASE64,validate=True)
+    digest='c45f93c6011d12486dbc7e912d07e9de0bf858048a0e683395ca0c969458af40'
+    if hashlib.sha256(data).hexdigest()!=digest:
+        raise RuntimeError('proof addition digest mismatch')
+    target=target_directory/'docker_ready.py'
+    if target.exists() or target.is_symlink():
+        raise RuntimeError('proof addition destination already exists')
+    state=Path('/var/lib/mpkg-fixture')
+    protected_directory(state,0o700)
+    records=state/'proof-additions'
+    if not records.exists() and not records.is_symlink():records.mkdir(mode=0o700)
+    protected_directory(records,0o700)
+    record=records/'docker-ready.json'
+    if record.exists() or record.is_symlink():
+        raise RuntimeError('proof addition already has evidence')
+    publish_new_file(target,data)
+    evidence={'schema':1,'guest_id':guest,'path':str(target),'sha256':digest,
+              'mode':'0644','uid':0,'gid':0,'executed':False}
+    write_new(record,(json.dumps(evidence,sort_keys=True)+'\n').encode())
+    print(json.dumps({'status':'installed','path':str(target),'sha256':digest,'executed':False}))
+
+install()
+'''
+    return payload.replace('PAYLOAD_BASE64',repr(base64.b64encode(data).decode())).encode()
+
+
+def console(script=None, seconds=10, prompt=False, login_root=False, addition=None):
+    payload=None
+    if addition is not None:
+        if script is not None or prompt or login_root:
+            raise ValueError('proof installation cannot include other console input')
+        payload=proof_install_payload(addition)
+        suffix='.py'
+    elif script is not None:
+        source=Path(script).resolve()
+        allowed=runner.PROJECT/'scripts'
+        if not source.is_relative_to(allowed) or source.suffix not in {'.sh','.py'}:
+            raise ValueError('console input must be a reviewed script in this worktree')
+        payload=runner.regular_file(source).read_bytes()
+        suffix=source.suffix
+    if payload is not None and len(payload)>262144:
+        raise ValueError('console script exceeds input bound')
     qmp_query('query-status')  # Bind the socket family to the expected running VM first.
     with socket.socket(socket.AF_UNIX) as sock:
         sock.settimeout(10);sock.connect(str(VM/'c.sock'))
@@ -233,17 +320,12 @@ def console(script=None, seconds=10, prompt=False, login_root=False):
             sock.sendall(b'\n')
         if login_root:
             sock.sendall(b'root\n')
-        if script is not None:
-            source=Path(script).resolve()
-            allowed=runner.PROJECT/'scripts'
-            if not source.is_relative_to(allowed) or source.suffix not in {'.sh','.py'}:
-                raise ValueError('console input must be a reviewed script in this worktree')
-            data=runner.regular_file(source).read_bytes()
-            if len(data)>262144:raise ValueError('console script exceeds input bound')
+        if payload is not None:
+            data=payload
             encoded=base64.b64encode(data).decode()
             chunks='\n'.join(encoded[i:i+76] for i in range(0,len(encoded),76))
             digest=hashlib.sha256(data).hexdigest()
-            interpreter=('bash' if source.suffix=='.sh' else
+            interpreter=('bash' if suffix=='.sh' else
                          '/opt/mpkg-python/3.12.16/bin/python3.12 -I')
             guest_path='/run/mpkg-fixture-input-'+digest+'-'+uuid.uuid4().hex+'.sh'
             command=("\nstty -echo\numask 077\nif (set -o noclobber; base64 -d > "+guest_path+
@@ -270,7 +352,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False):
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -279,12 +361,15 @@ def main():
     if sys.version_info[:2]!=(3,12):parser.error('Python 3.12 is required')
     if sum(bool(value) for value in (args.prompt,args.login_root,args.script))>1:
         parser.error('choose one console input mode')
+    if args.operation!='console' and any((args.prompt,args.login_root,args.script)):
+        parser.error('console input options require the console operation')
     if not 1<=args.seconds<=30:parser.error('console observation must be 1–30 seconds')
     os.umask(0o077)
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     if args.operation=='prepare':prepare()
     elif args.operation.startswith('start-'):start(args.operation=='start-installer')
     elif args.operation=='console':console(args.script,args.seconds,args.prompt,args.login_root)
+    elif args.operation=='install-docker-ready':console(seconds=args.seconds,addition='docker-ready')
     else:print(json.dumps(qmp_query('query-status' if args.operation=='status' else 'system_powerdown')))
 
 

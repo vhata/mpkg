@@ -118,6 +118,14 @@ evidence. Manager timeouts can interrupt before an exit marker is written;
 missing completion is not proof of success. A running build blocks another
 heavy build, while a successful exited Python unit may retain its status.
 
+`vm.py install-docker-ready` adds only the reviewed, digest-pinned
+`docker_ready.py` after Python is available. It generates the installer
+payload at runtime and uses the existing verified console transport.
+The installed guest/root disk guard and root-protected directory checks
+precede publication. An existing target is refused, and a private record
+binds the added file's digest. The operation does not run the new helper
+or modify the immutable source disk.
+
 Relevant tool behavior is documented by the authoritative
 [bubblewrap manual](https://man.archlinux.org/man/bwrap.1.en),
 [QEMU invocation reference](https://www.qemu.org/docs/master/system/invocation.html)

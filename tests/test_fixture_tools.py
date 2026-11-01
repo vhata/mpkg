@@ -1,5 +1,6 @@
 """Host boundary tests for disposable-fixture acquisition and extraction."""
 import importlib.util
+import ast
 import base64
 import io
 from pathlib import Path
@@ -253,6 +254,49 @@ class FixtureAurBoundaryTests(unittest.TestCase):
              mock.patch.object(module,'write_new') as write:
             with self.assertRaises(module.Refused):module.main()
             run.assert_not_called();write.assert_not_called()
+
+
+class FixtureProofAdditionTests(unittest.TestCase):
+    def load(self):
+        sys.modules['runner']=RUNNER
+        spec=importlib.util.spec_from_file_location('fixture_addition_vm',
+            Path(__file__).resolve().parents[1]/'scripts/fixture/vm.py')
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        return module
+
+    def test_unlisted_target_and_changed_bytes_refuse_before_transport(self):
+        module=self.load()
+        with mock.patch.object(RUNNER,'regular_file') as read:
+            for name in ('../docker-ready','docker_ready.py','/opt/other.py'):
+                with self.assertRaises(ValueError):module.proof_install_payload(name)
+            read.assert_not_called()
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'scripts/proofs').mkdir(parents=True)
+            (root/'scripts/proofs/docker_ready.py').write_bytes(b'changed reviewed source')
+            with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(module,'qmp_query') as qmp:
+                with self.assertRaises(ValueError):module.console(addition='docker-ready')
+                qmp.assert_not_called()
+
+    def test_generated_installer_publishes_once_without_following_existing_target(self):
+        module=self.load()
+        program=ast.parse(module.proof_install_payload('docker-ready'))
+        definitions=ast.Module(body=[node for node in program.body
+            if isinstance(node,(ast.Import,ast.ImportFrom))
+            or isinstance(node,ast.FunctionDef) and node.name=='publish_new_file'],type_ignores=[])
+        namespace={};exec(compile(definitions,'generated-proof-installer','exec'),namespace)
+        publish=namespace['publish_new_file']
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);target=root/'docker_ready.py'
+            publish(target,b'reviewed bytes')
+            self.assertEqual(target.read_bytes(),b'reviewed bytes')
+            self.assertEqual(target.stat().st_mode & 0o7777,0o644)
+            self.assertEqual(target.stat().st_nlink,1)
+            with self.assertRaises(FileExistsError):publish(target,b'overwrite')
+            self.assertEqual(target.read_bytes(),b'reviewed bytes')
+            alias=root/'alias';alias.symlink_to(target)
+            with self.assertRaises(FileExistsError):publish(alias,b'follow symlink')
+            self.assertTrue(alias.is_symlink())
+            self.assertEqual(target.read_bytes(),b'reviewed bytes')
 
 
 if __name__ == '__main__':unittest.main()
