@@ -270,3 +270,9 @@ experiment only after its exact baseline, plan, variant, core and runner
 dependencies are installed. It uses the same no-overwrite publication and
 private receipt; installation never invokes an experiment. The fixed
 experiment wrappers require a completed corresponding variant baseline.
+
+`install-docker-variant-retire` adds the reviewed resource-retirement
+helper after its six exact direct dependencies, including the experiment
+helper. Publication remains absent-target only and does not run retirement.
+The four fixed retirement wrappers require completed corresponding port
+experiments before they can evaluate the declared keep/delete cases.

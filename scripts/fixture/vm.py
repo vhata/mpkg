@@ -238,6 +238,7 @@ def proof_install_payload(name):
         'docker-variant-plan':('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
         'docker-variants':('docker_variants.py','fb67486f1bbcce48855cf05ebf70768726161d5965c5d7e224b20fc9a390c6dc'),
         'docker-variant-experiment':('docker_variant_experiment.py','041cf5407adec454905b1929909b4dd020ad6c862eceb53d29ef9c464bdda3f5'),
+        'docker-variant-retire':('docker_variant_retire.py','ff914917ca99021cfc6e89e0aff48a3c7be6b27c3d7ba0c204e2c3d16d00a462'),
         'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b'),
     }
     if name not in additions:
@@ -287,6 +288,14 @@ def install():
     guest=require_guest(os.environ.get('MPKG_GUEST_ID'))
     os.umask(0o077)
     dependencies={
+        'docker_variant_retire.py':[
+            ('core.py','0b13e3dc39d3a985ff7b8b3fd9885f3b09c75444854b41f775dd953b42d0167a'),
+            ('docker_baseline.py','f6af324e2d0844a6159f0e6dcf1e72c766679953dc4e4ec5c093ff42271bbeca'),
+            ('docker_variant_experiment.py','041cf5407adec454905b1929909b4dd020ad6c862eceb53d29ef9c464bdda3f5'),
+            ('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
+            ('docker_variants.py','fb67486f1bbcce48855cf05ebf70768726161d5965c5d7e224b20fc9a390c6dc'),
+            ('run.py','adcd36404cb43e8bcdc0189eab6c98997ef8ea281461e54ba5aa3524dba8674e'),
+        ],
         'docker_variant_experiment.py':[
             ('core.py','0b13e3dc39d3a985ff7b8b3fd9885f3b09c75444854b41f775dd953b42d0167a'),
             ('docker_baseline.py','f6af324e2d0844a6159f0e6dcf1e72c766679953dc4e4ec5c093ff42271bbeca'),
@@ -461,7 +470,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','install-docker-diagnostic-resume','install-docker-variant-plan','install-docker-variants','install-docker-variant-experiment','replace-native-service','replace-docker-baseline','replace-native-verifier'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','install-docker-diagnostic-resume','install-docker-variant-plan','install-docker-variants','install-docker-variant-experiment','install-docker-variant-retire','replace-native-service','replace-docker-baseline','replace-native-verifier'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -490,6 +499,7 @@ def main():
     elif args.operation=='install-docker-variant-plan':console(seconds=args.seconds,addition='docker-variant-plan')
     elif args.operation=='install-docker-variants':console(seconds=args.seconds,addition='docker-variants')
     elif args.operation=='install-docker-variant-experiment':console(seconds=args.seconds,addition='docker-variant-experiment')
+    elif args.operation=='install-docker-variant-retire':console(seconds=args.seconds,addition='docker-variant-retire')
     elif args.operation=='replace-native-service':console(seconds=args.seconds,replacement='native-service')
     elif args.operation=='replace-docker-baseline':console(seconds=args.seconds,replacement='docker-baseline')
     elif args.operation=='replace-native-verifier':console(seconds=args.seconds,replacement='native-verifier')
