@@ -213,19 +213,21 @@ def console(script=None, seconds=10, prompt=False, login_root=False):
         if script is not None:
             source=Path(script).resolve()
             allowed=runner.PROJECT/'scripts'
-            if not source.is_relative_to(allowed) or source.suffix != '.sh':
+            if not source.is_relative_to(allowed) or source.suffix not in {'.sh','.py'}:
                 raise ValueError('console input must be a reviewed script in this worktree')
             data=runner.regular_file(source).read_bytes()
             if len(data)>262144:raise ValueError('console script exceeds input bound')
             encoded=base64.b64encode(data).decode()
             chunks='\n'.join(encoded[i:i+76] for i in range(0,len(encoded),76))
             digest=hashlib.sha256(data).hexdigest()
+            interpreter=('bash' if source.suffix=='.sh' else
+                         '/opt/mpkg-python/3.12.16/bin/python3.12 -I')
             guest_path='/run/mpkg-fixture-input-'+digest+'-'+uuid.uuid4().hex+'.sh'
             command=("\nstty -echo\numask 077\nif (set -o noclobber; base64 -d > "+guest_path+
                      " <<'MPKG_INPUT'\n"+chunks+"\nMPKG_INPUT\n); then\n"+
                      "if printf '%s  %s\\n' "+digest+" "+guest_path+
                      " | sha256sum --strict --check >/dev/null; then\n"+
-                     "MPKG_GUEST_ID="+vm_identity()['guest_id']+" bash "+guest_path+
+                     "MPKG_GUEST_ID="+vm_identity()['guest_id']+" "+interpreter+" "+guest_path+
                      "; code=$?; printf '%s\\n' \"$code\" > "+guest_path+".exit; "+
                      "printf '\\nMPKG_CONSOLE_EXIT=%s\\n' \"$code\"\n"+
                      "else printf '\\nMPKG_TRANSFER_HASH_FAILED\\n'; fi\n"+

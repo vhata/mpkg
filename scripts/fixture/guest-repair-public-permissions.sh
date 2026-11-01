@@ -60,6 +60,17 @@ done
 [[ $(stat -c '%a' /mnt/etc/mpkg-fixture/identity.json) == 600 ]]
 arch-chroot /mnt pacman -Q | LC_ALL=C sort > /run/mpkg-permission-packages.txt
 diff -u /run/mpkg-inputs/baseline-versions.txt /run/mpkg-permission-packages.txt
+# The recorded audit found every package directory/file already 755/644.
+# Only this generated public DB root and version file inherited 700/600.
+database=/mnt/var/lib/pacman/local
+version=$database/ALPM_DB_VERSION
+[[ $(realpath -e "$database") == "$database" && -d $database && ! -L $database ]]
+[[ $(realpath -e "$version") == "$version" && -f $version && ! -L $version ]]
+[[ $(stat -c '%u:%g:%h' "$version") == 0:0:1 ]]
+[[ $(stat -c '%u:%g' "$database") == 0:0 ]]
+[[ $(findmnt -rn -o MAJ:MIN --target "$database") == $(cat /sys/class/block/vda2/dev) ]]
+chmod 0755 "$database"
+chmod 0644 "$version"
 # Prove ordinary unprivileged package queries can traverse the public DB.
 arch-chroot /mnt runuser -u nobody -- pacman -Q | LC_ALL=C sort > /run/mpkg-unprivileged-packages.txt
 diff -u /run/mpkg-inputs/baseline-versions.txt /run/mpkg-unprivileged-packages.txt
