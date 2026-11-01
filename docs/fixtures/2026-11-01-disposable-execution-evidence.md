@@ -375,17 +375,53 @@ wrapper exit 74. The complete serial records the failure and return to
 an idle shell. No successful image load or completed preparation is
 established by this attempt, and it must not be replayed over its history.
 
-Complete image bindings remain unverified, and no application container
-has started. Applied product restore points remain unavailable until
-actual product operations create them.
+A read-only observation then found one unknown attempt with only its
+start record and journal, no acquired blobs and no completed report.
+The sampled client/build processes had stopped. DHCP, the default route
+and resolver configuration were present; these facts did not establish
+external reachability or identify the timeout's cause.
+
+A separate offline preparation used the VM's existing private virtio
+control port to receive the exact 11 metadata blobs. Both endpoints
+checked their bound identities and content digests. It preserved the
+failed HTTPS attempt, its empty metadata tree and all 17 earlier records.
+The new archive retained every original index and runtime member, adding
+only the selected attestation metadata. It measured 275,486,720 bytes
+with SHA-256
+`14444448bbaca0838278959a093394c2b2d5f7335272bab682480a8aff4fb9d6`.
+
+Attempt `4fda59ff-a920-453e-b377-d923c5927d79` completed with Docker client
+and wrapper exit zero. All three original index references resolved to
+the expected linux/amd64 identities and version labels. The engine also
+retained its three earlier child images, now without tags or repository
+digest associations. No image cleanup was performed. The new result is
+`observed-complete`, with result SHA-256
+`4bddad8aa55415bd423f5c9d2aa8e289eb48a158f69464a943f2505c7f0c8165`
+and closed-journal SHA-256
+`0024131b28e8f07ed2baede69069cfa6e9d48fe87b147dfeb35ad32eef4f2285`.
+Earlier unknown and unverified outcomes remain unchanged.
+
+The separate manifest-only wrapper then completed with exit zero,
+publishing current Sonarr/Radarr associations for the same engine and
+guest. Its actual `compose.json` SHA-256 is
+`6da996ed7da6d6db6cc92c87684f7c5214755e01d5225560e9a26d928b0b0548`.
+Independent review matched these results to complete serial captures
+and reconstructed the canonical result and manifest hashes.
+
+Image preparation is verified, but no application container has started.
+Cold resumption and application fixtures remain separate runtime gates.
+Applied product restore points remain unavailable until actual product
+operations create them.
 
 ## Verification and limits
 
-Repository setup selected Python 3.12. At checkpoint `6f015c1`, the
-coordinator's combined checks passed 93 tests, syntax for 80 files, eight
-queue entries and relative links. Subsequent edits require final checks and
-independent integration review. Host tests exercise isolated primitives
-and refusal paths; they do not establish real guest behavior.
+Repository setup selected Python 3.12 and enabled the tracked hooks via
+the authorized elevated Git configuration operation. At checkpoint
+`7cf36c5`, the coordinator's combined checks passed 172 tests, syntax for
+133 files, eight queue entries and relative links. Subsequent edits
+require final checks and independent integration review. Host tests
+exercise isolated primitives and refusal paths; they do not establish
+real guest behavior.
 
 Independent review has covered acquisition, extraction, the private VM
 boundary, bootstrap and its bounded continuation, console integrity, the
