@@ -1175,4 +1175,48 @@ class FixtureAttestationPreparationTests(unittest.TestCase):
                 qmp.assert_not_called()
 
 
+class FixtureAcquisitionDiagnosticTests(unittest.TestCase):
+    def functions(self):
+        import ipaddress
+        import stat
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/guest_image_acquisition_diagnose.py'
+        nodes=[n for n in ast.parse(path.read_text()).body if isinstance(n,ast.FunctionDef)
+               and n.name in {'resolver_fields','bounded_file','resolver_observation'}]
+        scope={'Refused':ValueError,'ipaddress':ipaddress,'os':os,'stat':stat,
+               'identity':lambda s:(s.st_dev,s.st_ino,s.st_size,s.st_mtime_ns,s.st_ctime_ns),
+               'trusted_path':lambda p:None,'Path':Path,'hashlib':hashlib,
+               'RESOLVERS':('/etc/resolv.conf','/run/systemd/resolve/stub-resolv.conf','/run/systemd/resolve/resolv.conf')}
+        exec(compile(ast.Module(body=nodes,type_ignores=[]),'acquisition-diagnostic','exec'),scope)
+        return scope
+
+    def test_resolver_output_contains_servers_but_no_domain_or_comments(self):
+        f=self.functions()['resolver_fields']
+        value=f(b'# private comment\nnameserver 127.0.0.53\nnameserver 2001:db8::1\nsearch private.example\noptions edns0\n')
+        self.assertEqual(value,{'nameservers':['127.0.0.53','2001:db8::1'],
+                               'other_directive_counts':{'search':1,'options':1}})
+        with self.assertRaises(ValueError):f(b'nameserver not-an-ip\n')
+        with self.assertRaises(ValueError):f(b'x'*16385)
+        self.assertEqual(f(b'nameserver fe80::1%private-interface\n')['nameservers'],['fe80::1'])
+
+    def test_missing_and_dangling_resolver_are_observations(self):
+        scope=self.functions()
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'resolver'
+            scope['Path']=lambda _:path
+            self.assertEqual(scope['resolver_observation'](),{'present':False,'status':'missing'})
+            path.symlink_to(Path(tmp)/'missing-target')
+            result=scope['resolver_observation']()
+            self.assertEqual(result['status'],'dangling')
+            self.assertTrue(result['symlink'])
+
+    def test_diagnostic_file_read_rejects_symlink_and_oversize(self):
+        f=self.functions()['bounded_file']
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'public';path.write_bytes(b'1234')
+            self.assertEqual(f(path,4),b'1234')
+            with self.assertRaises(ValueError):f(path,3)
+            link=Path(tmp)/'link';link.symlink_to(path)
+            with self.assertRaises(OSError):f(link,4,trusted=False)
+
+
 if __name__ == '__main__':unittest.main()
