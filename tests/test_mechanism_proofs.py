@@ -27,6 +27,7 @@ sys.path.insert(0, str(PROOFS))
 import compose_proof
 import native_proof
 import oci_acquire
+import image_import
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -76,6 +77,18 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout)['status'], 'refused')
             self.assertEqual(result.stderr, '')
             self.assertEqual(list(Path(temporary).iterdir()), [])
+
+    def test_guest_image_entrypoints_refuse_host_before_docker(self):
+        for filename in ('image_import.py', 'image_manifest.py'):
+            with self.subTest(filename=filename), tempfile.TemporaryDirectory() as temporary:
+                result = subprocess.run([
+                    sys.executable, '-I', str(PROOFS / filename),
+                    '--guest-id', str(uuid.uuid4()),
+                ], cwd=temporary, capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 73)
+                self.assertEqual(json.loads(result.stdout)['status'], 'refused')
+                self.assertEqual(result.stderr, '')
+                self.assertEqual(list(Path(temporary).iterdir()), [])
 
 
 class LocalMechanismTests(unittest.TestCase):
@@ -299,6 +312,21 @@ class LocalMechanismTests(unittest.TestCase):
 
 
 class OciAcquisitionTests(unittest.TestCase):
+    def test_guest_import_binds_report_to_all_fixed_images(self):
+        report = {'schema': 1, 'docker_or_runtime_operations': False,
+                  'archive': {'filename': 'images.oci.tar', 'sha256': '1' * 64, 'bytes': 10240},
+                  'images': []}
+        for name, repository, index, manifest, config, version in oci_acquire.IMAGES:
+            report['images'].append({'fixture_name': name, 'repository': 'lscr.io/' + repository,
+                                     'index_digest': 'sha256:' + index,
+                                     'manifest_digest': 'sha256:' + manifest,
+                                     'config_digest': 'sha256:' + config,
+                                     'platform': 'linux/amd64', 'version_label': version})
+        self.assertEqual(image_import.validate_acquisition(report), report['archive'])
+        report['images'][0]['index_digest'] = 'sha256:' + '0' * 64
+        with self.assertRaisesRegex(image_import.Refused, 'acquisition_image_binding_changed'):
+            image_import.validate_acquisition(report)
+
     def test_descriptor_rejects_bad_digest_size_and_media(self):
         valid = {'mediaType': 'allowed', 'digest': 'sha256:' + '1' * 64, 'size': 3}
         self.assertEqual(oci_acquire.descriptor(valid, {'allowed'}, 10),

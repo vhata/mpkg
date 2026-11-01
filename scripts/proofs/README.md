@@ -115,9 +115,20 @@ indexes are retained as provenance blobs, without acquiring their other
 platforms. Only the bound closure is archived, even if the cache has
 unrelated blobs. No downloaded archive is extracted on the host.
 
-Digest identity does not establish publisher signature trust. Guest
-Docker's OCI import and original RepoDigest association must be observed;
-the acquisition report does not claim either. After reviewed import,
+Digest identity does not establish publisher signature trust. Copy the
+archive and acquisition report to `/opt/mpkg-proof-inputs` as root-owned
+private files through the reviewed input disk or transfer interface.
+`image_import.py --guest-id <UUID>` verifies the bound archive digest,
+size and image identities, then journals a single fixed guest Docker
+`image load --platform linux/amd64` using its held archive descriptor.
+It never pulls, retags, starts a container or contacts an external
+registry. Timeout leaves an unresolved attempt without automatic retry.
+
+Guest Docker's OCI import and original RepoDigest association must be
+observed; the acquisition report does not claim either. Import reports
+an explicit unverified result if those associations are missing. A
+guest-only offline registry would be a separately reviewed preparation
+step, never an automatic fallback. After reviewed successful import,
 `image_manifest.py --guest-id <UUID>` checks the guarded guest engine and
 local image associations and records `compose.json`. If associations are
 missing it refuses; it does not repair them by pulling or retagging.
