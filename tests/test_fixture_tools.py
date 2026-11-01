@@ -288,6 +288,40 @@ class FixtureAurBoundaryTests(unittest.TestCase):
                          {'generated_metadata_matches':True})
 
 
+class FixtureAurDiagnosticTests(unittest.TestCase):
+    def load(self):
+        root=Path(__file__).resolve().parents[1]
+        spec=importlib.util.spec_from_file_location('core',root/'scripts/proofs/core.py')
+        core=importlib.util.module_from_spec(spec);spec.loader.exec_module(core)
+        with mock.patch.dict(sys.modules,{'core':core}):
+            spec=importlib.util.spec_from_file_location('fixture_aur_diagnostic',root/'scripts/fixture/guest_aur_diagnose.py')
+            module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        return module
+
+    def test_upstream_summaries_retain_each_pass_and_explicit_skip(self):
+        module=self.load()
+        raw=(b'compiler output omitted\nt/ack-output-color.t ........ skipped: IO::Pty not installed\n'
+             b'All tests successful.\nFiles=10, Tests=100, 1 wallclock secs\nResult: PASS\n'
+             b't/ack-output-color.t ........ skipped: IO::Pty not installed\n'
+             b'All tests successful.\nFiles=10, Tests=100, 2 wallclock secs\nResult: PASS\n')
+        result=module.test_lines(raw)
+        self.assertEqual(result['matched_lines_in_window'],8)
+        self.assertEqual(sum('skipped:' in item['text'] for item in result['lines']),2)
+        self.assertEqual(sum(item['text']=='Result: PASS' for item in result['lines']),2)
+        self.assertEqual(result['matching_lines_omitted'],0)
+        self.assertNotIn('compiler',str(result))
+
+    def test_test_output_bounds_and_partial_first_line_are_explicit(self):
+        module=self.load()
+        raw=b'Result: FAIL\n'+(b't/public.t ... skipped: '+b'x'*600+b'\n')*100
+        result=module.test_lines(raw,prefix_omitted=True)
+        self.assertEqual(result['matched_lines_in_window'],100)
+        self.assertGreater(result['matching_lines_omitted'],0)
+        self.assertLessEqual(sum(len(item['text'].encode()) for item in result['lines']),4096)
+        self.assertTrue(all(item['line_truncated'] for item in result['lines']))
+        self.assertNotIn('Result: FAIL',str(result))
+
+
 class FixtureProofAdditionTests(unittest.TestCase):
     def load(self):
         sys.modules['runner']=RUNNER
