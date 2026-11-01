@@ -264,3 +264,9 @@ corrected baseline and native service helpers. Existing files are never
 overwritten and neither installer executes the added code. The separate
 variant setup/check wrappers still require their observed image and
 checkpoint prerequisites before runtime use.
+
+`install-docker-variant-experiment` adds the reviewed port/update
+experiment only after its exact baseline, plan, variant, core and runner
+dependencies are installed. It uses the same no-overwrite publication and
+private receipt; installation never invokes an experiment. The fixed
+experiment wrappers require a completed corresponding variant baseline.
