@@ -221,6 +221,19 @@ reconciliation; actual first import compatibility and a reviewed stopped
 checkpoint remain prerequisites. No engine initialization, image import,
 pull, tag, application creation or fabricated applied history is added.
 
+`docker_diagnostic_resume.py` is separately bound to the retained
+incomplete image-index preparation checkpoint. It requires the exact
+readiness/import/preparation record hashes, source/prepared archive
+hashes, original unverified import and unknown preparation journals,
+and absent application/Compose-manifest state. It starts only the
+disabled packaged Docker service, then requires the same engine and
+three observed child IDs/tags/digests, zero containers/volumes and
+default networks. Prior records must remain byte-for-byte unchanged.
+Its result explicitly keeps original index associations unverified;
+it performs no import, repack, pull, tag, cleanup or retry. This cold
+diagnostic activation does not satisfy image-ready resume's successful
+association requirement. A failed activation remains unresolved.
+
 ### Console wrappers
 
 The reviewed console transport may execute these fixed Bash files with
@@ -232,6 +245,7 @@ before any system mutation.
 - `guest-basics.sh`: journal, inputs, XML, retirement and supervision.
 - `guest-docker-ready.sh`: fixed daemon readiness/start.
 - `guest-docker-resume.sh`: resume only the bound image-ready checkpoint.
+- `guest-docker-diagnostic-resume.sh`: activate the incomplete image state for diagnosis.
 - `guest-native-service.sh`: native SSH baseline setup/check.
 - `guest-native-service-recover.sh`: exact observed one-group setup continuation.
 - `guest-native-service-observe.sh`: verify the running recovered fixture.

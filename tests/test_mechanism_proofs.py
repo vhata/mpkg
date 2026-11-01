@@ -42,6 +42,7 @@ import account_defaults
 import native_service_recover
 import native_service_observe
 import docker_variant_plan
+import docker_diagnostic_resume
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -93,7 +94,7 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(list(Path(temporary).iterdir()), [])
 
     def test_guest_image_entrypoints_refuse_host_before_docker(self):
-        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py', 'native_conflict.py', 'docker_resume.py', 'native_service_recover.py', 'native_service_observe.py'):
+        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py', 'native_conflict.py', 'docker_resume.py', 'native_service_recover.py', 'native_service_observe.py', 'docker_diagnostic_resume.py'):
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as temporary:
                 result = subprocess.run([
                     sys.executable, '-I', str(PROOFS / filename),
@@ -243,6 +244,57 @@ class RealNativeConflictTests(unittest.TestCase):
                          case['readonly_native_resolution']['stdout_sha256_computed'])
         with self.assertRaisesRegex(native_conflict.Refused, 'frozen_conflict_resolution_changed'):
             native_conflict.parse_candidates(b'extra mpkg-proof-conflict 1-1 synthetic\n')
+
+
+class DockerDiagnosticActivationTests(unittest.TestCase):
+    def test_only_the_observed_child_associations_are_accepted(self):
+        name, repository, index, child, _, _ = oci_acquire.IMAGES[0]
+        value = {'Id': 'sha256:' + child, 'Os': 'linux', 'Architecture': 'amd64',
+                 'RepoTags': ['lscr.io/' + repository + ':mpkg-fixture-' + name],
+                 'RepoDigests': ['lscr.io/' + repository + '@sha256:' + child]}
+        docker_diagnostic_resume.validate_child(value, name, repository, child)
+        for changed in (dict(value, Id='sha256:' + index), dict(value, RepoTags=[]),
+                        dict(value, RepoDigests=['lscr.io/' + repository + '@sha256:' + index])):
+            with self.assertRaisesRegex(docker_diagnostic_resume.Refused, 'child_inventory_changed'):
+                docker_diagnostic_resume.validate_child(changed, name, repository, child)
+
+    def test_unknown_preparation_cannot_be_substituted_by_completed_history(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            journal = core.Journal(root)
+            attempt = str(uuid.uuid4())
+            journal.begin(attempt)
+            with mock.patch.object(docker_diagnostic_resume, 'trusted_path', side_effect=lambda path, **kwargs: path.lstat()):
+                docker_diagnostic_resume.journal_bytes(root, None)
+                with self.assertRaisesRegex(docker_diagnostic_resume.Refused, 'prior_history_changed'):
+                    docker_diagnostic_resume.journal_bytes(root, 'unverified')
+                journal.finish(attempt, 'unverified')
+                docker_diagnostic_resume.journal_bytes(root, 'unverified')
+                with self.assertRaisesRegex(docker_diagnostic_resume.Refused, 'prior_history_changed'):
+                    docker_diagnostic_resume.journal_bytes(root, None)
+            journal.close()
+
+    def test_cold_activation_timeout_never_retries_or_changes_prior_records(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            prior = root / 'prior-private-evidence'
+            core.write_new(prior, b'unchanged')
+            with mock.patch.object(docker_diagnostic_resume, 'retained_state', return_value=(
+                    root, {}, {'prior-private-evidence': b'unchanged'})), \
+                    mock.patch.object(docker_diagnostic_resume, 'package_units', return_value={}), \
+                    mock.patch.object(docker_diagnostic_resume.grp, 'getgrnam', return_value=SimpleNamespace(gr_gid=999, gr_mem=[])), \
+                    mock.patch.object(docker_diagnostic_resume.pwd, 'getpwall', return_value=[]), \
+                    mock.patch.object(docker_diagnostic_resume, 'units'), mock.patch.object(docker_diagnostic_resume, 'quiescent'), \
+                    mock.patch.object(docker_diagnostic_resume, 'command', side_effect=docker_diagnostic_resume.Refused('timeout_unknown')) as command:
+                with self.assertRaisesRegex(docker_diagnostic_resume.Refused, 'timeout_unknown'):
+                    docker_diagnostic_resume.activate('guest')
+                with self.assertRaisesRegex(docker_diagnostic_resume.Refused, 'fresh_attempt_required'):
+                    docker_diagnostic_resume.activate('guest')
+                command.assert_called_once_with(['/usr/bin/systemctl', 'start', 'docker.service'], timeout=90)
+            self.assertEqual(prior.read_bytes(), b'unchanged')
+            journal = core.Journal(root / 'docker-diagnostic-activation')
+            self.assertEqual(journal.export()[0]['state'], 'unknown')
+            journal.close()
 
 
 class DockerResumeTests(unittest.TestCase):
