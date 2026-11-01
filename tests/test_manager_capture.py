@@ -275,6 +275,44 @@ class ProtectedCaptureTests(unittest.TestCase):
             os.utime(self.source, ns=(original.st_atime_ns, original.st_mtime_ns))
         self.mutate_after_read(rewrite, lambda: self.assert_error(CaptureError, "input_changed", lambda: self.capture(loaded)))
 
+    def test_pre_epoch_source_time_is_refused_instead_of_returning_unrecordable_input(self):
+        loaded = self.load()
+        os.utime(self.source, ns=(-1_000_000_000, -1_000_000_000))
+        self.assertEqual(self.source.stat().st_mtime_ns, -1_000_000_000)
+        self.assert_error(CaptureError, "input_metadata_unsupported", lambda: self.capture(loaded))
+
+    def test_persisted_metadata_matches_store_integer_bounds_without_clamping(self):
+        loaded = self.load()
+        real_stat = os.stat
+        fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_uid", "st_gid", "st_mode", "st_nlink")
+        original = self.source.stat()
+        cases = [(field, invalid, "input_metadata_unsupported")
+                 for field in ("st_ino", "st_mtime_ns", "st_uid", "st_gid")
+                 for invalid in (-1, 2**63, True)]
+        cases += [("st_dev", 2**63, "input_device_changed"),
+                  ("st_size", -1, "input_metadata_unsupported"),
+                  ("st_size", True, "input_metadata_unsupported"),
+                  ("st_size", 2**63, "input_too_large"),
+                  ("st_mode", original.st_mode | 2**63, "input_metadata_unsupported"),
+                  ("st_nlink", True, "input_metadata_unsupported"),
+                  ("st_nlink", 2**63, "input_hardlinked")]
+        for field, invalid, code in cases:
+            with self.subTest(field=field, invalid=invalid):
+                def unsupported(path, *args, **kwargs):
+                    info = real_stat(path, *args, **kwargs)
+                    if path == "private.env":
+                        values = {name: getattr(info, name) for name in fields}
+                        values[field] = invalid
+                        return SimpleNamespace(**values)
+                    return info
+                with patch("mpkg_manager.protected_capture.os.stat", unsupported):
+                    self.assert_error(CaptureError, code, lambda: self.capture(loaded))
+        self.assertEqual(self.source.stat().st_mtime_ns, original.st_mtime_ns)
+        with HostStore.create(self.root / "store-boundary", HOST, owner_uid=os.geteuid()) as store:
+            captured = self.capture(loaded)
+            store.record_intent(EMPTY, 0, protected_inputs=[captured])
+            self.assertEqual(store.compare_protected(1, captured.name, captured.raw, captured.source_identity), "same")
+
     def test_leaf_replacement_during_read_is_detected(self):
         loaded = self.load()
         def replace():

@@ -46,6 +46,20 @@ def _regular(info, device):
         raise CaptureError("input_too_large")
 
 
+def _source_identity(info, path):
+    identity = {"path": path, "device": info.st_dev, "inode": info.st_ino,
+                "size": info.st_size, "mtime_ns": info.st_mtime_ns,
+                "uid": info.st_uid, "gid": info.st_gid, "mode": info.st_mode,
+                "links": info.st_nlink}
+    # The durable store accepts nonnegative signed-64-bit JSON integers.
+    # Do not return an apparently usable capture that cannot be recorded,
+    # and never clamp or otherwise substitute its observed source identity.
+    if any(type(value) is not int or not 0 <= value < 2**63
+           for key, value in identity.items() if key != "path"):
+        raise CaptureError("input_metadata_unsupported")
+    return identity
+
+
 def capture_protected(policy, *, root, relative_path, name, purpose):
     """Capture one regular file without following links or changing the host.
 
@@ -67,12 +81,15 @@ def capture_protected(policy, *, root, relative_path, name, purpose):
         roots = _DirectoryChain(root)
         device = os.fstat(roots.fd).st_dev
         parts = relative_path.split("/")
+        path = root + "/" + relative_path
         parents = _DirectoryChain(parts[:-1], start_fd=roots.fd, device=device)
         before = os.stat(parts[-1], dir_fd=parents.fd, follow_symlinks=False)
         _regular(before, device)
+        _source_identity(before, path)
         descriptor = os.open(parts[-1], _OPEN_FILE, dir_fd=parents.fd)
         opened = os.fstat(descriptor)
         _regular(opened, device)
+        identity = _source_identity(opened, path)
         if _fingerprint(opened) != _fingerprint(before):
             raise CaptureError("input_changed")
         raw = _read_bounded(descriptor, MAX_INPUT_BYTES)
@@ -89,11 +106,6 @@ def capture_protected(policy, *, root, relative_path, name, purpose):
             policy._verify()
         except PolicyError:
             raise CaptureError("policy_unavailable") from None
-        path = root + "/" + relative_path
-        identity = {"path": path, "device": opened.st_dev, "inode": opened.st_ino,
-                    "size": opened.st_size, "mtime_ns": opened.st_mtime_ns,
-                    "uid": opened.st_uid, "gid": opened.st_gid, "mode": opened.st_mode,
-                    "links": opened.st_nlink}
         return ProtectedInput(name, raw, identity, purpose)
     except PolicyError as error:
         code = error.code if error.code in ("input_device_changed", "input_path_changed", "input_too_large") else "input_unavailable"

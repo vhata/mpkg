@@ -90,6 +90,10 @@ identity has exactly `path`, `device`, `inode`, `size`, `mtime_ns`, `uid`,
 changing the store schema. `HostStore.compare_protected` returns only
 same/changed/unavailable. A capture error supplies unavailable evidence;
 it must never be replaced with empty or redacted content.
+Every persisted numeric identity field must fit the store's nonnegative
+signed-64-bit range. Unsupported metadata, including pre-epoch mtime,
+fails with `input_metadata_unsupported`; values are never clamped or
+substituted merely to make them recordable.
 
 The capture's `name` labels its recording and comparison within a
 decision. Capture does not return a declaration-reference UUID, and the
