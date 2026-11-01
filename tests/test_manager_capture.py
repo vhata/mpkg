@@ -124,6 +124,27 @@ class ProtectedCaptureTests(unittest.TestCase):
         self.assert_error(PolicyError, "unsafe_policy_ancestor", self.load)
         self.root.chmod(0o700)
 
+    def test_policy_wrong_owner_and_oversize_file_are_refused_before_read(self):
+        real_stat = os.stat
+        def wrong_owner(path, *args, **kwargs):
+            info = real_stat(path, *args, **kwargs)
+            if path == "host-policy.toml":
+                return SimpleNamespace(st_mode=info.st_mode, st_uid=info.st_uid + 1,
+                                       st_nlink=info.st_nlink, st_size=info.st_size)
+            return info
+        with patch("mpkg_manager.host_policy.os.stat", wrong_owner):
+            self.assert_error(PolicyError, "policy_permissions", self.load)
+        with self.policy_path.open("wb") as output:
+            output.truncate(MAX_POLICY_BYTES + 1)
+        with patch("mpkg_manager.host_policy.os.read", side_effect=AssertionError("must not read")):
+            self.assert_error(PolicyError, "invalid_policy", self.load)
+
+    def test_policy_change_during_loading_is_refused_and_closes_descriptors(self):
+        before = self.descriptors()
+        self.mutate_after_read(lambda: self.policy_path.write_bytes(self.policy_raw + b"# changed"),
+                               lambda: self.assert_error(PolicyError, "policy_changed", self.load))
+        self.assertEqual(self.descriptors(), before)
+
     def test_policy_symlinks_hardlinks_and_special_files_are_refused(self):
         actual = self.policy_path.with_name("actual")
         self.policy_path.rename(actual)
@@ -215,6 +236,17 @@ class ProtectedCaptureTests(unittest.TestCase):
         self.assertTrue(flags[0] & os.O_NONBLOCK)
         self.assertTrue(flags[0] & os.O_NOFOLLOW)
 
+    def test_fifo_substitution_between_stat_and_open_does_not_block(self):
+        loaded = self.load()
+        real_open = os.open
+        def replace(path, options, *args, **kwargs):
+            if path == "private.env":
+                self.source.unlink()
+                os.mkfifo(self.source, 0o600)
+            return real_open(path, options, *args, **kwargs)
+        with patch("mpkg_manager.protected_capture.os.open", replace):
+            self.assert_error(CaptureError, "input_not_regular", lambda: self.capture(loaded))
+
     def test_byte_limit_applies_before_and_during_read(self):
         loaded = self.load()
         with self.source.open("wb") as output:
@@ -226,6 +258,14 @@ class ProtectedCaptureTests(unittest.TestCase):
             with self.source.open("ab") as output:
                 output.write(b"x" * MAX_INPUT_BYTES)
         self.mutate_after_read(grow, lambda: self.assert_error(CaptureError, "input_too_large", lambda: self.capture(loaded)))
+
+    def test_exact_byte_limit_is_accepted(self):
+        loaded = self.load()
+        with self.source.open("wb") as output:
+            output.truncate(MAX_INPUT_BYTES)
+        result = self.capture(loaded)
+        self.assertEqual(len(result.raw), MAX_INPUT_BYTES)
+        self.assertEqual(result.source_identity["size"], MAX_INPUT_BYTES)
 
     def test_same_size_write_with_restored_mtime_is_detected_by_ctime(self):
         loaded = self.load()
@@ -271,6 +311,18 @@ class ProtectedCaptureTests(unittest.TestCase):
                                        st_nlink=info.st_nlink, st_size=info.st_size)
             return info
         with patch("mpkg_manager.protected_capture.os.stat", changed):
+            self.assert_error(CaptureError, "input_device_changed", lambda: self.capture(loaded))
+
+    def test_cross_device_descendant_directory_is_refused_with_safe_injection(self):
+        loaded = self.load()
+        real_fstat = os.fstat
+        inode = self.source.parent.stat().st_ino
+        def changed(descriptor):
+            info = real_fstat(descriptor)
+            if stat.S_ISDIR(info.st_mode) and info.st_ino == inode:
+                return SimpleNamespace(st_dev=info.st_dev + 1, st_mode=info.st_mode)
+            return info
+        with patch("mpkg_manager.protected_capture.os.fstat", changed):
             self.assert_error(CaptureError, "input_device_changed", lambda: self.capture(loaded))
 
     def test_capture_read_failure_and_cancellation_close_every_owned_descriptor(self):
