@@ -46,6 +46,8 @@ array of resource IDs. Optional `requirements` entries have exactly
 the component references and uses that kind's property type. Conflicting
 consumer requirements, or disagreement with the resource's desired value,
 are errors. Requirements describe use; they grant no management authority.
+Kind-specific property relationships and input references are validated
+against the combined desired properties and consumer requirements.
 
 ```toml
 schema = 1
@@ -161,6 +163,8 @@ files = [
 ```
 
 File `content_input` refers to a bundle containing exactly one file. A
+file cannot combine literal `content` and `content_input`, including when
+different consumers or desired properties supply the two constraints. A
 protected reference identifies required content without exposing it; its
 availability, source identity and freshness need the protected helper.
 Classifying data as nonsecret is an explicit responsibility. Validation

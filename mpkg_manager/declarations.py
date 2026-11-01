@@ -395,8 +395,6 @@ def _resource(value, path):
         result[key] = _list(value.get(key, []), path + (key,), _identifier)
     if not set(result["manage"]) <= set(desired):
         _fail("managed_property_without_value", path + ("manage",))
-    if kind == "file" and {"content", "content_input"} <= set(desired):
-        _fail("conflicting_content_sources", path + ("desired",))
     if "purpose" in value:
         result["purpose"] = _string(value["purpose"], path + ("purpose",))
     if "input" in value:
@@ -466,10 +464,6 @@ def _validate(model):
                 _fail("missing_or_mismatched_check", at + ("checks",))
         if "input" in resource and resource["input"]["bundle"] not in inputs:
             _fail("missing_input", at + ("input",))
-        if "content_input" in resource["desired"]:
-            reference = resource["desired"]["content_input"]
-            if reference not in inputs or len(inputs[reference]["files"]) != 1:
-                _fail("content_requires_single_file_input", at + ("desired", "content_input"))
     requirements = {}
     requirement_paths = {}
     for index, component in enumerate(result["components"]):
@@ -497,18 +491,25 @@ def _validate(model):
             requirements[key] = value
             requirement_paths[key] = at + ("requirements", requirement_index, "value")
     for index, resource in enumerate(result["resources"]):
+        # Every kind's contextual checks use the combined constraints, without
+        # promoting consumer requirements into desired state or authority.
+        effective = dict(resource["desired"])
+        at = ("resources", index, "desired")
+        property_paths = {prop: at + (prop,) for prop in effective}
+        for prop in _PROPERTIES[resource["kind"]]:
+            key = (resource["id"], prop)
+            if key in requirements and prop not in effective:
+                effective[prop] = requirements[key]
+                property_paths[prop] = requirement_paths[key]
         if resource["kind"] == "package":
-            # Validate the combined constraints without promoting a consumer's
-            # requirements into desired state or management authority.
-            effective = dict(resource["desired"])
-            version_path = ("resources", index, "desired", "version")
-            for prop in ("source", "version"):
-                key = (resource["id"], prop)
-                if key in requirements and prop not in effective:
-                    effective[prop] = requirements[key]
-                    if prop == "version":
-                        version_path = requirement_paths[key]
-            _package_version_binding(effective, version_path)
+            _package_version_binding(effective, property_paths.get("version", at))
+        if resource["kind"] == "file":
+            if {"content", "content_input"} <= set(effective):
+                _fail("conflicting_content_sources", property_paths["content_input"])
+            if "content_input" in effective:
+                reference = effective["content_input"]
+                if reference not in inputs or len(inputs[reference]["files"]) != 1:
+                    _fail("content_requires_single_file_input", property_paths["content_input"])
     check_resources = {"package": {"package"}, "service": {"service"},
                        "endpoint": {"compose", "service"},
                        "access": {"file", "directory", "symlink", "volume"}}

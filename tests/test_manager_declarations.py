@@ -176,6 +176,61 @@ desired = {present = true, source = "repository", version = {policy = "any"}}
                 declaration(items)
             self.assertNotIn('SENTINEL', str(error.exception))
 
+    def test_file_content_input_requirements_resolve_only_single_file_bundles(self):
+        bundle = dict(id='bundle', base_directory='/does/not/exist', files=[
+            dict(path='config', classification='nonsecret')])
+        protected = bundle | {'files': [dict(path='secret', classification='protected',
+            reference='0a89debe-8e38-4e24-a27f-b3763ad252a8')]}
+        multiple = bundle | {'files': bundle['files'] + [
+            dict(path='other', classification='nonsecret')]}
+        for placement in ('desired', 'requirement'):
+            for inputs in ([], [bundle], [protected], [multiple]):
+                with self.subTest(placement=placement, inputs=inputs):
+                    desired = {'content_input': 'bundle'} if placement == 'desired' else {}
+                    requirements = [] if placement == 'desired' else [
+                        dict(resource='data', property='content_input', value='bundle')]
+                    component = dict(id='one', purpose='Use file', resources=['data'],
+                                     requirements=requirements)
+                    item = resource({'path': '/fixture/file'}, kind='file', desired=desired, manage=[])
+                    if not inputs or inputs == [multiple]:
+                        with self.assertRaises(DeclarationError) as error:
+                            declaration([item], [component], inputs=inputs)
+                        self.assertEqual(error.exception.code, 'content_requires_single_file_input')
+                        expected_path = (('resources', 0, 'desired', 'content_input')
+                                         if placement == 'desired' else
+                                         ('components', 0, 'requirements', 0, 'value'))
+                        self.assertEqual(error.exception.path, expected_path)
+                    else:
+                        model = declaration([item], [component], inputs=inputs).model
+                        self.assertEqual(model['resources'][0]['desired'], desired)
+                        self.assertEqual(model['resources'][0]['manage'], [])
+                        if placement == 'requirement':
+                            with self.assertRaises(DeclarationError) as error:
+                                declaration([item | {'manage': ['content_input']}],
+                                            [component], inputs=inputs)
+                            self.assertEqual(error.exception.code, 'managed_property_without_value')
+
+    def test_file_content_sources_are_exclusive_across_all_constraints(self):
+        bundle = dict(id='bundle', base_directory='/does/not/exist', files=[
+            dict(path='config', classification='nonsecret')])
+        for content_place, input_place in [('desired', 'desired'), ('desired', 'one'),
+                                           ('one', 'desired'), ('one', 'one'), ('one', 'two')]:
+            with self.subTest(placements=(content_place, input_place)):
+                desired = {}
+                components = {name: dict(id=name, purpose='Use file', resources=['data'],
+                                         requirements=[]) for name in ('one', 'two')}
+                for prop, value, place in [('content', 'declared text', content_place),
+                                           ('content_input', 'bundle', input_place)]:
+                    if place == 'desired':
+                        desired[prop] = value
+                    else:
+                        components[place]['requirements'].append(
+                            dict(resource='data', property=prop, value=value))
+                item = resource({'path': '/fixture/file'}, kind='file', desired=desired, manage=[])
+                with self.assertRaises(DeclarationError) as error:
+                    declaration([item], components.values(), inputs=[bundle])
+                self.assertEqual(error.exception.code, 'conflicting_content_sources')
+
     def test_dependency_dag_can_share_prerequisites(self):
         items = [resource({'path': '/' + name}, id=name, requires=dependencies)
                  for name, dependencies in [('a', ['b', 'c']), ('b', ['d']), ('c', ['d']), ('d', [])]]
