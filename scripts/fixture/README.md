@@ -176,6 +176,16 @@ defaults dependency match. Installation neither replaces used code nor
 executes recovery. The continuation separately checks the observed partial
 state, preserves its prior unknown journal, and records its own attempt.
 
+For the separately observed keyword-case mismatch, install the fixed
+`native-service-observe` addition before `vm.py replace-native-verifier`.
+This separate route accepts only the exact used helper, both expected
+unknown journals, and the already running fixed SSH fixture. It preserves
+old helper bytes and private copies of both journals before publication,
+then verifies their bytes and service identities remain unchanged. It
+performs no setup, service action or authenticated check. The separately
+invoked observer records a new check without completing either prior
+attempt.
+
 The Docker resume addition only installs its helper. Its separate runtime
 entrypoint requires the successful initial engine/import evidence and
 exact image-only checkpoint bindings before starting that existing engine.

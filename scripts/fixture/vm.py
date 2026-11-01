@@ -231,6 +231,7 @@ def proof_install_payload(name):
         'service-environment':('service_environment.py','91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502'),
         'account-defaults':('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
         'native-service-recover':('native_service_recover.py','f8e55069f53055d89c1603db90b5259e87b47129747d0bccf831053544828b3e'),
+        'native-service-observe':('native_service_observe.py','6f519fbc6a2fe4da2b558653cc86e9e813ad54e6586656bfd620ba1c229df5c7'),
         'docker-baseline':('docker_baseline.py','f6af324e2d0844a6159f0e6dcf1e72c766679953dc4e4ec5c093ff42271bbeca'),
         'docker-resume':('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05'),
         'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b'),
@@ -288,6 +289,10 @@ def install():
             ('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
             ('native_service.py','645822526f899506a9f0b6e13c27945003b111ed6d9b065e1df992095acf5961'),
         ],
+        'native_service_observe.py':[
+            ('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
+            ('native_service.py','645822526f899506a9f0b6e13c27945003b111ed6d9b065e1df992095acf5961'),
+        ],
     }
     for dependency_name,dependency_hash in dependencies.get(ADDITION_FILENAME,[]):
         dependency=target_directory/dependency_name
@@ -332,7 +337,7 @@ install()
 def native_service_replacement_payload():
     source=runner.PROJECT/'scripts/proofs/native_service.py'
     data=runner.regular_file(source).read_bytes()
-    if hashlib.sha256(data).hexdigest()!='fbb713c105ed23fe140d2ccc9443eca6295d34e5b788e2e58c994c821638f7b6':
+    if hashlib.sha256(data).hexdigest()!='d4183fa9a7251b1b0b97d5f09701bfeb1cbd52819aba143896de9eb14918e675':
         raise ValueError('native service replacement differs from reviewed bytes')
     template=runner.regular_file(runner.PROJECT/'scripts/fixture/guest_native_service_replace.py').read_text()
     marker='REPLACEMENT_BASE64 = None'
@@ -353,6 +358,18 @@ def docker_baseline_replacement_payload():
     return template.replace(marker,'REPLACEMENT_BASE64 = '+repr(base64.b64encode(data).decode())).encode()
 
 
+def native_verifier_replacement_payload():
+    source=runner.PROJECT/'scripts/proofs/native_service.py'
+    data=runner.regular_file(source).read_bytes()
+    if hashlib.sha256(data).hexdigest()!='d4183fa9a7251b1b0b97d5f09701bfeb1cbd52819aba143896de9eb14918e675':
+        raise ValueError('native verifier replacement differs from reviewed bytes')
+    template=runner.regular_file(runner.PROJECT/'scripts/fixture/guest_native_verifier_replace.py').read_text()
+    marker='REPLACEMENT_BASE64 = None'
+    if template.count(marker)!=1:
+        raise ValueError('native verifier replacement template changed')
+    return template.replace(marker,'REPLACEMENT_BASE64 = '+repr(base64.b64encode(data).decode())).encode()
+
+
 def console(script=None, seconds=10, prompt=False, login_root=False, addition=None, replacement=None):
     payload=None
     if replacement:
@@ -360,6 +377,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
             raise ValueError('native service replacement cannot include other console input')
         if replacement=='native-service':payload=native_service_replacement_payload()
         elif replacement=='docker-baseline':payload=docker_baseline_replacement_payload()
+        elif replacement=='native-verifier':payload=native_verifier_replacement_payload()
         else:raise ValueError('replacement is not allowlisted')
         suffix='.py'
     elif addition is not None:
@@ -415,7 +433,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-docker-resume','replace-native-service','replace-docker-baseline'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','replace-native-service','replace-docker-baseline','replace-native-verifier'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -438,9 +456,11 @@ def main():
     elif args.operation=='install-service-environment':console(seconds=args.seconds,addition='service-environment')
     elif args.operation=='install-account-defaults':console(seconds=args.seconds,addition='account-defaults')
     elif args.operation=='install-native-service-recover':console(seconds=args.seconds,addition='native-service-recover')
+    elif args.operation=='install-native-service-observe':console(seconds=args.seconds,addition='native-service-observe')
     elif args.operation=='install-docker-resume':console(seconds=args.seconds,addition='docker-resume')
     elif args.operation=='replace-native-service':console(seconds=args.seconds,replacement='native-service')
     elif args.operation=='replace-docker-baseline':console(seconds=args.seconds,replacement='docker-baseline')
+    elif args.operation=='replace-native-verifier':console(seconds=args.seconds,replacement='native-verifier')
     else:print(json.dumps(qmp_query('query-status' if args.operation=='status' else 'system_powerdown')))
 
 

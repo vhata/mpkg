@@ -466,7 +466,7 @@ class FixtureProofAdditionTests(unittest.TestCase):
             for name,filename in [('docker-ready','docker_ready.py'),('docker-baseline','docker_baseline.py'),
                                   ('native-conflict','native_conflict.py'),('service-environment','service_environment.py'),
                                   ('docker-resume','docker_resume.py'),('account-defaults','account_defaults.py'),
-                                  ('native-service-recover','native_service_recover.py')]:
+                                  ('native-service-recover','native_service_recover.py'),('native-service-observe','native_service_observe.py')]:
                 (root/'scripts/proofs'/filename).write_bytes(b'changed reviewed source')
                 with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(module,'qmp_query') as qmp:
                     with self.assertRaises(ValueError):module.console(addition=name)
@@ -475,6 +475,7 @@ class FixtureProofAdditionTests(unittest.TestCase):
     def test_each_generated_addition_binds_its_own_reviewed_bytes_and_filename(self):
         module=self.load()
         expected={'service-environment':('service_environment.py','91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502'),
+                  'native-service-observe':('native_service_observe.py','6f519fbc6a2fe4da2b558653cc86e9e813ad54e6586656bfd620ba1c229df5c7'),
                   'native-service-recover':('native_service_recover.py','f8e55069f53055d89c1603db90b5259e87b47129747d0bccf831053544828b3e'),
                   'account-defaults':('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
                   'docker-resume':('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05'),
@@ -650,6 +651,48 @@ class FixtureDockerBaselineReplacementTests(unittest.TestCase):
                  mock.patch.object(module,'read_bound_file',return_value=(b'original',('changed',))):
                 with self.assertRaises(RuntimeError):module.publish_replacement(target,b'corrected',('expected',))
             self.assertEqual(target.read_bytes(),b'original')
+
+
+class FixtureNativeVerifierReplacementTests(unittest.TestCase):
+    def load(self):
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/guest_native_verifier_replace.py'
+        spec=importlib.util.spec_from_file_location('fixture_native_verifier_replace',path)
+        module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        return module
+
+    def test_used_verifier_payload_binds_exact_reviewed_correction(self):
+        vm=FixtureProofAdditionTests().load();module=self.load()
+        program=ast.parse(vm.native_verifier_replacement_payload())
+        assignment=next(n for n in program.body if isinstance(n,ast.Assign)
+                        and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='REPLACEMENT_BASE64')
+        self.assertEqual(hashlib.sha256(base64.b64decode(assignment.value.value)).hexdigest(),module.NEW_SHA256)
+        self.assertEqual(module.OLD_SHA256,'645822526f899506a9f0b6e13c27945003b111ed6d9b065e1df992095acf5961')
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);(root/'scripts/proofs').mkdir(parents=True)
+            (root/'scripts/proofs/native_service.py').write_bytes(b'unreviewed')
+            with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(vm,'qmp_query') as qmp:
+                with self.assertRaises(ValueError):vm.console(replacement='native-verifier')
+                qmp.assert_not_called()
+
+    def test_unknown_histories_and_unobserved_continuation_are_required(self):
+        module=self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/'native-service';root.mkdir()
+            native=SimpleNamespace(state_root=lambda guest:root,MANAGED_CONFIG=Path(tmp)/'config',
+                                   trusted_path=mock.Mock(),read_regular=mock.Mock(return_value=(b'{}',None)),
+                                   package_baseline=mock.Mock())
+            observer=SimpleNamespace(unknown_history=mock.Mock(side_effect=RuntimeError('wrong history')))
+            with self.assertRaises(RuntimeError):module.observed_state('guest',native,observer)
+            native.package_baseline.assert_not_called()
+            observer.unknown_history.side_effect=None;observer.unknown_history.return_value=b'unchanged journal'
+            with self.assertRaises(RuntimeError):module.observed_state('guest',native,observer)
+            self.assertEqual(observer.unknown_history.call_args_list[-2:],[
+                mock.call(root,8),mock.call(root.parent/'native-service-recovery',0)])
+            native.package_baseline.assert_not_called()
+            native.read_regular.reset_mock()
+            (root.parent/'native-service-observation').symlink_to(Path(tmp)/'absent')
+            with self.assertRaises(RuntimeError):module.observed_state('guest',native,observer)
+            native.read_regular.assert_not_called()
 
 
 class FixtureNativeAdoptionTests(unittest.TestCase):
