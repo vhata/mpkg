@@ -168,6 +168,19 @@ The conflict case adds a disclosed synthetic archive conflicting with
 `filesystem`; it is prepared but never installed. No native transaction
 commit or database-refresh function exists in the C probe.
 
+`native_manifest.py --guest-id <UUID>` records this manifest only in the
+bound guest. It requires the exact frozen `source-inventory.json`, actual
+`native-acquisition.json`, target databases under `databases/2026-10-31`,
+and archives/signatures under `artifacts/<sha256>.pkg.tar.zst[.sig]`.
+It hashes bytes, reads archive package metadata without extracting files,
+and binds acquisition signature evidence; libalpm rechecks signatures.
+It also requires `gitstatus-build.json` with the actual non-root build
+identity, pinned recipe/source digests, successful verification/build,
+matching generated metadata, and resulting artifact identity. The pinned
+recipe has no check function; this record must say `not-defined`, not
+manufacture a passing check. Missing build evidence blocks publication.
+This helper installs nothing and never refreshes a package database.
+
 ## Validation
 
 Run `bash scripts/setup.sh` and `bash scripts/check.sh` from the worktree.

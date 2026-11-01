@@ -28,6 +28,7 @@ import compose_proof
 import native_proof
 import oci_acquire
 import image_import
+import native_manifest
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -79,7 +80,7 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(list(Path(temporary).iterdir()), [])
 
     def test_guest_image_entrypoints_refuse_host_before_docker(self):
-        for filename in ('image_import.py', 'image_manifest.py'):
+        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py'):
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as temporary:
                 result = subprocess.run([
                     sys.executable, '-I', str(PROOFS / filename),
@@ -89,6 +90,58 @@ class GuestGuardTests(unittest.TestCase):
                 self.assertEqual(json.loads(result.stdout)['status'], 'refused')
                 self.assertEqual(result.stderr, '')
                 self.assertEqual(list(Path(temporary).iterdir()), [])
+
+
+class NativeManifestTests(unittest.TestCase):
+    def setUp(self):
+        self.source = json.loads((PROOFS.parents[1] / 'docs' / 'fixtures' /
+                                 '2026-10-31-arch-native-inputs.json').read_bytes())
+        recipe = self.source['aur_packages'][0]
+        self.build = {
+            'schema': 1, 'guest_id': str(uuid.uuid4()), 'package_base': 'gitstatus',
+            'recipe_commit': recipe['recipe_commit'],
+            'recipe_files': {name: item['sha256_computed']
+                             for name, item in recipe['recipe_files'].items()},
+            'sources': [{'filename': item['filename'], 'algorithm': algorithm,
+                         'digest': digest, 'verified': True}
+                        for item in recipe['sources']
+                        for algorithm, digest in item['digests_published_in_recipe'].items()],
+            'build_uid': 1600, 'source_verification_exit_code': 0,
+            'generated_metadata_matches': True, 'build_exit_code': 0,
+            'check_status': 'not-defined',
+            'artifact': {'name': 'gitstatus', 'version': '1.5.5-1',
+                         'sha256': 'a' * 64, 'size': 100},
+        }
+
+    def test_actual_build_cannot_be_substituted_by_design_metadata(self):
+        self.assertEqual(native_manifest.validate_build(
+            self.build, self.source, self.build['guest_id']), self.build['artifact'])
+        for field, value in [('build_uid', 0), ('build_exit_code', 1),
+                             ('check_status', 'passed'), ('generated_metadata_matches', False)]:
+            with self.subTest(field=field), self.assertRaisesRegex(
+                    native_manifest.Refused, 'actual_gitstatus_build_required'):
+                native_manifest.validate_build(dict(self.build, **{field: value}),
+                                               self.source, self.build['guest_id'])
+
+    def test_build_source_digest_drift_refuses(self):
+        self.build['sources'][0]['digest'] = '0' * 128
+        with self.assertRaisesRegex(native_manifest.Refused, 'actual_gitstatus_build_required'):
+            native_manifest.validate_build(self.build, self.source, self.build['guest_id'])
+
+    def test_signature_evidence_requires_pinned_bytes_and_verified_trust(self):
+        planned = self.source['repository_packages'][0]
+        record = {'name': planned['name'], 'version': planned['version'], 'size': 100,
+                  'sha256': planned['package_sha256_published_in_database'],
+                  'url': planned['url'], 'signature_sha256': 'b' * 64,
+                  'signing_fingerprint': 'A' * 40, 'primary_fingerprint': 'B' * 40,
+                  'trust': native_manifest.TRUST}
+        native_manifest.validate_acquisition(record, planned, {planned['url']})
+        for field, value in [('trust', 'unverified'), ('sha256', 'f' * 64),
+                             ('url', 'https://unbound.invalid/package')]:
+            with self.subTest(field=field), self.assertRaisesRegex(
+                    native_manifest.Refused, 'verified_native_acquisition_required'):
+                native_manifest.validate_acquisition(dict(record, **{field: value}),
+                                                     planned, {planned['url']})
 
 
 class LocalMechanismTests(unittest.TestCase):
