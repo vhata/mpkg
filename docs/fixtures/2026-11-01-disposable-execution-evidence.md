@@ -18,7 +18,7 @@ establish any A1–A12 product acceptance result.
 | Native transaction | Frozen prepare-only checks and conflict refusal passed; no package transaction commit inferred |
 | Ordinary Docker fixture | Assembly and repeat check passed; separate restore/reboot check pending |
 | Compose mechanism experiment | All ten asserted checks passed, with the lifecycle limits below |
-| Volume, network and image-policy variants | Both volume variants passed through retirement; four network/image-policy branches remain pending |
+| Volume, network and image-policy variants | Both volume variants and shared-network retention passed; exclusive-network and two image-policy branches remain pending |
 | Replacement manager and A1–A12 | Not implemented or executed by this work |
 
 ## Acquired inputs
@@ -647,13 +647,44 @@ After orderly shutdown, `volume-delete-mechanism` was saved as offline
 snapshot ID `28`, with no memory state and firmware variables SHA-256
 `4ba5f05f3fe1214089e691d3c9887bf67e4ebacb9e92ef0743ac6271d16beddd`.
 
+The independent `network-shared` branch passed setup and a separate
+check with identical complete observations. Its bridge had exactly the
+two expected consumers. Application namespace/listener attribution,
+protected configuration/access and actual Radarr discovery passed.
+Authenticated requests used held application network namespaces;
+separate published-route checks carried no credential and verified the
+declared loopback mappings. After orderly shutdown, the `network-shared`
+baseline was saved as offline snapshot ID `30`, with no memory state
+and firmware variables SHA-256
+`850fb33fbf7a3376a3f9acb5df8471c3906ed7b4ace6d9e02b889e99ff078f89`.
+
+The check-only reboot passed with the same network and two attachments,
+image/configuration bindings and expected data checks. Fresh application
+process, namespace and listener attribution passed, alongside protected
+access, Radarr discovery and credential-free published routes. Independent
+review verified the saved baseline and full reboot-check interval.
+The port experiment also passed, recreating Sonarr for the `18990`
+published mapping. The network identity, IPAM and options persisted with
+the new Sonarr and unchanged Radarr attachments. Radarr's complete process
+and listener observation remained unchanged. Configuration/data, attributed
+requests, published routes and discovery passed, with the original
+assembly history preserved. Independent review verified the result.
+Shared-network retirement then passed: Sonarr was removed, while the
+same bridge, IPAM and options remained with only the original Radarr
+attachment. Radarr's attribution, actual directory discovery and
+credential-free published route stayed valid, with shared data and prior
+history preserved. After orderly shutdown, `network-shared-mechanism`
+was saved as offline snapshot ID `31`, with no memory state and firmware
+variables SHA-256
+`4ba5f05f3fe1214089e691d3c9887bf67e4ebacb9e92ef0743ac6271d16beddd`.
+
 The supplemental runtime gates currently stand as follows:
 
 | Variant | Assembly | Reboot check | Experiment | Retirement |
 | --- | --- | --- | --- | --- |
 | Volume keep | Setup and check passed; baseline ID 24 saved | Passed | Port change passed | Passed; final ID 25 saved |
 | Volume delete | Setup and check passed; baseline ID 27 saved | Passed | Port change passed | Passed; final ID 28 saved |
-| Shared network | Pending | Pending | Pending | Pending |
+| Shared network | Setup and check passed; baseline ID 30 saved | Passed | Published-port remapping passed | Passed; final ID 31 saved |
 | Exclusive network deletion | Pending | Pending | Pending | Pending |
 | Allowed-tag image update | Pending | Pending | Pending | Not required |
 | Exact-digest candidate refusal | Pending | Pending | Pending | Not required |
