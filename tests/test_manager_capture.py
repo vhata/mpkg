@@ -293,6 +293,7 @@ class ProtectedCaptureTests(unittest.TestCase):
                   ("st_size", -1, "input_metadata_unsupported"),
                   ("st_size", True, "input_metadata_unsupported"),
                   ("st_size", 2**63, "input_too_large"),
+                  ("st_mode", original.st_mode | 2**40, "input_metadata_unsupported"),
                   ("st_mode", original.st_mode | 2**63, "input_metadata_unsupported"),
                   ("st_nlink", True, "input_metadata_unsupported"),
                   ("st_nlink", 2**63, "input_hardlinked")]

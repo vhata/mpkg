@@ -38,7 +38,11 @@ def _arguments(root, relative_path, name, purpose):
 def _regular(info, device):
     if type(info.st_mode) is not int or not 0 <= info.st_mode < 2**63:
         raise CaptureError("input_metadata_unsupported")
-    if not stat.S_ISREG(info.st_mode):
+    try:
+        regular = stat.S_ISREG(info.st_mode)
+    except OverflowError:
+        raise CaptureError("input_metadata_unsupported") from None
+    if not regular:
         raise CaptureError("input_not_regular")
     if info.st_nlink != 1:
         raise CaptureError("input_hardlinked")
