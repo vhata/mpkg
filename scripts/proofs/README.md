@@ -215,6 +215,7 @@ before any system mutation.
 - `guest-native-service.sh`: native SSH baseline setup/check.
 - `guest-image-import.sh`: archive import, then observed image manifest.
 - `guest-native-proof.sh`: actual native manifest, then prepare-only proof.
+- `guest-native-conflict.sh`: real frozen audio-package conflict preparation.
 - `guest-compose-proof.sh`: fixed Sonarr/Radarr experiment.
 - `guest-docker-baseline.sh`: assemble the separate running adoption fixture.
 - `guest-docker-baseline-check.sh`: check that fixture after assembly/restore.
@@ -263,6 +264,35 @@ become an accepted baseline merely by running the check command. Setup
 does not stop/retire applications, create snapshots, or claim product
 adoption or A1–A12 success. The coordinator records an offline checkpoint
 only after observed success. Volume/network variants remain separate.
+
+### Real frozen native conflict
+
+`native_conflict.py --guest-id <UUID>` is separate from the synthetic
+conflict archive in the broader native experiment. It uses the exact
+October 30 core/extra database hashes, an empty private root/local DB,
+and the selected `pulseaudio=17.0+r134+g77d25a1e6-1` and
+`pipewire-pulse=1:1.6.10-1` requests. It does not import installed state.
+
+First, isolated print-only resolution must reproduce the recorded
+167-package candidate bytes. That step is not counted as conflict
+evidence: [pacman documents](https://man.archlinux.org/man/pacman.8.en)
+that printing lists targets instead of performing the operation.
+The helper then compiles its fixed C probe inside the guarded guest.
+The probe rechecks machine/disk identity and a delegated pipe token,
+adds exact database package objects, and requires libalpm's actual
+conflicting-dependencies error naming both selected packages. Removal,
+replacement and provider-selection questions are denied; both wanted
+targets must remain in the candidate set with no removal. No commit,
+refresh or download function is called. The
+[libalpm transaction API](https://man.archlinux.org/man/libalpm_trans.3.en)
+permits release after preparation without committing.
+
+Both commands run in a separate network namespace; the C fetch callback
+also refuses acquisition. Signature checks are disabled only for the
+already hash-bound metadata; no archive trust, installation or product
+acceptance is claimed. Results preserve actual question/error fields,
+source/database/probe identities and empty-local-state limits. Failure
+leaves the attempt unresolved, with no automatic retry.
 
 ### Native service baseline
 

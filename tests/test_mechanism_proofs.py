@@ -33,6 +33,7 @@ import native_service
 import run as proof_run
 import docker_ready
 import docker_baseline
+import native_conflict
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -84,7 +85,7 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(list(Path(temporary).iterdir()), [])
 
     def test_guest_image_entrypoints_refuse_host_before_docker(self):
-        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py'):
+        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py', 'native_conflict.py'):
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as temporary:
                 result = subprocess.run([
                     sys.executable, '-I', str(PROOFS / filename),
@@ -153,6 +154,32 @@ class DockerBaselineTests(unittest.TestCase):
                 self.assertIn('expected guest UUID is required', result.stderr)
                 self.assertEqual(result.stdout, '')
                 self.assertEqual(list(Path(temporary).iterdir()), [])
+
+
+class RealNativeConflictTests(unittest.TestCase):
+    def test_real_conflict_cannot_be_replaced_by_synthetic_or_unresolved_failure(self):
+        value = {'libalpm_version': '16.0.1', 'prepare_result': -1, 'error_number': 46,
+                 'exact_pair': True, 'candidate_count': 167, 'removal_count': 0,
+                 'local_package_count': 0, 'all_questions_denied': True, 'fetch_calls': 0,
+                 'question_count': 1, 'question_mask': 4}
+        native_conflict.validate_result(value)
+        for changed in ({'status': 'BLOCK conflict'}, dict(value, exact_pair=False),
+                        dict(value, error_number=45), dict(value, removal_count=1),
+                        dict(value, fetch_calls=1), dict(value, prepare_result=0)):
+            with self.subTest(result=changed), self.assertRaisesRegex(
+                    native_conflict.Refused, 'real_native_conflict_not_observed'):
+                native_conflict.validate_result(changed)
+
+    def test_conflict_selection_matches_frozen_real_case_not_synthetic_fixture(self):
+        source = json.loads((PROOFS.parents[1] / 'docs/fixtures/2026-10-31-arch-native-inputs.json').read_bytes())
+        case = source['native_incompatible_requests']
+        self.assertEqual(native_conflict.TARGETS, {item['name']: item['version'] for item in case['candidates']})
+        self.assertEqual(native_conflict.DATABASES,
+                         {item['repository']: item['sha256_computed'] for item in source['repository_databases']})
+        self.assertEqual(native_conflict.RESOLUTION_SHA256,
+                         case['readonly_native_resolution']['stdout_sha256_computed'])
+        with self.assertRaisesRegex(native_conflict.Refused, 'frozen_conflict_resolution_changed'):
+            native_conflict.parse_candidates(b'extra mpkg-proof-conflict 1-1 synthetic\n')
 
 
 class DockerReadinessTests(unittest.TestCase):
