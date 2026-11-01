@@ -226,6 +226,29 @@ for both roles. No value normalization was needed. This identifies a parser
 compatibility defect; it does not establish successful authenticated access
 or retrospectively complete either interrupted attempt.
 
+The reviewed keyword-only correction was subsequently installed with the
+previous helper and both journals preserved. A separate observation
+`2f1453f6-483f-4521-ad59-12d9f9edcdb8` then completed with exit zero:
+both services passed attributed-listener and pinned-key SFTP reads of
+their respective sentinels, with the intended accounts, groups, permissions
+and protected keys. Both earlier attempts remain unknown; only this new
+observation is complete. A fresh package check still found exactly 209
+packages, unchanged repository versions and the intended ack-chain reasons,
+with no build manager, cgroup or builder process remaining. Its complete
+installed-inventory SHA-256 is
+`1ac30726f3831fb0f4e1f182b9977027d656c8dfb7ad89ff5cab51d575350081`.
+
+After orderly shutdown, `native-change` was saved as offline snapshot ID
+`5`, with no memory state and firmware variables SHA-256
+`116dd2297b2a8f791550bb7a1f653341222b736c29054da100a173aad95c8f31`.
+Its checkpoint record SHA-256 is
+`5f80c5d3673552ecac5b47e8b1bff11e68a0c22611add0301e22612905840803`.
+The separate 128 MiB gitstatus output disk is bound to that record; its
+initial SHA-256 is
+`13c3cb10476232ef048754e6553227a42b432f7edd1cb119ec4cb29bc8df7c84`.
+The snapshot also retains the incomplete image history described below;
+it is not an image-ready or product-applied checkpoint.
+
 Corrected Docker readiness completed with exit zero on engine
 `bb861e7c-3db2-4b9a-a865-6a2e04af426c`, Docker 29.9.2 and containerd 2.4.2-1.
 Packaged unit, daemon process and Unix-socket identities passed, with zero
@@ -251,7 +274,7 @@ did not retain stderr, so the exact failing command's diagnostic is
 unavailable. Further inspection must preserve this attempt as well as the
 original unverified import.
 
-The gitstatus build, native service fixture and complete image bindings
+The gitstatus build and complete image bindings
 remain unverified. Applied product restore points remain unavailable until
 actual product operations create them.
 
