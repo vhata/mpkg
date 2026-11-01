@@ -131,8 +131,7 @@ The [first-release contract](../docs/specs/2026-10-31-first-release-contract.md)
 proposes bounded resource behavior and records the remaining design
 gates. The [acceptance scenarios](../docs/specs/2026-10-31-first-release-acceptance.md)
 map every criterion above to starting conditions and pass/fail evidence.
-Neither document claims acceptance execution. The observed Sonarr
-baseline still needs accepted fixture inputs and fresh checks. The
+Neither document claims acceptance execution. The
 [storage/execution proposal](../docs/specs/2026-10-31-first-release-storage-and-execution.md)
 selects concrete mechanisms, and the
 [fixture design](../docs/specs/2026-10-31-first-release-fixture.md)
@@ -140,8 +139,9 @@ binds source metadata and assembly/check choices. Artifact acquisition,
 guest assembly, mechanism proofs and all acceptance executions remain
 separate gates. The
 [execution record](../docs/fixtures/2026-11-01-disposable-execution-evidence.md)
-records the authorized disposable work against those gates; fixture or
-mechanism success does not imply a product acceptance result.
+records the measured native and Sonarr/Radarr fixtures and focused
+mechanism results against those gates. Fixture or mechanism success
+does not imply a product acceptance result.
 
 The [architecture direction](../docs/specs/2026-10-31-server-environment-architecture.md)
 selects direct native tooling and excludes Ansible and similar frameworks.

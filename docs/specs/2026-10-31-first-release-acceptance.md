@@ -351,17 +351,17 @@ demonstrations above remain mandatory. The first release is complete
 only when every milestone criterion and its applicable variants pass,
 and independent review has no unresolved actionable findings.
 
-Before this plan becomes an executable acceptance manifest, settle the
-[assembly and execution evidence](2026-10-31-first-release-fixture.md#assembly-and-execution-evidence):
-actual archive/build verification, assembled guest and accepted
-Sonarr/Radarr inputs, selected resource/update variants and successful
-functional checks. Bind the implementation revision and injection points
-when that implementation exists; product-produced applied snapshots are
-later execution results rather than bootstrap prerequisites. Registry
-metadata availability does not establish layer acquisition or runtime
-compatibility. The runtime baseline does not establish historical input
-provenance or replace fixture evidence. These remain explicit queue
-work; no acceptance condition is waived by this document.
+The [execution record](../fixtures/2026-11-01-disposable-execution-evidence.md)
+reports actual archive/build verification, native and Sonarr/Radarr
+fixtures, resource/update variants and focused functional checks against
+the [assembly design](2026-10-31-first-release-fixture.md#assembly-and-execution-evidence).
+Those observations do not execute this product acceptance manifest.
+Bind the implementation revision and injection points when that
+implementation exists; product-produced applied snapshots are later
+execution results rather than bootstrap prerequisites. Registry metadata
+alone does not establish layer acquisition or runtime compatibility.
+An observed deployment does not establish historical input provenance.
+All A1–A12 scenarios and their acceptance conditions remain required.
 
 ## Candidate-selection sources
 
