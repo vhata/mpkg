@@ -12,12 +12,6 @@ Only work promoted from whole-codebase reviews belongs here. Every entry is read
 
 ## Unprioritized
 
-- [NATIVE] `resolve-installed-dependency-targets` — **Resolve satisfying installed packages before changing dependency reasons.** Raw requirements and version-incompatible providers must not become marking targets.
-  - Source: [full review](2026-10-31-2121-full.md), 2026-10-31.
-  - Findings: `update-marks-raw-requirements`, `refresh-selects-unsatisfying-providers`
-  - Starting point: `mpkg` functions `update`, `installed_providers`, and `refresh`.
-  - Verify versioned and virtual requirements using strict installed-name fixtures; incompatible providers must keep their install reasons. Preserve build failure handling and scoped commits.
-
 - [NATIVE] `parse-pkgbuild-literal-boundaries` — **Respect Bash comments and strings when editing literal package fields.** Valid helper input must remain editable without corrupting its source.
   - Source: [full review](2026-10-31-2121-full.md), 2026-10-31.
   - Findings: `dependency-comment-closes-array`, `quoted-description-counts-as-assignment`
