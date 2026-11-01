@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import posixpath
 from pathlib import Path, PurePosixPath
 from contextlib import contextmanager
 import re
@@ -16,6 +17,7 @@ import tarfile
 import tempfile
 import urllib.parse
 import urllib.request
+import uuid
 
 PROJECT = Path(__file__).resolve().parents[2]
 CACHE = PROJECT / '.cache' / 'fixture'
@@ -134,8 +136,9 @@ def run_gpg(home, arguments, input_bytes=None):
 def trust_home(cache):
     """Publish a complete private trust store; keep failed staging for diagnosis."""
     # Long worktree paths exceed the Unix socket limit even with --no-autostart.
-    home = cache.parent / 'fgpg'
-    if len(os.fsencode(home / 'S.gpg-agent')) >= 108:
+    home = cache.parent / 'g'
+    staging = cache.parent / 'h'
+    if any(len(os.fsencode(path / 'S.gpg-agent.browser')) >= 108 for path in (home, staging)):
         raise ValueError('worktree path is too long for the private GPG socket name')
     if home.exists():
         private_directory(home)
@@ -145,7 +148,7 @@ def trust_home(cache):
             if sha256(KEYRINGS / name) != digest:
                 raise ValueError('host Arch trust input changed; create a new cache')
         return home
-    staging = Path(tempfile.mkdtemp(prefix='g', dir=cache.parent))
+    staging.mkdir(mode=0o700)  # Exclusive fixed short staging name; concurrent init fails closed.
     files = ['archlinux.gpg', 'archlinux-trusted', 'archlinux-revoked']
     hashes = {name: sha256(KEYRINGS / name) for name in files}
     roots = []
@@ -165,7 +168,9 @@ def trust_home(cache):
         result = run_gpg(staging, arguments, input_bytes)
         if result.returncode:
             write_new(staging / f'failed-step-{index}.txt', result.stderr[:262144])
-            raise RuntimeError(f'private GPG initialization step {index} failed; preserved {staging.name}')
+            preserved = cache.parent / ('gpg-failed-' + uuid.uuid4().hex)
+            staging.rename(preserved)
+            raise RuntimeError(f'private GPG initialization step {index} failed; preserved {preserved.name}')
     write_new(staging / 'keyring-inputs.json', (json.dumps(hashes, indent=2) + '\n').encode())
     if home.exists() or home.is_symlink():
         raise ValueError('private GPG publication target appeared during initialization')
@@ -255,7 +260,11 @@ def validate_member(member):
     if member.issym():
         target = PurePosixPath(member.linkname)
         if target.is_absolute():
-            raise ValueError('absolute archive symlink')
+            if member.linkname.startswith('//') or '..' in target.parts:
+                raise ValueError('ambiguous absolute archive symlink')
+            # Interpret package absolute links under the private extracted root.
+            target = PurePosixPath(posixpath.relpath(member.linkname.lstrip('/'), str(path.parent)))
+            member.linkname = str(target)
         depth = len(path.parent.parts)
         for part in target.parts:
             depth += -1 if part == '..' else 0 if part == '.' else 1
@@ -315,7 +324,12 @@ def extract(cache):
     home = trust_home(cache)
     destination = cache / 'runner'
     if destination.exists() or destination.is_symlink():
-        raise ValueError('runner destination already exists; preserve it for inspection')
+        private_directory(destination)
+        if (destination / '.mpkg-verified-runner.json').exists():
+            raise ValueError('a completed runner already exists; preserve it')
+        preserved = cache / ('runner-failed-' + uuid.uuid4().hex)
+        destination.rename(preserved)
+        print(f'preserved incomplete extraction: {preserved.name}', flush=True)
     private_directory(destination)
     for package in packages():
         path = regular_file(cache / 'archives' / (package['sha256'] + '.pkg.tar.zst'))
@@ -328,6 +342,9 @@ def extract(cache):
             temporary.seek(0)
             extract_tar(temporary, destination)
         print(f"extracted {package['name']}", flush=True)
+    for path in destination.rglob('*'):
+        if path.is_symlink() and not path.resolve().is_relative_to(destination):
+            raise ValueError('extracted symlink graph escapes private root')
     write_new(destination / '.mpkg-verified-runner.json', json.dumps({
         'inputs_sha256': sha256(INPUTS), 'packages': len(packages()),
         'host_packages_installed': False,

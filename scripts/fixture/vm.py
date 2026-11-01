@@ -103,7 +103,7 @@ def prepare():
         print(json.dumps(vm_identity()))
 
 
-def qemu_arguments(identity, installer):
+def qemu_arguments(identity, installer, inputs=False):
     arguments = ['/usr/bin/qemu-system-x86_64', '-no-user-config', '-nodefaults',
                  '-display', 'none', '-machine', 'q35,accel=tcg,dump-guest-core=off', '-cpu', 'qemu64',
                  '-smp', '4', '-m', '8192', '-uuid', identity['guest_id'],
@@ -119,6 +119,9 @@ def qemu_arguments(identity, installer):
                  '-device', 'virtio-serial-pci',
                  '-chardev', 'socket,id=control,path=/run/mpkg-fixture/g.sock,server=on,wait=off',
                  '-device', 'virtserialport,chardev=control,name=org.mpkg.fixture.control']
+    if inputs:
+        arguments += ['-drive', 'if=none,id=inputs,format=raw,readonly=on,file=/run/mpkg-fixture/inputs.img',
+                      '-device', 'virtio-blk-pci,drive=inputs,serial=mpkgin'+uuid.UUID(identity['guest_id']).hex[:14]]
     if installer:
         arguments += ['-drive', 'if=none,id=cd,format=raw,readonly=on,media=cdrom,file=/run/mpkg-fixture/installer.iso',
                       '-device', 'ide-cd,drive=cd', '-kernel', '/run/mpkg-fixture/vmlinuz',
@@ -138,7 +141,14 @@ def start(installer):
                 if not path.is_socket() or path.is_symlink():
                     raise ValueError('unexpected existing VM socket path')
                 path.unlink()
-        command = sandbox_command(qemu_arguments(identity, installer), include_iso=installer)
+        inputs = (VM/'inputs-verification.json').exists()
+        if inputs:
+            proof=json.loads(runner.regular_file(VM/'inputs-verification.json').read_text())
+            image=runner.regular_file(VM/'inputs.img')
+            if (proof['guest_id']!=identity['guest_id'] or image.stat().st_size!=proof['disk_bytes']
+                    or runner.sha256(image)!=proof['sha256']):
+                raise ValueError('read-only guest input disk does not match its binding')
+        command = sandbox_command(qemu_arguments(identity, installer, inputs), include_iso=installer)
         print(json.dumps({'guest_id':identity['guest_id'],'boot':'installer' if installer else 'disk',
                           'host_shared_mounts_in_guest':False,'inbound_forwarding':False}),flush=True)
         result = subprocess.run(command, env=runner.SAFE_ENV)
@@ -182,7 +192,7 @@ def console(script=None, seconds=10):
             if len(data)>262144:raise ValueError('console script exceeds input bound')
             encoded=base64.b64encode(data).decode()
             chunks='\n'.join(encoded[i:i+76] for i in range(0,len(encoded),76))
-            command="\nstty -echo\nbase64 -d > /run/mpkg-fixture-input.sh <<'MPKG_INPUT'\n"+chunks+"\nMPKG_INPUT\nbash /run/mpkg-fixture-input.sh; printf '\\nMPKG_CONSOLE_EXIT=%s\\n' \"$?\"\nstty echo\n"
+            command="\nstty -echo\nbase64 -d > /run/mpkg-fixture-input.sh <<'MPKG_INPUT'\n"+chunks+"\nMPKG_INPUT\nMPKG_GUEST_ID="+vm_identity()['guest_id']+" bash /run/mpkg-fixture-input.sh; printf '\\nMPKG_CONSOLE_EXIT=%s\\n' \"$?\"\nstty echo\n"
             sock.sendall(command.encode())
         end=time.monotonic()+seconds;data=bytearray()
         while time.monotonic()<end and len(data)<262144:

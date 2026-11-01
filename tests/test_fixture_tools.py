@@ -5,6 +5,9 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+import os
+import subprocess
+import sys
 from unittest import mock
 from types import SimpleNamespace
 
@@ -34,7 +37,7 @@ class FixtureExtractionTests(unittest.TestCase):
 
     def test_escape_and_special_members_are_rejected_before_writes(self):
         cases = [('..','0',''), ('/outside','0',''), ('usr/link','2','../../outside'),
-                 ('usr/link','2','/outside'), ('usr/link','1','../outside'), ('dev/a','3','')]
+                 ('usr/link','2','/../outside'), ('usr/link','1','../outside'), ('dev/a','3','')]
         for name, kind, target in cases:
             with self.subTest(name=name, kind=kind), tempfile.TemporaryDirectory() as tmp:
                 archive = self.archive([('safe', tarfile.REGTYPE, b'unchanged'),
@@ -61,6 +64,17 @@ class FixtureExtractionTests(unittest.TestCase):
             self.assertEqual((root/'usr/bin/tool').stat().st_mode & 0o7777,0o755)
             self.assertEqual((root/'usr/bin/alias').read_bytes(),b'ok')
 
+    def test_package_absolute_symlink_is_rebased_inside_private_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp)/'root'
+            archive=self.archive([('usr/share/doc/xz/COPYING',tarfile.REGTYPE,b'license'),
+                                  ('usr/share/licenses/xz/COPYING',tarfile.SYMTYPE,'/usr/share/doc/xz/COPYING')])
+            RUNNER.extract_tar(archive,root)
+            link=root/'usr/share/licenses/xz/COPYING'
+            self.assertFalse(Path(link.readlink()).is_absolute())
+            self.assertEqual(link.read_bytes(),b'license')
+            self.assertTrue(link.resolve().is_relative_to(root))
+
     def test_cache_paths_and_writes_reject_existing_symlinks(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);(root/'alias').symlink_to(root,target_is_directory=True)
@@ -84,8 +98,8 @@ class FixtureTrustTests(unittest.TestCase):
             result=SimpleNamespace(returncode=2,stderr=b'explicit failure')
             with mock.patch.object(RUNNER,'KEYRINGS',keys), mock.patch.object(RUNNER,'run_gpg',return_value=result):
                 with self.assertRaises(RuntimeError):RUNNER.trust_home(cache)
-            self.assertFalse((root/'fgpg').exists())
-            diagnostics=list(root.glob('g*/failed-step-0.txt'))
+            self.assertFalse((root/'g').exists())
+            diagnostics=list(root.glob('gpg-failed-*/failed-step-0.txt'))
             self.assertEqual(len(diagnostics),1)
             self.assertEqual(diagnostics[0].read_bytes(),b'explicit failure')
 
@@ -101,6 +115,35 @@ class FixtureTrustTests(unittest.TestCase):
                 result=SimpleNamespace(returncode=0,stdout=(valid+f'[GNUPG:] {trust} 0 pgp\n').encode())
                 with mock.patch.object(RUNNER,'KEYRINGS',root),mock.patch.object(RUNNER,'run_gpg',return_value=result):
                     with self.assertRaises(ValueError):RUNNER.verify_signature(root,artifact,signature)
+
+
+class FixtureGuestBoundaryTests(unittest.TestCase):
+    def test_bootstrap_rejects_unbound_host_before_any_mutation(self):
+        script=Path(__file__).resolve().parents[1]/'scripts/fixture/guest-bootstrap.sh'
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);bin_dir=root/'bin';bin_dir.mkdir();marker=root/'mutation'
+            for name in ('mount','sfdisk','mkfs.fat','mkfs.ext4','pacstrap','pacman-key','arch-chroot'):
+                stub=bin_dir/name
+                stub.write_text('#!/bin/sh\nprintf forbidden > "$MPKG_TEST_MUTATION"\nexit 99\n')
+                stub.chmod(0o755)
+            env={'PATH':str(bin_dir)+':/usr/bin:/bin','MPKG_TEST_MUTATION':str(marker),
+                 'MPKG_GUEST_ID':'00000000-0000-4000-8000-000000000000'}
+            result=subprocess.run(['/usr/bin/bash',str(script)],env=env,capture_output=True,timeout=10)
+            self.assertNotEqual(result.returncode,0)
+            self.assertFalse(marker.exists())
+
+    def test_qemu_options_expose_only_bound_virtual_disks_and_private_channels(self):
+        sys.modules.setdefault('runner',RUNNER)
+        spec=importlib.util.spec_from_file_location('fixture_vm',Path(__file__).resolve().parents[1]/'scripts/fixture/vm.py')
+        vm=importlib.util.module_from_spec(spec);spec.loader.exec_module(vm)
+        identity={'guest_id':'00000000-0000-4000-8000-000000000000','disk_serial':'mpkg0000000000004000'}
+        args=vm.qemu_arguments(identity,True,True)
+        joined=' '.join(args)
+        for forbidden in ('hostfwd','-virtfs','-fsdev','/dev/kvm','docker.sock','-daemonize'):
+            self.assertNotIn(forbidden,joined)
+        self.assertIn('dump-guest-core=off',joined)
+        self.assertIn('readonly=on,file=/run/mpkg-fixture/inputs.img',joined)
+        self.assertEqual(args[args.index('-uuid')+1],identity['guest_id'])
 
 
 if __name__ == '__main__':unittest.main()

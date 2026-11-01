@@ -29,8 +29,17 @@ an unqualified successful `gpgv` result as sufficient.
 and sidecar signature, after checking its frozen size and SHA-256.
 `runner.py extract` rechecks every archive hash/signature, validates tar
 paths/types and confines writes to a fresh private runner tree. It never
-runs package scripts. Traversal, absolute links, escaping links, special
-files, existing destination symlinks and file collisions fail closed.
+runs package scripts. Traversal, escaping links, special files, existing destination symlinks
+and file collisions fail closed. Absolute package symlink targets are
+converted to relative links under the private root; the final complete
+link graph must remain confined there before execution is enabled.
+
+`native.py acquire` obtains both frozen native sets with the same
+hash/size/signature checks. `inputs.py` rechecks those artifacts and
+builds an ext4 input disk as a fresh regular file using `mkfs.ext4 -d`;
+it uses no host mount, loop or NBD device. The VM attaches the resulting
+hash/UUID-bound image read-only. Its baseline list contains exactly the
+207 selected packages; additional proof/update artifacts stay uninstalled.
 
 ## Private execution
 
@@ -49,9 +58,13 @@ is passed into the guest. The guest can use user-mode outbound networking.
 
 `vm.py status` verifies the QMP UUID before reporting state. The bounded
 `console` operation observes the independent serial console; an optional
-`--script` transfers a reviewed worktree shell script. Destructive guest
-bootstrap must separately verify the unique DMI UUID and disposable disk
-serial/size. A detected virtual machine alone is insufficient authority.
+`--script` transfers a reviewed worktree shell script. The reviewed
+`guest-bootstrap.sh` independently verifies DMI UUID, target disk serial,
+40 GiB size and blank/unmounted state, plus input disk serial, manifest
+identity and payload hashes, before partitioning. It installs the exact
+baseline with required local package signatures, restores installation
+reasons and verifies the six initial absences. A detected virtual machine
+alone is insufficient authority.
 
 Relevant tool behavior is documented by the authoritative
 [bubblewrap manual](https://man.archlinux.org/man/bwrap.1.en),
