@@ -42,7 +42,7 @@ def require_yay():
 def install(name, force=False):
     # Local PKGBUILDs are not AUR checkouts: yay -B may try to Git-merge them.
     fields = metadata(name)
-    deps = dependencies(fields) + fields.get(f"depends_{os.uname().machine}", [])
+    deps = dependencies(fields)
     if deps:
         missing = run("pacman", "-T", *deps, capture=True, check=False)
         if missing.returncode not in (0, 127):
@@ -64,8 +64,10 @@ def metadata(name):
 
 
 def dependencies(fields, include_arch=False):
+    """Select active requirements, or every architecture for inspection."""
+    active_arch = f"depends_{os.uname().machine}"
     return [value for key, values in fields.items()
-            if key == "depends" or (include_arch and key.startswith("depends_"))
+            if key in ("depends", active_arch) or (include_arch and key.startswith("depends_"))
             for value in values]
 
 

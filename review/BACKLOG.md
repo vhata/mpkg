@@ -18,12 +18,6 @@ Only work promoted from whole-codebase reviews belongs here. Every entry is read
   - Starting point: `mpkg` functions `literal_dependencies` and `update`.
   - Cover parentheses in array comments and assignment-shaped lines in multiline descriptions. Preserve all dependencies and unrelated source, validate output syntax, and reject unsupported input before writing without executing dependency expressions.
 
-- [NATIVE] `refresh-active-architecture-dependencies` — **Refresh the complete dependency set for the active architecture.** Matching package versions must not hide missing architecture-specific dependencies.
-  - Source: [full review](2026-10-31-2121-full.md), 2026-10-31.
-  - Findings: `refresh-omits-architecture-dependencies`
-  - Starting point: `mpkg` functions `dependencies`, `install`, and `refresh`.
-  - Exercise architecture-only and mixed dependency lists with a matching installed package version; assert checking, installation and marking, while excluding other architectures.
-
 - [TOOLING] `isolate-refresh-test-call-evidence` — **Assert each refresh invocation against its own command log.** Earlier builds must not satisfy later rebuild assertions.
   - Source: [full review](2026-10-31-2121-full.md), 2026-10-31.
   - Findings: `refresh-test-reuses-command-log`
