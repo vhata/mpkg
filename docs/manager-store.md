@@ -27,7 +27,19 @@ That installed recorder and policy dispatcher are not provided here.
 
 SQLite 3.37 or newer is required for the strict schema. The store checks
 its exact schema, application/version identifiers, host identity and
-database integrity. It uses rollback journaling with `DELETE`,
+database integrity. On open and inside each read/write transaction, it
+also validates the complete immutable history: exact source/model
+snapshots, contiguous decision revisions and UTC timestamps, stable
+UUIDs, host-bound physical keys and accepted resource transitions.
+Definitions, retained requirements and relinquishments must agree with
+their decision snapshots and previous accepted facts. Protected capture
+identities, links and keyed tokens are checked privately. Malformed
+records fail with `store_corrupt` before projections or new writes;
+schema validity alone cannot establish accepted authority. This is a
+corruption check, not authentication against an administrator who owns
+the store. Complete-history validation is intentionally unoptimized.
+
+The store uses rollback journaling with `DELETE`,
 `synchronous=EXTRA`, foreign keys and short `BEGIN IMMEDIATE` writes.
 Settings are read back because SQLite silently ignores unknown pragmas.
 `EXTRA` adds synchronization of the directory after rollback-journal
@@ -120,7 +132,8 @@ what to do next; do not blindly retry. No external effect is invoked.
 
 The focused tests cover real temporary SQLite transactions, competing
 revisions, failure before/after commit, storage exhaustion, retained
-adoptions, exact source snapshots and secret-free public projections.
+adoptions, exact source snapshots, semantic corruption and secret-free
+public projections.
 They do not establish power-loss durability, encrypted backup, restored
 authority recovery, an installed privilege boundary or A1–A12 product
 acceptance. Attempts, action execution and plan storage are separate

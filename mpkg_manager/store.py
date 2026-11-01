@@ -363,7 +363,91 @@ class HostStore:
             _fail("store_host_mismatch")
         if rows[0][1] != SCHEMA_VERSION or rows[0][3] != 32:
             _fail("store_corrupt")
-        self._engine_aliases = _aliases(_decode(rows[0][2]))
+        try:
+            self._engine_aliases = _aliases(_decode(rows[0][2]))
+            self._verify_records()
+        except (StoreError, DeclarationError, TypeError, ValueError, KeyError,
+                OverflowError, RecursionError):
+            raise StoreError("store_corrupt") from None
+
+    def _verify_records(self):
+        """Replay immutable facts; structural SQLite integrity is insufficient."""
+        snapshots = {row[0]: self._load_snapshot(row[0])
+                     for row in self._db.execute("SELECT id FROM snapshots")}
+        used_snapshots = set()
+        previous = {}
+        last_snapshot = None
+        decisions = self._db.execute("SELECT * FROM decisions ORDER BY revision").fetchall()
+        for expected_revision, row in enumerate(decisions, 1):
+            revision, parent, kind, snapshot_id, created_at = row
+            if (revision != expected_revision
+                    or parent != (revision - 1 if revision > 1 else None)):
+                _fail("store_corrupt")
+            timestamp = datetime.fromisoformat(created_at)
+            if (timestamp.tzinfo != timezone.utc
+                    or timestamp.isoformat(timespec="microseconds") != created_at):
+                _fail("store_corrupt")
+            declaration = snapshots[snapshot_id]
+            used_snapshots.add(snapshot_id)
+            self._check_bound_identities(declaration)
+            model = declaration.model
+            resources = {item["id"]: item for item in model["resources"]}
+            changed = self._db.execute("SELECT stable_id,logical_id,physical_key,definition,requirements,active "
+                                       "FROM resources WHERE revision=?", (revision,)).fetchall()
+            if (kind == "intent" and changed) or (kind != "intent" and not changed):
+                _fail("store_corrupt")
+            if kind == "relinquish" and snapshot_id != last_snapshot:
+                _fail("store_corrupt")
+            updates = {}
+            logical_ids = set()
+            for stable_id, logical_id, key, definition, requirements, active in changed:
+                _host_id(stable_id)  # Stable identities use the same canonical UUID format.
+                item = {"stable_id": stable_id, "logical_id": logical_id,
+                        "physical_key": _decode(key), "definition": _decode(definition),
+                        "requirements": _decode(requirements), "active": bool(active)}
+                if logical_id in logical_ids:
+                    _fail("store_corrupt")
+                logical_ids.add(logical_id)
+                if kind == "adopt":
+                    expected = self._adoption_record(model, resources[logical_id], list(previous.values()))
+                    if expected["stable_id"] is None:
+                        if stable_id in previous:
+                            _fail("store_corrupt")
+                        expected["stable_id"] = stable_id
+                elif kind == "relinquish":
+                    if stable_id not in previous or not previous[stable_id]["active"]:
+                        _fail("store_corrupt")
+                    expected = previous[stable_id] | {"active": False}
+                else:
+                    _fail("store_corrupt")
+                # Byte equality also distinguishes booleans from integers and
+                # rejects extra fields or normalization of corrupted records.
+                if _json(item) != _json(expected):
+                    _fail("store_corrupt")
+                updates[stable_id] = item
+            previous.update(updates)
+            last_snapshot = snapshot_id
+        if used_snapshots != set(snapshots):
+            _fail("store_corrupt")
+        self._verify_protected_records({row[0]: row[2] for row in decisions})
+
+    def _verify_protected_records(self, decisions):
+        key = self._db.execute("SELECT private_key FROM host").fetchone()[0]
+        protected = set()
+        for reference, raw, identity, purpose, token in self._db.execute("SELECT * FROM protected_inputs"):
+            _host_id(reference)
+            _captures([ProtectedInput("validation", raw, _decode(identity), purpose)])
+            if not hmac.compare_digest(token, hmac.digest(key, identity + b"\0" + raw, "sha256")):
+                _fail("store_corrupt")
+            protected.add(reference)
+        used = set()
+        for revision, name, reference in self._db.execute("SELECT * FROM decision_inputs"):
+            if (revision not in decisions or decisions[revision] == "relinquish"
+                    or not _NAME.fullmatch(name) or reference in used or reference not in protected):
+                _fail("store_corrupt")
+            used.add(reference)
+        if used != protected:
+            _fail("store_corrupt")
 
     @property
     def engine_aliases(self):
@@ -423,6 +507,7 @@ class HostStore:
             with self._locked(exclusive=True):
                 self._db.execute("BEGIN IMMEDIATE")
                 try:
+                    self._verify_schema()
                     if self._revision() != expected_revision:
                         _fail("revision_conflict")
                     yield
@@ -461,6 +546,7 @@ class HostStore:
             with self._locked():
                 self._db.execute("BEGIN")
                 try:
+                    self._verify_schema()
                     yield
                 finally:
                     if self._db.in_transaction:
@@ -574,6 +660,40 @@ class HostStore:
         except DeclarationError:
             raise StoreError("consumer_requirement_conflict") from None
 
+    def _adoption_record(self, model, resource, existing):
+        key = self._physical(resource)
+        matching = next((item for item in existing if item["physical_key"] == key), None)
+        logical = next((item for item in existing
+                        if item["logical_id"] == resource["id"] and item["active"]), None)
+        if logical and logical["physical_key"] != key:
+            _fail("resource_identity_conflict")
+        if matching and matching["definition"]["kind"] != resource["kind"]:
+            _fail("resource_identity_conflict")
+        if (matching and matching["active"]
+                and set(matching["definition"]["manage"]) != set(resource["manage"])):
+            _fail("authority_change_requires_decision")
+        requirements = matching["requirements"][:] if matching else []
+        known = {(item["consumer"], item["property"]): item for item in requirements}
+        for component in model["components"]:
+            for requirement in component["requirements"]:
+                if requirement["resource"] != resource["id"]:
+                    continue
+                requirement = {"consumer": component["id"], "property": requirement["property"],
+                               "value": requirement["value"]}
+                at = (requirement["consumer"], requirement["property"])
+                if at in known and _json(known[at]["value"]) != _json(requirement["value"]):
+                    _fail("consumer_requirement_conflict")
+                if at not in known:
+                    known[at] = requirement
+                    requirements.append(requirement)
+        if matching:
+            resource = resource | {"consumers": list(dict.fromkeys(
+                matching["definition"]["consumers"] + resource["consumers"]))}
+        self._validate_retained(model, resource, requirements)
+        return {"stable_id": matching["stable_id"] if matching else None,
+                "logical_id": resource["id"], "physical_key": key,
+                "definition": resource, "requirements": requirements, "active": True}
+
     def adopt(self, declaration, expected_revision, resource_ids, *, protected_inputs=()):
         """Explicitly accept selected identities/authority; observations stay unknown."""
         declaration, captures = _declaration(declaration), _captures(protected_inputs)
@@ -586,49 +706,16 @@ class HostStore:
         resources = {item["id"]: item for item in model["resources"]}
         if not set(resource_ids) <= set(resources):
             _fail("resource_missing")
-        selected = [(resources[item], self._physical(resources[item])) for item in resource_ids]
         with self._write(expected_revision):
             existing = self._current_resources()
             result = self._decision("adopt", declaration, expected_revision + 1, captures)
-            for resource, key in selected:
-                matching = next((item for item in existing if item["physical_key"] == key), None)
-                logical = next((item for item in existing if item["logical_id"] == resource["id"] and item["active"]), None)
-                if logical and logical["physical_key"] != key:
-                    _fail("resource_identity_conflict")
-                if matching and matching["definition"]["kind"] != resource["kind"]:
-                    _fail("resource_identity_conflict")
-                if (matching and matching["active"]
-                        and set(matching["definition"]["manage"]) != set(resource["manage"])):
-                    _fail("authority_change_requires_decision")
-                requirements = matching["requirements"][:] if matching else []
-                known = {(item["consumer"], item["property"]): item for item in requirements}
-                for component in model["components"]:
-                    for requirement in component["requirements"]:
-                        if requirement["resource"] != resource["id"]:
-                            continue
-                        requirement = {"consumer": component["id"], "property": requirement["property"],
-                                       "value": requirement["value"]}
-                        at = (requirement["consumer"], requirement["property"])
-                        if at in known and _json(known[at]["value"]) != _json(requirement["value"]):
-                            _fail("consumer_requirement_conflict")
-                        if at not in known:
-                            known[at] = requirement
-                            requirements.append(requirement)
-                values = {}
-                for requirement in requirements:
-                    prop, value = requirement["property"], _json(requirement["value"])
-                    if ((prop in values and values[prop] != value)
-                            or (prop in resource["desired"] and _json(resource["desired"][prop]) != value)):
-                        _fail("consumer_requirement_conflict")
-                    values[prop] = value
-                if matching:
-                    resource = resource | {"consumers": list(dict.fromkeys(
-                        matching["definition"]["consumers"] + resource["consumers"]))}
-                self._validate_retained(model, resource, requirements)
-                stable_id = matching["stable_id"] if matching else str(uuid.uuid4())
+            for identity in resource_ids:
+                item = self._adoption_record(model, resources[identity], existing)
+                stable_id = item["stable_id"] or str(uuid.uuid4())
                 self._db.execute("INSERT INTO resources VALUES(?,?,?,?,?,?,1)",
-                                 (stable_id, result["revision"], resource["id"], _json(key),
-                                  _json(resource), _json(requirements)))
+                                 (stable_id, result["revision"], item["logical_id"],
+                                  _json(item["physical_key"]), _json(item["definition"]),
+                                  _json(item["requirements"])))
         return result
 
     def relinquish(self, resource_ids, expected_revision):

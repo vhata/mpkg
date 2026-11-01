@@ -69,6 +69,24 @@ class HostStoreTests(unittest.TestCase):
                                                p.stat().st_mtime_ns, stat.S_IMODE(p.stat().st_mode))
                 for p in self.root.rglob("*")}
 
+    def corrupt_row(self, table, column, value, where):
+        # Preserve the exact schema so these fixtures test semantic corruption,
+        # independently of schema checks and immutable-record triggers.
+        with sqlite3.connect(self.directory / "state.sqlite3") as db:
+            trigger = table + "_update"
+            sql = db.execute("SELECT sql FROM sqlite_schema WHERE name=?", (trigger,)).fetchone()[0]
+            db.execute("DROP TRIGGER " + trigger)
+            db.execute(f"UPDATE {table} SET {column}=? WHERE {where}", (value,))
+            db.execute(sql)
+
+    def assert_corrupt_store_refused(self, store, snapshot_id):
+        before = self.inventory()
+        for callback in (store.current, store.history, lambda: store.snapshot(snapshot_id),
+                         lambda: store.record_intent(self.declaration, 2),
+                         lambda: self.open(readonly=True), self.open):
+            self.assert_error("store_corrupt", callback)
+        self.assertEqual(self.inventory(), before)
+
     def test_create_is_explicit_private_and_binds_host(self):
         store = self.create()
         self.assertEqual(store.current(), {"host_id": self.host, "revision": 0,
@@ -221,6 +239,82 @@ class HostStoreTests(unittest.TestCase):
         store.close()
         (self.directory / "state.sqlite3").write_bytes(b"PRIVATE-CORRUPT-DATABASE")
         self.assert_error("store_unavailable", self.open)
+
+    def test_semantically_corrupt_authority_rows_fail_before_projection_or_write(self):
+        definition = self.declaration.model["resources"][0]
+        cases = [
+            ("stable_id", "not-a-uuid"),
+            ("physical_key", json.dumps(["wrong-host", "package", "git"], separators=(",", ":")).encode()),
+            ("physical_key", json.dumps([self.host, "package", "python"], separators=(",", ":")).encode()),
+            ("definition", json.dumps(definition | {"manage": []}, sort_keys=True, separators=(",", ":")).encode()),
+            ("definition", b'{}'),
+            ("requirements", b'{}'),
+            ("requirements", b'[{"consumer":"invented","property":"present","value":true}]'),
+            ("logical_id", "invented"),
+            ("active", 0),
+        ]
+        for number, (column, value) in enumerate(cases):
+            with self.subTest(column=column, case=number):
+                self.directory = self.root / str(number)
+                store = self.create()
+                snapshot = store.adopt(self.declaration, 0, ["git"])["snapshot_id"]
+                store.adopt(self.declaration, 1, ["git"])
+                self.corrupt_row("resources", column, value, "revision=1")
+                self.assert_corrupt_store_refused(store, snapshot)
+
+    def test_semantically_corrupt_history_and_snapshots_fail_closed(self):
+        cases = [
+            ("decisions", "revision", 100, "revision=2"),
+            ("decisions", "parent_revision", None, "revision=2"),
+            ("decisions", "created_at", "not-a-time", "revision=1"),
+            ("decisions", "created_at", "2026-11-01T00:00:00.000000", "revision=1"),
+            ("decisions", "kind", "adopt", "revision=2"),
+            ("decisions", "kind", "intent", "revision=1"),
+            ("snapshots", "canonical", b'{}', "1=1"),
+            ("snapshots", "source", self.declaration.source_bytes + b"# altered", "1=1"),
+            ("snapshots", "digest", "a" * 64, "1=1"),
+        ]
+        for number, (table, column, value, where) in enumerate(cases):
+            with self.subTest(table=table, column=column, case=number):
+                self.directory = self.root / str(number)
+                store = self.create()
+                snapshot = store.adopt(self.declaration, 0, ["git"])["snapshot_id"]
+                store.record_intent(load_declaration(EMPTY), 1)
+                self.corrupt_row(table, column, value, where)
+                self.assert_corrupt_store_refused(store, snapshot)
+
+    def test_corrupt_protected_capture_relations_and_tokens_fail_closed(self):
+        for number, (table, column, value) in enumerate([
+            ("protected_inputs", "token", b"x" * 32),
+            ("protected_inputs", "source_identity", b'{}'),
+            ("protected_inputs", "purpose", ""),
+            ("decision_inputs", "name", "invalid name"),
+            ("decision_inputs", "protected_id", "missing-reference"),
+        ]):
+            with self.subTest(table=table, column=column):
+                self.directory = self.root / str(number)
+                store = self.create()
+                captured = self.capture()
+                snapshot = store.record_intent(self.declaration, 0, protected_inputs=[captured])["snapshot_id"]
+                store.record_intent(load_declaration(EMPTY), 1)
+                self.corrupt_row(table, column, value, "1=1")
+                self.assert_corrupt_store_refused(store, snapshot)
+                self.assert_error("store_corrupt", lambda: store.compare_protected(
+                    1, captured.name, captured.raw, captured.source_identity))
+
+    def test_replay_retains_renamed_relinquished_and_readopted_resources(self):
+        store = self.create()
+        store.adopt(self.declaration, 0, ["git"])
+        stable = store.current()["resources"][0]["stable_id"]
+        store.relinquish([stable], 1)
+        store.adopt(package(logical="source-control", manage=False), 2, ["source-control"])
+        store.record_intent(load_declaration(EMPTY), 3)
+        store.close()
+        resource = self.open(readonly=True).current()["resources"][0]
+        self.assertEqual(resource["stable_id"], stable)
+        self.assertEqual(resource["logical_id"], "source-control")
+        self.assertEqual(resource["management"], "accepted")
+        self.assertTrue(resource["pending_disposition"])
 
     def test_hot_journal_or_wal_requires_explicit_recovery_and_is_not_changed(self):
         store = self.create()
