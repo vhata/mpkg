@@ -360,3 +360,9 @@ are durable before atomic publication; their directory entries are also
 synced. The operation preserves all existing image and failed-attempt
 evidence and never starts Docker or executes variant setup. Save a new
 stopped checkpoint after successful delivery before running any case.
+
+`install-protected-output` adds only the fixed reviewed private-output
+proof after binding its complete `core.py` and `run.py` import dependencies.
+It retains the existing absent-target, guest/disk/root checks and does not
+execute the proof. The separate fixed wrapper owns its synthetic private
+Git and child-process tests; it performs no service or Docker operations.

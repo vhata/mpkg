@@ -516,7 +516,7 @@ class FixtureProofAdditionTests(unittest.TestCase):
             root=Path(tmp);(root/'scripts/proofs').mkdir(parents=True)
             for name,filename in [('docker-ready','docker_ready.py'),('docker-baseline','docker_baseline.py'),
                                   ('native-conflict','native_conflict.py'),('service-environment','service_environment.py'),
-                                  ('docker-resume','docker_resume.py'),('docker-diagnostic-resume','docker_diagnostic_resume.py'),('docker-supplement-resume','docker_supplement_resume.py'),
+                                  ('docker-resume','docker_resume.py'),('docker-diagnostic-resume','docker_diagnostic_resume.py'),('docker-supplement-resume','docker_supplement_resume.py'),('protected-output','protected_output.py'),
                                   ('docker-variant-plan','docker_variant_plan.py'),('docker-variants','docker_variants.py'),('docker-variant-experiment','docker_variant_experiment.py'),('docker-variant-retire','docker_variant_retire.py'),('account-defaults','account_defaults.py'),
                                   ('native-service-recover','native_service_recover.py'),('native-service-observe','native_service_observe.py')]:
                 (root/'scripts/proofs'/filename).write_bytes(b'changed reviewed source')
@@ -536,6 +536,7 @@ class FixtureProofAdditionTests(unittest.TestCase):
                   'docker-variant-retire':('docker_variant_retire.py','ff914917ca99021cfc6e89e0aff48a3c7be6b27c3d7ba0c204e2c3d16d00a462'),
                   'docker-diagnostic-resume':('docker_diagnostic_resume.py','4966aaa9d517ba4e4a7e5104f6a31e202bfecaa0f1a3636e5b2bb22f9b3e9a2e'),
                   'docker-supplement-resume':('docker_supplement_resume.py','f1c93ca71799b73a66142238978ea257a75a036f0ceb6d2cd547efd5c8fbec1b'),
+                  'protected-output':('protected_output.py','cbe4f3081f243b7e4509f0d99d20aff9de07752bc074c7f633270bffc50ef510'),
                   'docker-resume':('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05'),
                   'docker-ready':('docker_ready.py','5efbc61753dbf873d26801f760c3e47f5a48831b1c3c0b02ba43a3c7c7e08a07'),
                   'docker-baseline':('docker_baseline.py','f6af324e2d0844a6159f0e6dcf1e72c766679953dc4e4ec5c093ff42271bbeca'),
@@ -571,7 +572,7 @@ class FixtureProofAdditionTests(unittest.TestCase):
 
     def test_variant_additions_bind_every_direct_installed_module_dependency(self):
         vm=self.load();root=Path(__file__).resolve().parents[1]/'scripts/proofs'
-        for name,filename in [('docker-supplement-resume','docker_supplement_resume.py'),('docker-variant-plan','docker_variant_plan.py'),('docker-variants','docker_variants.py'),('docker-variant-experiment','docker_variant_experiment.py'),('docker-variant-retire','docker_variant_retire.py')]:
+        for name,filename in [('docker-supplement-resume','docker_supplement_resume.py'),('protected-output','protected_output.py'),('docker-variant-plan','docker_variant_plan.py'),('docker-variants','docker_variants.py'),('docker-variant-experiment','docker_variant_experiment.py'),('docker-variant-retire','docker_variant_retire.py')]:
             program=ast.parse(vm.proof_install_payload(name))
             dependencies=next(n.value for n in ast.walk(program) if isinstance(n,ast.Assign)
                               and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='dependencies')

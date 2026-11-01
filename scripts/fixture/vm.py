@@ -236,6 +236,7 @@ def proof_install_payload(name):
         'docker-resume':('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05'),
         'docker-diagnostic-resume':('docker_diagnostic_resume.py','4966aaa9d517ba4e4a7e5104f6a31e202bfecaa0f1a3636e5b2bb22f9b3e9a2e'),
         'docker-supplement-resume':('docker_supplement_resume.py','f1c93ca71799b73a66142238978ea257a75a036f0ceb6d2cd547efd5c8fbec1b'),
+        'protected-output':('protected_output.py','cbe4f3081f243b7e4509f0d99d20aff9de07752bc074c7f633270bffc50ef510'),
         'docker-variant-plan':('docker_variant_plan.py','1a0202a55e0ff303c07c67321b014fd7174591740a54d7066f05bbd0612c12eb'),
         'docker-variants':('docker_variants.py','3e1f6aae53a17fc86fcb4ca8a1a2a351a5a3eb6c0c4fc4b13b4a25699ef95af8'),
         'docker-variant-experiment':('docker_variant_experiment.py','041cf5407adec454905b1929909b4dd020ad6c862eceb53d29ef9c464bdda3f5'),
@@ -289,6 +290,10 @@ def install():
     guest=require_guest(os.environ.get('MPKG_GUEST_ID'))
     os.umask(0o077)
     dependencies={
+        'protected_output.py':[
+            ('core.py','0b13e3dc39d3a985ff7b8b3fd9885f3b09c75444854b41f775dd953b42d0167a'),
+            ('run.py','adcd36404cb43e8bcdc0189eab6c98997ef8ea281461e54ba5aa3524dba8674e'),
+        ],
         'docker_supplement_resume.py':[
             ('core.py','0b13e3dc39d3a985ff7b8b3fd9885f3b09c75444854b41f775dd953b42d0167a'),
             ('docker_diagnostic_resume.py','4966aaa9d517ba4e4a7e5104f6a31e202bfecaa0f1a3636e5b2bb22f9b3e9a2e'),
@@ -547,7 +552,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','install-docker-diagnostic-resume','install-docker-supplement-resume','install-docker-variant-plan','install-docker-variants','install-docker-variant-experiment','install-docker-variant-retire','prepare-image-attestations','prepare-image-attestations-offline','replace-native-service','replace-docker-baseline','replace-docker-variants','replace-native-verifier'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-native-service-observe','install-docker-resume','install-docker-diagnostic-resume','install-docker-supplement-resume','install-protected-output','install-docker-variant-plan','install-docker-variants','install-docker-variant-experiment','install-docker-variant-retire','prepare-image-attestations','prepare-image-attestations-offline','replace-native-service','replace-docker-baseline','replace-docker-variants','replace-native-verifier'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -574,6 +579,7 @@ def main():
     elif args.operation=='install-docker-resume':console(seconds=args.seconds,addition='docker-resume')
     elif args.operation=='install-docker-diagnostic-resume':console(seconds=args.seconds,addition='docker-diagnostic-resume')
     elif args.operation=='install-docker-supplement-resume':console(seconds=args.seconds,addition='docker-supplement-resume')
+    elif args.operation=='install-protected-output':console(seconds=args.seconds,addition='protected-output')
     elif args.operation=='install-docker-variant-plan':console(seconds=args.seconds,addition='docker-variant-plan')
     elif args.operation=='install-docker-variants':console(seconds=args.seconds,addition='docker-variants')
     elif args.operation=='install-docker-variant-experiment':console(seconds=args.seconds,addition='docker-variant-experiment')
