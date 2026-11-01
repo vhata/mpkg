@@ -93,7 +93,9 @@ def assert_effective(raw, role, root):
     effective = {}
     for key, separator, value in pairs:
         if separator:
-            effective.setdefault(key, []).append(value)
+            # OpenSSH 10.6 prints canonical CamelCase keywords. Values remain
+            # exact and case-sensitive; duplicate keyword spellings accumulate.
+            effective.setdefault(key.lower(), []).append(value)
     name, _, port, _ = ROLES[role]
     expected = {'port': str(port), 'addressfamily': 'inet',
                 'listenaddress': '127.0.0.1:' + str(port),

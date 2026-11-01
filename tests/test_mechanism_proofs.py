@@ -477,6 +477,18 @@ class FixtureAccountTests(unittest.TestCase):
 
 
 class NativeServiceTests(unittest.TestCase):
+    def test_effective_keywords_allow_canonical_case_but_values_and_duplicates_stay_exact(self):
+        root = Path('/var/lib/mpkg-proofs/example/native-service')
+        raw = native_service.configuration('native', root).replace(
+            b'ListenAddress 127.0.0.1\n', b'ListenAddress 127.0.0.1:22222\n')
+        native_service.assert_effective(raw, 'native', root)
+        for changed in (raw + b'port 22222\n', raw + b'AllowUsers fixture-native\n',
+                        raw.replace(b'internal-sftp', b'INTERNAL-SFTP'),
+                        raw.replace(b'ForceCommand internal-sftp\n', b'ForceCommand internal-sftp \n')):
+            with self.subTest(raw=changed), self.assertRaisesRegex(
+                    native_service.Refused, 'effective_configuration_mismatch'):
+                native_service.assert_effective(changed, 'native', root)
+
     def test_effective_diagnostic_reports_whitespace_without_exposing_values(self):
         script = (PROOFS / 'guest-native-service-diagnostic.sh').read_text()
         embedded = script.split("<<'PY'\n", 1)[1].rsplit('\nPY\n', 1)[0]
