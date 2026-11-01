@@ -170,6 +170,12 @@ application/state paths. It preserves old bytes and receipts before atomic
 publication. It neither calls the helper nor contacts Docker. Neither
 pristine replacement route can resume a partially created native fixture.
 
+`vm.py install-native-service-recover` adds the separately guarded SSH
+continuation only when its exact existing native helper and account
+defaults dependency match. Installation neither replaces used code nor
+executes recovery. The continuation separately checks the observed partial
+state, preserves its prior unknown journal, and records its own attempt.
+
 The Docker resume addition only installs its helper. Its separate runtime
 entrypoint requires the successful initial engine/import evidence and
 exact image-only checkpoint bindings before starting that existing engine.

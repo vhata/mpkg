@@ -230,6 +230,7 @@ def proof_install_payload(name):
         'docker-ready':('docker_ready.py','5efbc61753dbf873d26801f760c3e47f5a48831b1c3c0b02ba43a3c7c7e08a07'),
         'service-environment':('service_environment.py','91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502'),
         'account-defaults':('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
+        'native-service-recover':('native_service_recover.py','f8e55069f53055d89c1603db90b5259e87b47129747d0bccf831053544828b3e'),
         'docker-baseline':('docker_baseline.py','f6af324e2d0844a6159f0e6dcf1e72c766679953dc4e4ec5c093ff42271bbeca'),
         'docker-resume':('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05'),
         'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b'),
@@ -281,11 +282,14 @@ def install():
     guest=require_guest(os.environ.get('MPKG_GUEST_ID'))
     os.umask(0o077)
     dependencies={
-        'docker_ready.py':('service_environment.py','91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502'),
-        'docker_baseline.py':('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
+        'docker_ready.py':[('service_environment.py','91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502')],
+        'docker_baseline.py':[('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532')],
+        'native_service_recover.py':[
+            ('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
+            ('native_service.py','645822526f899506a9f0b6e13c27945003b111ed6d9b065e1df992095acf5961'),
+        ],
     }
-    if ADDITION_FILENAME in dependencies:
-        dependency_name,dependency_hash=dependencies[ADDITION_FILENAME]
+    for dependency_name,dependency_hash in dependencies.get(ADDITION_FILENAME,[]):
         dependency=target_directory/dependency_name
         fd=os.open(dependency,os.O_RDONLY|os.O_NOFOLLOW)
         try:
@@ -411,7 +415,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-docker-resume','replace-native-service','replace-docker-baseline'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict','install-service-environment','install-account-defaults','install-native-service-recover','install-docker-resume','replace-native-service','replace-docker-baseline'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -433,6 +437,7 @@ def main():
     elif args.operation=='install-native-conflict':console(seconds=args.seconds,addition='native-conflict')
     elif args.operation=='install-service-environment':console(seconds=args.seconds,addition='service-environment')
     elif args.operation=='install-account-defaults':console(seconds=args.seconds,addition='account-defaults')
+    elif args.operation=='install-native-service-recover':console(seconds=args.seconds,addition='native-service-recover')
     elif args.operation=='install-docker-resume':console(seconds=args.seconds,addition='docker-resume')
     elif args.operation=='replace-native-service':console(seconds=args.seconds,replacement='native-service')
     elif args.operation=='replace-docker-baseline':console(seconds=args.seconds,replacement='docker-baseline')

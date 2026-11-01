@@ -371,7 +371,8 @@ class FixtureProofAdditionTests(unittest.TestCase):
             root=Path(tmp);(root/'scripts/proofs').mkdir(parents=True)
             for name,filename in [('docker-ready','docker_ready.py'),('docker-baseline','docker_baseline.py'),
                                   ('native-conflict','native_conflict.py'),('service-environment','service_environment.py'),
-                                  ('docker-resume','docker_resume.py'),('account-defaults','account_defaults.py')]:
+                                  ('docker-resume','docker_resume.py'),('account-defaults','account_defaults.py'),
+                                  ('native-service-recover','native_service_recover.py')]:
                 (root/'scripts/proofs'/filename).write_bytes(b'changed reviewed source')
                 with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(module,'qmp_query') as qmp:
                     with self.assertRaises(ValueError):module.console(addition=name)
@@ -380,6 +381,7 @@ class FixtureProofAdditionTests(unittest.TestCase):
     def test_each_generated_addition_binds_its_own_reviewed_bytes_and_filename(self):
         module=self.load()
         expected={'service-environment':('service_environment.py','91c819c3680eb4dae50458293e191bd36ebd2c39b439dd0122dc70928e83e502'),
+                  'native-service-recover':('native_service_recover.py','f8e55069f53055d89c1603db90b5259e87b47129747d0bccf831053544828b3e'),
                   'account-defaults':('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
                   'docker-resume':('docker_resume.py','94fb8f960ee6bae8d28a958f1b9c8a54f23d83d1d98f5f174fb79630073b5f05'),
                   'docker-ready':('docker_ready.py','5efbc61753dbf873d26801f760c3e47f5a48831b1c3c0b02ba43a3c7c7e08a07'),
@@ -396,6 +398,15 @@ class FixtureProofAdditionTests(unittest.TestCase):
                 self.assertEqual(assignments['digest'].value,digest)
                 self.assertEqual(assignments['target'].right.value,filename)
                 self.assertEqual(assignments['record'].right.value,name+'.json')
+
+    def test_recovery_addition_requires_both_reviewed_existing_dependencies(self):
+        vm=self.load()
+        program=ast.parse(vm.proof_install_payload('native-service-recover'))
+        dependencies=next(n.value for n in ast.walk(program) if isinstance(n,ast.Assign)
+                          and isinstance(n.targets[0],ast.Name) and n.targets[0].id=='dependencies')
+        self.assertEqual(ast.literal_eval(dependencies)['native_service_recover.py'],[
+            ('account_defaults.py','4d356ab3c41c8933e2030f20882ad25a3df142eb209cc5177c71f9a7b0991532'),
+            ('native_service.py','645822526f899506a9f0b6e13c27945003b111ed6d9b065e1df992095acf5961')])
 
     def test_generated_installer_publishes_once_without_following_existing_target(self):
         module=self.load()
