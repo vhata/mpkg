@@ -41,6 +41,7 @@ import docker_resume
 import account_defaults
 import native_service_recover
 import native_service_observe
+import docker_variant_plan
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -124,6 +125,61 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout)['status'], 'refused')
             self.assertEqual(result.stderr, '')
             self.assertEqual(list(Path(temporary).iterdir()), [])
+
+
+class DockerVariantPrimitiveTests(unittest.TestCase):
+    def test_wanted_tag_policy_is_distinct_from_frozen_older_execution(self):
+        allowed = docker_variant_plan.variant_plan('docker-update-allowed-tag')
+        exact = docker_variant_plan.variant_plan('docker-exact-digest')
+        self.assertEqual(allowed['resolved_sonarr_execution'], exact['resolved_sonarr_execution'])
+        self.assertEqual(allowed['wanted_declaration']['image'], 'lscr.io/linuxserver/sonarr:latest')
+        self.assertFalse(allowed['wanted_declaration']['exact_image'])
+        self.assertTrue(allowed['wanted_declaration']['updates_allowed'])
+        self.assertTrue(exact['wanted_declaration']['exact_image'])
+        self.assertNotEqual(exact['wanted_declaration']['image'], exact['accepted_update_candidate'])
+        self.assertTrue(exact['fresh_older_database_required'])
+
+    def test_variant_resources_and_consumers_are_explicit(self):
+        shared = docker_variant_plan.variant_plan('network-shared')
+        exclusive = docker_variant_plan.variant_plan('network-exclusive-delete')
+        self.assertEqual(set(shared['applications']), {'sonarr', 'radarr'})
+        self.assertEqual(set(exclusive['applications']), {'sonarr'})
+        source = docker_variant_plan.compose_document(shared, 'radarr')
+        self.assertTrue(source['networks']['fixture']['external'])
+        self.assertEqual(source['services']['radarr']['ports'][0]['host_ip'], '127.0.0.1')
+        volume = docker_variant_plan.variant_plan('volume-keep')
+        source = docker_variant_plan.compose_document(volume, 'sonarr')
+        self.assertEqual(source['volumes']['configuration']['name'], 'mpkg-fixture-sonarr-config')
+        self.assertEqual(source['services']['sonarr']['volumes'][0]['type'], 'volume')
+        self.assertEqual(docker_variant_plan.compose_document(volume, 'radarr')['services']['radarr']['volumes'][0]['type'], 'bind')
+
+    def test_container_copy_reads_one_regular_file_without_extracting_or_following(self):
+        def archive(name='config.xml', kind=tarfile.REGTYPE, extra=False):
+            output = io.BytesIO()
+            with tarfile.open(fileobj=output, mode='w') as tar:
+                member = tarfile.TarInfo(name)
+                member.type, member.uid, member.gid, member.mode = kind, 963, 1001, 0o600
+                raw = b'<Config/>'
+                member.size = len(raw) if kind == tarfile.REGTYPE else 0
+                if kind == tarfile.SYMTYPE:
+                    member.linkname = '/etc/shadow'
+                tar.addfile(member, io.BytesIO(raw) if member.size else None)
+                if extra:
+                    tar.addfile(tarfile.TarInfo('another-file'))
+            return output.getvalue()
+        raw, metadata = docker_variant_plan.read_config_archive(archive(), 'config.xml')
+        self.assertEqual(raw, b'<Config/>')
+        self.assertEqual(metadata['uid'], 963)
+        for changed in (archive('../config.xml'), archive(kind=tarfile.SYMTYPE), archive(extra=True)):
+            with self.assertRaises(docker_variant_plan.Refused):
+                docker_variant_plan.read_config_archive(changed, 'config.xml')
+
+    def test_namespace_opener_cannot_switch_the_callers_namespace(self):
+        opener = docker_variant_plan.NamespaceOpener(-1, (0, 0))
+        with mock.patch.object(docker_variant_plan.os, 'fstat') as stat_call:
+            with self.assertRaisesRegex(docker_variant_plan.Refused, 'requires_private_child'):
+                opener.open(None, 1)
+            stat_call.assert_not_called()
 
 
 class DockerBaselineTests(unittest.TestCase):

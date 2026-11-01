@@ -316,6 +316,19 @@ acceptance is claimed. Results preserve actual question/error fields,
 source/database/probe identities and empty-local-state limits. Failure
 leaves the attempt unresolved, with no automatic retry.
 
+The supplemental Docker variant contract in `docker_variant_plan.py`
+defines the two named-volume cases, shared/exclusive bridge networks,
+and two distinct older-image version-intent cases. It keeps wanted tag
+policy separate from a frozen execution digest and requires fresh older
+data. Its bounded Docker-cp reader accepts one regular file in memory,
+without extracting paths. Its namespace opener requires a separate
+private child and the held namespace identity before any HTTP request.
+These primitives alone do not establish an assembled variant or a
+retirement outcome. Docker documents copying files from
+[running or stopped containers](https://docs.docker.com/reference/cli/docker/container/cp/),
+and Python 3.12 provides the
+[setns interface](https://docs.python.org/3.12/library/os.html#os.setns).
+
 ### Native service baseline
 
 `native_service.py setup --guest-id <UUID>` assembles only the fixed
