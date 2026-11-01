@@ -133,9 +133,10 @@ evidence. Manager timeouts can interrupt before an exit marker is written;
 missing completion is not proof of success. A running build blocks another
 heavy build, while a successful exited Python unit may retain its status.
 
-`vm.py install-docker-ready` and `install-docker-baseline` add only their
-fixed reviewed, digest-pinned `docker_ready.py` and `docker_baseline.py`
-helpers after Python is available. Each generates the installer payload
+`vm.py install-docker-ready`, `install-docker-baseline` and
+`install-native-conflict` add only their fixed reviewed, digest-pinned
+`docker_ready.py`, `docker_baseline.py` and `native_conflict.py` helpers
+after Python is available. Each generates the installer payload
 at runtime and uses the existing verified console transport.
 The installed guest/root disk guard and root-protected directory checks
 precede publication. An existing target is refused, and a private record

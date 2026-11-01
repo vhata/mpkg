@@ -229,6 +229,7 @@ def proof_install_payload(name):
     additions={
         'docker-ready':('docker_ready.py','c45f93c6011d12486dbc7e912d07e9de0bf858048a0e683395ca0c969458af40'),
         'docker-baseline':('docker_baseline.py','ef9385b2a0f55f3074ccb7522ae14719fc97fddf1fd95e3d8f4796c53bfbbdb2'),
+        'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b'),
     }
     if name not in additions:
         raise ValueError('proof addition is not allowlisted')
@@ -358,7 +359,7 @@ def console(script=None, seconds=10, prompt=False, login_root=False, addition=No
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline'])
+    parser.add_argument('operation',choices=['prepare','start-installer','start-disk','status','powerdown','console','install-docker-ready','install-docker-baseline','install-native-conflict'])
     parser.add_argument('--script')
     parser.add_argument('--prompt',action='store_true')
     parser.add_argument('--login-root',action='store_true')
@@ -377,6 +378,7 @@ def main():
     elif args.operation=='console':console(args.script,args.seconds,args.prompt,args.login_root)
     elif args.operation=='install-docker-ready':console(seconds=args.seconds,addition='docker-ready')
     elif args.operation=='install-docker-baseline':console(seconds=args.seconds,addition='docker-baseline')
+    elif args.operation=='install-native-conflict':console(seconds=args.seconds,addition='native-conflict')
     else:print(json.dumps(qmp_query('query-status' if args.operation=='status' else 'system_powerdown')))
 
 

@@ -304,7 +304,8 @@ class FixtureProofAdditionTests(unittest.TestCase):
             read.assert_not_called()
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);(root/'scripts/proofs').mkdir(parents=True)
-            for name,filename in [('docker-ready','docker_ready.py'),('docker-baseline','docker_baseline.py')]:
+            for name,filename in [('docker-ready','docker_ready.py'),('docker-baseline','docker_baseline.py'),
+                                  ('native-conflict','native_conflict.py')]:
                 (root/'scripts/proofs'/filename).write_bytes(b'changed reviewed source')
                 with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(module,'qmp_query') as qmp:
                     with self.assertRaises(ValueError):module.console(addition=name)
@@ -313,7 +314,8 @@ class FixtureProofAdditionTests(unittest.TestCase):
     def test_each_generated_addition_binds_its_own_reviewed_bytes_and_filename(self):
         module=self.load()
         expected={'docker-ready':('docker_ready.py','c45f93c6011d12486dbc7e912d07e9de0bf858048a0e683395ca0c969458af40'),
-                  'docker-baseline':('docker_baseline.py','ef9385b2a0f55f3074ccb7522ae14719fc97fddf1fd95e3d8f4796c53bfbbdb2')}
+                  'docker-baseline':('docker_baseline.py','ef9385b2a0f55f3074ccb7522ae14719fc97fddf1fd95e3d8f4796c53bfbbdb2'),
+                  'native-conflict':('native_conflict.py','5f9ba29849f9e2cdc0dcf6572bba5a4c3cc4d9abcf3a04c56ff6037d5aad7c2b')}
         for name,(filename,digest) in expected.items():
             with self.subTest(name=name):
                 program=ast.parse(module.proof_install_payload(name))
