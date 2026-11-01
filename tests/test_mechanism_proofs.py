@@ -581,6 +581,29 @@ class DockerVolumeInitializationTests(unittest.TestCase):
 
 
 class VolumeKeepDiagnosticTests(unittest.TestCase):
+    def test_stage_diagnostic_emits_only_fixed_source_coordinates_and_error_kind(self):
+        script = (PROOFS / 'guest-volume-keep-stage-diagnostic.sh').read_text()
+        program = script.split("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
+        parsed = ast.parse(program)
+        nodes = [node for node in parsed.body if isinstance(node, ast.FunctionDef)
+                 and node.name == 'error_view' or isinstance(node, ast.Assign)
+                 and any(isinstance(target, ast.Name) and target.id in ('SAFE_TYPES', 'SAFE_FILES')
+                         for target in node.targets)]
+        namespace = {'Path': Path, 're': re}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), '<stage-diagnostic-functions>', 'exec'), namespace)
+        local = {}
+        exec(compile("def observation():\n    raise KeyError('PRIVATE_SENTINEL')\n",
+                     '/opt/mpkg-proofs/docker_variants.py', 'exec'), local)
+        try:
+            local['observation']()
+        except KeyError as error:
+            result = namespace['error_view'](error)
+        self.assertEqual(result, {'exception_type': 'KeyError', 'errno': None,
+            'fixed_source_frames': [{'source': 'docker_variants.py', 'function': 'observation', 'line': 2}]})
+        self.assertNotIn('PRIVATE_SENTINEL', json.dumps(result))
+        self.assertEqual(namespace['error_view'](FileNotFoundError(2, 'PRIVATE_SENTINEL', '/private/key')),
+                         {'exception_type': 'FileNotFoundError', 'errno': 2, 'fixed_source_frames': []})
+
     def functions(self, **extra):
         script = (PROOFS / 'guest-volume-keep-diagnostic.sh').read_text()
         program = script.split("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
