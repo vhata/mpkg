@@ -205,6 +205,11 @@ into public results. This is disposable fixture setup, not adoption.
 `check` validates `sshd -t`, effective configuration, exact memberships,
 service state/enablement, protected inputs and metadata, then performs
 authenticated SFTP reads with explicitly pinned generated host keys.
+It binds the packaged/external unit and permitted drop-in bytes, exact
+manager startup arguments and empty environment-option sources. The
+main process must own every covering listener before and after the
+probe. The pinned package unit has no `EnvironmentFile` or `SSHD_OPTS`;
+introducing either blocks this closed fixture check.
 `check-external` checks only the separate consumer and shared sentinel;
 it does not require the retired managed service or exclusive directory.
 These commands write private observations, without changing services.

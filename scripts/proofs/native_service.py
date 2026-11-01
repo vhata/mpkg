@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from core import Journal, Refused, canonical, private_directory, read_regular, require_guest, write_new
 from native_manifest import SOURCE_SHA256, check_archive, trusted_json, validate_acquisition
 from run import command, trusted_install
+from compose_proof import covering_listeners
 
 
 PUBLIC = Path('/etc/mpkg-fixture-ssh')
@@ -27,6 +28,8 @@ EXCLUSIVE = Path('/srv/mpkg-fixture/native-data')
 SHARED = Path('/mnt/media/mpkg-fixture-shared')
 EXTERNAL_UNIT = Path('/etc/systemd/system/mpkg-fixture-external.service')
 MANAGED_DROPINS = Path('/etc/systemd/system/sshd.service.d')
+PACKAGED_UNIT = Path('/usr/lib/systemd/system/sshd.service')
+DROPIN = b'[Service]\nLimitCORE=0\n'
 ROLES = {'native': ('fixture-native', 1500, 22222, 'sshd.service'),
          'external': ('fixture-external', 1501, 22223, EXTERNAL_UNIT.name)}
 
@@ -121,8 +124,44 @@ def no_listener():
 
 
 def service_properties(unit):
-    raw = command(['/usr/bin/systemctl', 'show', unit, '--property=ActiveState,SubState,MainPID,UnitFileState,FragmentPath,DropInPaths,LimitCORE'])
+    raw = command(['/usr/bin/systemctl', 'show', unit, '--property=ActiveState,SubState,MainPID,UnitFileState,FragmentPath,DropInPaths,LimitCORE,ExecStart,Environment,EnvironmentFiles,PassEnvironment'])
     return dict(line.split('=', 1) for line in raw.decode().splitlines())
+
+
+def external_unit():
+    return (
+        '[Unit]\nDescription=Disposable unmanaged SFTP consumer\nAfter=network.target\n'
+        '[Service]\nType=exec\nExecStart=/usr/bin/sshd -D -e -f ' + str(PUBLIC / 'external.conf') + '\n'
+        'Restart=no\nKillMode=control-group\nLimitCORE=0\n'
+        'StandardOutput=null\nStandardError=null\n'
+        '[Install]\nWantedBy=multi-user.target\n').encode()
+
+
+def assert_startup(manager, role):
+    expected = '/usr/bin/sshd -D'
+    if role == 'external':
+        expected += ' -e -f ' + str(PUBLIC / 'external.conf')
+    invocation = manager.get('ExecStart', '')
+    dropins = str(MANAGED_DROPINS / '50-mpkg-fixture.conf') if role == 'native' else ''
+    if (manager.get('DropInPaths') != dropins
+            or any(manager.get(key) != '' for key in ('Environment', 'EnvironmentFiles', 'PassEnvironment'))
+            or not invocation.startswith('{ path=/usr/bin/sshd ; argv[]=' + expected + ' ; ignore_errors=no ;')
+            or invocation.count('{') != 1 or invocation.count('}') != 1):
+        raise Refused('fixture_service_startup_drift')
+
+
+def listener_identity(manager, port):
+    pid = int(manager['MainPID'])
+    process = Path('/proc') / str(pid)
+    if os.readlink(process / 'exe') != '/usr/bin/sshd':
+        raise Refused('fixture_service_process_mismatch')
+    before = (process / 'stat').read_bytes()
+    start = before.rsplit(b')', 1)[1].split()[19]
+    inodes = covering_listeners(Path('/proc/net/tcp').read_text(), Path('/proc/net/tcp6').read_text(), port)
+    owned = {os.readlink(path) for path in (process / 'fd').iterdir()}
+    if not inodes or not inodes <= owned:
+        raise Refused('fixture_service_listener_unattributed')
+    return pid, start, inodes
 
 
 def package_baseline():
@@ -147,7 +186,11 @@ def package_baseline():
     baseline = command(['/usr/bin/bsdtar', '-xOf', artifact['path'], 'etc/ssh/sshd_config'])
     if not baseline or len(baseline) > 65536:
         raise Refused('openssh_package_configuration_shape')
-    return baseline, planned['version']
+    unit = command(['/usr/bin/bsdtar', '-xOf', artifact['path'], 'usr/lib/systemd/system/sshd.service'])
+    trusted_path(PACKAGED_UNIT)
+    if not unit or len(unit) > 65536 or read_regular(PACKAGED_UNIT)[0] != unit:
+        raise Refused('openssh_package_unit_changed')
+    return baseline, unit, planned['version']
 
 
 def preflight(root):
@@ -178,11 +221,11 @@ def preflight(root):
         if group.gr_name != 'media' or group.gr_gid != 1001:
             raise Refused('fixture_media_group_collision')
     trusted_path(MANAGED_CONFIG)
-    baseline, version = package_baseline()
+    baseline, unit, version = package_baseline()
     current, metadata = read_regular(MANAGED_CONFIG)
     if current != baseline:
         raise Refused('package_configuration_already_changed')
-    return baseline, metadata, version
+    return baseline, metadata, unit, version
 
 
 def data_inventory(external_only=False):
@@ -235,6 +278,13 @@ def check(guest, external_only=False):
                 or manager.get('FragmentPath') != (str(EXTERNAL_UNIT) if role == 'external'
                                                   else '/usr/lib/systemd/system/sshd.service')):
             raise Refused('fixture_service_not_running_enabled')
+        if role == 'native':
+            if (read_regular(PACKAGED_UNIT)[0] != read_regular(root / 'packaged-sshd.service')[0]
+                    or read_regular(MANAGED_DROPINS / '50-mpkg-fixture.conf')[0] != DROPIN):
+                raise Refused('fixture_service_unit_drift')
+        elif read_regular(EXTERNAL_UNIT)[0] != external_unit():
+            raise Refused('fixture_service_unit_drift')
+        assert_startup(manager, role)
         # Type=exec can precede listen(). This read-only readiness wait sends
         # no credential; authenticated SFTP itself is attempted exactly once.
         deadline = time.monotonic() + 10
@@ -246,6 +296,7 @@ def check(guest, external_only=False):
                 if time.monotonic() >= deadline:
                     raise Refused('fixture_listener_not_ready') from None
                 time.sleep(0.1)
+        attributed = listener_identity(manager, port)
         remote = EXCLUSIVE / 'sentinel' if role == 'native' else SHARED / 'sentinel'
         received = directory / (role + '-received')
         batch = directory / (role + '.batch')
@@ -260,6 +311,10 @@ def check(guest, external_only=False):
         expected = ('mpkg fixture ' + guest + ' ' + ('exclusive' if role == 'native' else 'shared') + '\n').encode()
         if actual != expected:
             raise Refused('fixture_authenticated_read_mismatch')
+        after = service_properties(unit)
+        assert_startup(after, role)
+        if listener_identity(after, port) != attributed:
+            raise Refused('fixture_service_changed_during_check')
         results.append({'role': role, 'account': account, 'unit': unit,
                         'manager': manager, 'authenticated_sftp_read': True,
                         'sentinel_sha256': hashlib.sha256(actual).hexdigest()})
@@ -273,13 +328,14 @@ def check(guest, external_only=False):
 
 def setup(guest):
     root = state_root(guest)
-    baseline, metadata, version = preflight(root)
+    baseline, metadata, packaged_unit, version = preflight(root)
     private_directory(root)
     journal = Journal(root)
     attempt = str(uuid.uuid4())
     journal.begin(attempt)
     try:
         write_new(root / 'packaged-sshd_config', baseline)
+        write_new(root / 'packaged-sshd.service', packaged_unit)
         parent_directory(PUBLIC)
         parent_directory(Path('/srv/mpkg-fixture'))
         parent_directory(Path('/mnt/media'))
@@ -327,15 +383,10 @@ def setup(guest):
             os.close(parent_fd)
         write_new(PUBLIC / 'external.conf', configuration('external', root))
         command(['/usr/bin/sshd', '-t', '-f', str(PUBLIC / 'external.conf')])
-        write_new(EXTERNAL_UNIT, (
-            '[Unit]\nDescription=Disposable unmanaged SFTP consumer\nAfter=network.target\n'
-            '[Service]\nType=exec\nExecStart=/usr/bin/sshd -D -e -f ' + str(PUBLIC / 'external.conf') + '\n'
-            'Restart=no\nKillMode=control-group\nLimitCORE=0\n'
-            'StandardOutput=null\nStandardError=null\n'
-            '[Install]\nWantedBy=multi-user.target\n').encode(), 0o644)
+        write_new(EXTERNAL_UNIT, external_unit(), 0o644)
         EXTERNAL_UNIT.chmod(0o644)
         parent_directory(MANAGED_DROPINS)
-        write_new(MANAGED_DROPINS / '50-mpkg-fixture.conf', b'[Service]\nLimitCORE=0\n', 0o644)
+        write_new(MANAGED_DROPINS / '50-mpkg-fixture.conf', DROPIN, 0o644)
         (MANAGED_DROPINS / '50-mpkg-fixture.conf').chmod(0o644)
         manifest = {'schema': 1, 'guest_id': guest, 'openssh_version': version,
                     'package_config_sha256': hashlib.sha256(baseline).hexdigest(),

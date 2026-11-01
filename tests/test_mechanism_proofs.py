@@ -106,6 +106,21 @@ class GuestGuardTests(unittest.TestCase):
 
 
 class NativeServiceTests(unittest.TestCase):
+    def test_running_unit_must_use_exact_command_dropin_and_no_environment_options(self):
+        manager = {
+            'ExecStart': '{ path=/usr/bin/sshd ; argv[]=/usr/bin/sshd -D ; ignore_errors=no ; pid=123 ; }',
+            'DropInPaths': str(native_service.MANAGED_DROPINS / '50-mpkg-fixture.conf'),
+            'Environment': '', 'EnvironmentFiles': '', 'PassEnvironment': '',
+        }
+        native_service.assert_startup(manager, 'native')
+        for field, value in [('ExecStart', manager['ExecStart'].replace('sshd -D ;', 'sshd -D -p 22 ;')),
+                             ('DropInPaths', manager['DropInPaths'] + ' /unmanaged.conf'),
+                             ('EnvironmentFiles', '/etc/conf.d/sshd (ignore_errors=yes)'),
+                             ('Environment', 'SSHD_OPTS=-p22')]:
+            with self.subTest(field=field), self.assertRaisesRegex(
+                    native_service.Refused, 'fixture_service_startup_drift'):
+                native_service.assert_startup(dict(manager, **{field: value}), 'native')
+
     def test_external_data_check_does_not_require_retired_exclusive_data(self):
         visited = []
         def metadata(path):
