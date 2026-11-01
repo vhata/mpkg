@@ -14,7 +14,7 @@ establish any A1–A12 product acceptance result.
 | --- | --- |
 | Acquired inputs, guest bootstrap, Python and AUR builds | Completed; exact identities and upstream test limitations recorded below |
 | Native service and starting states | Authenticated checks and separate 209-, 212- and 220-package states completed |
-| Journal, protected replay, XML, supervision and bounded retirement | Focused experiments passed; Git-object and child-error secrecy checks remain pending |
+| Journal, protected replay, XML, supervision and bounded retirement | Focused experiments passed, including private Git-object and fixed child-error secrecy checks |
 | Native transaction | Frozen prepare-only checks and conflict refusal passed; no package transaction commit inferred |
 | Ordinary Docker fixture | Assembly and repeat check passed; separate restore/reboot check pending |
 | Compose mechanism experiment | All ten asserted checks passed, with the lifecycle limits below |
@@ -522,6 +522,34 @@ setup returned `unverified`, code `docker_variant_failed`, and exit 74.
 Independent review verified the fresh serial interval and idle prompt.
 The generic result establishes neither the cause nor successful assembly;
 the running guest and failed attempt were retained for separate diagnosis.
+
+A separate protected-output proof then completed with exit zero on that
+idle guest. It used its own private journal and invoked no application
+or lifecycle operations.
+The new helper's exact installation receipt preceded its one-shot run.
+Its private Git repository contained exactly one commit, tree and blob;
+all objects were reachable, and neither the exported projection nor any
+object contained the synthetic secret or protected reference material.
+Fixed child processes actually emitted the sentinel on both output
+streams before the failure, output-bound and timeout paths returned
+their expected public codes without it. These checks cover the selected
+projection and command boundaries, not arbitrary future product errors.
+They spawn no descendants and establish no daemon-recovery guarantee.
+The fresh completion interval has SHA-256
+`7e1e69b2ec253beb2ede9249b7c2cdefc405dfd7c2fcc4a209209cf6dda6b5d5`.
+Independent review verified the source, installation and actual result.
+
+A separate stage diagnostic completed with exit zero and passed all 15
+current engine, image, container, process, configuration-access, resource
+and sentinel probes. Both assembled XML files existed, but `baseline.json`
+was absent and Docker startup remained disabled. The journal still held
+one unknown attempt, one start event and ten protected records, with
+unchanged SHA-256
+`45444ade45e2cf2e39c43012382c4759001a6022b0623cb3ccdfc200d8abb46f`.
+The diagnostic made no application requests and did not read XML contents.
+These current observations verify the corrected access predicates; they
+do not reconstruct the original exception or complete the setup attempt.
+Independent review verified the fresh interval and preserved records.
 
 The six supplemental resource/update variants remain runtime gates.
 Applied product restore points remain unavailable until actual product
