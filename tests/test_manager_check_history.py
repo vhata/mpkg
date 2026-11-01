@@ -284,6 +284,7 @@ desired={mode=448}
         evidence = observations(self.original, {"web": {"running": True, "enabled": True}})
         wrong_kind = deepcopy(evidence)
         wrong_kind["facts"][0]["kind"] = "package"
+        wrong_kind["facts"][0]["identity"] = {"name": "web"}
         wrong_identity = deepcopy(evidence)
         wrong_identity["facts"][0]["identity"]["unit"] = "other.service"
         wrong_source = deepcopy(evidence)
