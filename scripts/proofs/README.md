@@ -202,6 +202,25 @@ fresh baseline. The result and durable attempt are private under
 `docker-readiness`; a start timeout leaves uncertainty without retry or
 automatic stop. Image-store compatibility remains an import-time check.
 
+`docker_resume.py --guest-id <UUID>` serves the separate stopped
+`image-ready` checkpoint after successful first readiness/import and
+image-manifest publication. It requires completed, unrecovered prior
+journals, the same recorded engine, all three observed image associations,
+unchanged signed package units and fixed drop-ins, disabled inactive units,
+no pending unit jobs/daemon processes, and empty offline container metadata.
+It starts only `docker.service`, preserving startup disablement. It then
+checks the engine, exact image IDs/references/platform/version labels,
+zero containers/volumes and only the three default networks, with stable
+process/socket identities. SSH is outside this helper's operations.
+
+Resume uses an atomically reserved one-shot directory and durable start
+record. A failure leaves it unresolved and never triggers another start,
+stop or cleanup. Another variant starts from an independent restore of
+the image-ready checkpoint. This is fixture resumption, not product
+reconciliation; actual first import compatibility and a reviewed stopped
+checkpoint remain prerequisites. No engine initialization, image import,
+pull, tag, application creation or fabricated applied history is added.
+
 ### Console wrappers
 
 The reviewed console transport may execute these fixed Bash files with
@@ -212,6 +231,7 @@ before any system mutation.
 
 - `guest-basics.sh`: journal, inputs, XML, retirement and supervision.
 - `guest-docker-ready.sh`: fixed daemon readiness/start.
+- `guest-docker-resume.sh`: resume only the bound image-ready checkpoint.
 - `guest-native-service.sh`: native SSH baseline setup/check.
 - `guest-image-import.sh`: archive import, then observed image manifest.
 - `guest-native-proof.sh`: actual native manifest, then prepare-only proof.

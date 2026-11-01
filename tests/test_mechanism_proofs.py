@@ -37,6 +37,7 @@ import docker_ready
 import docker_baseline
 import native_conflict
 import service_environment
+import docker_resume
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -88,7 +89,7 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(list(Path(temporary).iterdir()), [])
 
     def test_guest_image_entrypoints_refuse_host_before_docker(self):
-        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py', 'native_conflict.py'):
+        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py', 'native_conflict.py', 'docker_resume.py'):
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as temporary:
                 result = subprocess.run([
                     sys.executable, '-I', str(PROOFS / filename),
@@ -183,6 +184,92 @@ class RealNativeConflictTests(unittest.TestCase):
                          case['readonly_native_resolution']['stdout_sha256_computed'])
         with self.assertRaisesRegex(native_conflict.Refused, 'frozen_conflict_resolution_changed'):
             native_conflict.parse_candidates(b'extra mpkg-proof-conflict 1-1 synthetic\n')
+
+
+class DockerResumeTests(unittest.TestCase):
+    def records(self, guest):
+        acquisition = {'schema': 1, 'docker_or_runtime_operations': False,
+                       'archive': {'filename': 'images.oci.tar', 'sha256': '1' * 64, 'bytes': 10240},
+                       'images': []}
+        imported = {'engine_id': 'known-engine', 'archive_sha256': '1' * 64,
+                    'load_command_completed': True, 'unverified_associations': [], 'verified_associations': []}
+        compose = {'schema': 1, 'guest_id': guest, 'engine_id': 'known-engine', 'images': []}
+        for name, repository, index, manifest, config, version in oci_acquire.IMAGES:
+            acquisition['images'].append({'fixture_name': name, 'repository': 'lscr.io/' + repository,
+                'index_digest': 'sha256:' + index, 'manifest_digest': 'sha256:' + manifest,
+                'config_digest': 'sha256:' + config, 'platform': 'linux/amd64', 'version_label': version})
+            association = {'reference': 'lscr.io/' + repository + '@sha256:' + index,
+                           'image_id': 'sha256:' + config}
+            imported['verified_associations'].append(association)
+            if name != 'sonarr-older':
+                compose['images'].append(dict(association, platform='linux/amd64'))
+        return acquisition, imported, compose
+
+    def test_resume_requires_all_three_observed_associations_on_same_engine(self):
+        acquisition, imported, _ = self.records(str(uuid.uuid4()))
+        self.assertEqual(len(docker_resume.image_bindings(imported, acquisition, 'known-engine')), 3)
+        for changed in (dict(imported, engine_id='other-engine'),
+                        dict(imported, unverified_associations=['older-sonarr']),
+                        dict(imported, load_command_completed=False),
+                        dict(imported, verified_associations=imported['verified_associations'][:2])):
+            with self.subTest(changed=changed), self.assertRaises(docker_resume.Refused):
+                docker_resume.image_bindings(changed, acquisition, 'known-engine')
+
+    def test_observed_result_cannot_hide_unfinished_or_restored_journal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            guest, attempt = str(uuid.uuid4()), str(uuid.uuid4())
+            core.write_new(directory / 'result.json', core.canonical(
+                {'schema': 1, 'guest_id': guest, 'status': 'observed'}))
+            journal = core.Journal(directory)
+            journal.begin(attempt)
+            with mock.patch.object(docker_resume, 'trusted_path'):
+                with self.assertRaisesRegex(docker_resume.Refused, 'prior_attempt_not_complete'):
+                    docker_resume.completed_result(directory, guest)
+                journal.finish(attempt, 'observed-complete')
+                self.assertEqual(docker_resume.completed_result(directory, guest)[0]['status'], 'observed')
+                journal.db.execute('UPDATE store_guard SET recovery_required=1')
+                with self.assertRaisesRegex(docker_resume.Refused, 'prior_attempt_not_complete'):
+                    docker_resume.completed_result(directory, guest)
+            journal.close()
+
+    def test_start_failure_remains_unknown_and_blocks_another_resume(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            guest, root = str(uuid.uuid4()), Path(temporary)
+            acquisition, imported, compose = self.records(guest)
+            readiness = {'engine_id': 'known-engine', 'enabled_services': False, 'packages_and_units': {}}
+            source = {'acquisition.json': acquisition, 'compose.json': compose}
+            with mock.patch.object(docker_resume, 'state_root', return_value=root), \
+                    mock.patch.object(docker_resume, 'no_application_state'), \
+                    mock.patch.object(docker_resume, 'completed_result', side_effect=lambda path, guest:
+                        (readiness if path.name == 'docker-readiness' else imported, '2' * 64)), \
+                    mock.patch.object(docker_resume, 'trusted_json', side_effect=lambda name: (source[name], '3' * 64)), \
+                    mock.patch.object(docker_resume, 'package_units', return_value={}), \
+                    mock.patch.object(docker_resume.grp, 'getgrnam', return_value=SimpleNamespace(gr_mem=[], gr_gid=999)), \
+                    mock.patch.object(docker_resume.pwd, 'getpwall', return_value=[]), \
+                    mock.patch.object(docker_resume, 'units'), mock.patch.object(docker_resume, 'quiescent'), \
+                    mock.patch.object(docker_resume, 'command', side_effect=docker_resume.Refused('tool_timeout_external_work_unknown')) as command:
+                with self.assertRaisesRegex(docker_resume.Refused, 'timeout_external_work_unknown'):
+                    docker_resume.resume(guest)
+                with self.assertRaisesRegex(docker_resume.Refused, 'fresh_restore_required'):
+                    docker_resume.resume(guest)
+                command.assert_called_once_with(['/usr/bin/systemctl', 'start', 'docker.service'], timeout=90)
+            journal = core.Journal(root / 'docker-resume')
+            self.assertEqual(journal.export()[0]['state'], 'unknown')
+            journal.close()
+            self.assertFalse((root / 'docker-resume' / 'result.json').exists())
+
+    def test_resume_requires_inactive_disabled_unit_with_existing_fixed_dropin(self):
+        value = {'LoadState': 'loaded', 'FragmentPath': '/usr/lib/systemd/system/docker.service',
+                 'DropInPaths': '/etc/systemd/system/docker.service.d/50-mpkg-fixture.conf',
+                 'UnitFileState': 'disabled', 'ActiveState': 'inactive', 'SubState': 'dead', 'MainPID': '0',
+                 'LimitCORE': '0', 'Environment': '', 'EnvironmentFiles': '', 'PassEnvironment': '',
+                 'ExecStart': '{ path=/usr/bin/dockerd ; argv[]=/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock ; ignore_errors=no ; pid=0 ; }'}
+        docker_resume.unit_state('docker.service', value, active=False)
+        for field, replacement in (('UnitFileState', 'enabled'), ('DropInPaths', ''),
+                                   ('ActiveState', 'active'), ('LimitCORE', 'infinity')):
+            with self.subTest(field=field), self.assertRaises(docker_resume.Refused):
+                docker_resume.unit_state('docker.service', dict(value, **{field: replacement}), active=False)
 
 
 class ServiceEnvironmentTests(unittest.TestCase):
