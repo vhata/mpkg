@@ -92,6 +92,16 @@ payloads and records its exit status. No malformed-transfer execution
 was observed; the integrity gate was added after inspecting the original
 transport's failure path.
 
+The first Docker readiness attempt refused a startup-property mismatch
+before creating a journal, drop-ins, sockets, engine directories or daemon
+processes. A read-only diagnostic verified the packaged commands and
+found that `systemctl show` omitted empty `EnvironmentFiles` values even
+with `--all`. Separate fixed D-Bus queries then returned the exact typed
+empty list for Docker, containerd and SSH. The reviewed correction accepts
+the omitted display only after that positive typed observation; nonempty,
+conflicting, malformed or failed observations still block. Corrected
+service startup remains a separate runtime gate.
+
 ## Execution results
 
 The corrected bootstrap continuation completed with exit status zero and
@@ -175,15 +185,81 @@ dependency installed as explicit because the later reason adjustment
 had not run. This partial state was preserved in the stopped
 `failed-ack-metadata` checkpoint before investigating a bounded fix.
 
-The full AUR chain and guest image import remain unverified. Applied
-product restore points remain unavailable until actual product operations
-create them.
+After restoring `python-ready`, the corrected ack chain completed with
+exit zero, the matching completion UUID, manager success and no remaining
+manager, cgroup or builder process. The exact inventory is now 209:
+all 207 repository versions unchanged, `ack` 3.10.0-1 explicit and
+`perl-file-next` 1.18-7 recorded as its dependency. The successful run
+produced these actual archives:
+
+| Package | Bytes | SHA-256 |
+| --- | --- | --- |
+| `ack` | 76,354 | `afe240b17938cac7ee08d4ce0053cc96537b96b0c012f191c1d62d3929614e0b` |
+| `perl-file-next` | 14,703 | `f6fe090774f472dc2bbb751750178aa6316a3b4fe7ceb0f833bc5ff28d16ab8b` |
+
+The worker recorded the ack metadata mismatch and its exact URL/hash
+reconciliation explicitly. It did not change the frozen recipe files.
+Upstream test output reported PASS for 16 files/92 tests in File::Next
+and for each of ack's classic and standalone passes at 70 files/847 tests.
+Coverage exclusions remain visible: File::Next skipped its two POD checks
+without Test::Pod/Test::Pod::Coverage; each ack pass skipped `ack-group`,
+`ack-output-color`, `ack-pager` and `interactive` without IO::Pty. The
+collector read the entire stable 18,106-byte log without omitting summary
+lines. A successful recipe check does not claim those skipped tests ran.
+
+Native service setup then stopped during `useradd` argument parsing after
+native-group creation and before user creation. The observed state contained
+no fixture users, homes, keys, data or service changes, and retained one unknown
+bootstrap attempt. Dropped-privilege help probes reproduced exit three
+for `-K CREATE_MAIL_SPOOL=no`, while plain help returned zero; account
+metadata did not change. The actual package defaults already disable mail
+spools. A separately reviewed continuation preserved that unknown attempt
+and accepted only this exact partial state. It created the fixture accounts,
+keys, data and service configuration, then exited 73 at the effective SSH
+configuration check. Its own attempt also remains unknown.
+
+A read-only diagnostic found both fixed configurations unchanged and both
+services enabled and running. OpenSSH's effective-output keywords use
+different capitalization: each of the 14 expected fields appeared exactly
+once when compared without keyword case, with its value matching exactly
+for both roles. No value normalization was needed. This identifies a parser
+compatibility defect; it does not establish successful authenticated access
+or retrospectively complete either interrupted attempt.
+
+Corrected Docker readiness completed with exit zero on engine
+`bb861e7c-3db2-4b9a-a865-6a2e04af426c`, Docker 29.9.2 and containerd 2.4.2-1.
+Packaged unit, daemon process and Unix-socket identities passed, with zero
+images, containers and volumes. Startup remained disabled.
+
+The local OCI load completed, but its association check returned exit 75
+and remained unverified for all three original index references. Read-only
+inspection found exactly the three acquired amd64 manifest IDs, their
+matching repository/child digest associations and the fixed fixture tags;
+original index and config-digest lookups were unavailable. The acquisition
+archive's top-level descriptors point to those children, although its
+verified blobs also contain the original indexes. Any further preparation
+must retain the original unverified result and independently establish the
+required runtime association. No application container has been started.
+
+The separate original-index preparation verified the existing blobs and
+produced a 265,943,040-byte archive with SHA-256
+`828001d7783098d69a87f84851883dc101da4023050a23c3d084614ca3a19bd3`.
+It then exited 73 with `fixed_tool_failed`, without a final result. Its
+attempt is unresolved; the archive's successful construction does not
+establish a successful Docker load or association. The command wrapper
+did not retain stderr, so the exact failing command's diagnostic is
+unavailable. Further inspection must preserve this attempt as well as the
+original unverified import.
+
+The gitstatus build, native service fixture and complete image bindings
+remain unverified. Applied product restore points remain unavailable until
+actual product operations create them.
 
 ## Verification and limits
 
-At checkpoint `68c2e92`, repository setup selected Python 3.12 and the
-combined checks passed 79 tests, syntax for 71 files, eight queue entries
-and relative links. Subsequent edits require final repository checks and
+Repository setup selected Python 3.12. At checkpoint `6f015c1`, the
+coordinator's combined checks passed 93 tests, syntax for 80 files, eight
+queue entries and relative links. Subsequent edits require final checks and
 independent integration review. Host tests exercise isolated primitives
 and refusal paths; they do not establish real guest behavior.
 
