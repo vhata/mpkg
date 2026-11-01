@@ -91,6 +91,14 @@ changing the store schema. `HostStore.compare_protected` returns only
 same/changed/unavailable. A capture error supplies unavailable evidence;
 it must never be replaced with empty or redacted content.
 
+The capture's `name` labels its recording and comparison within a
+decision. Capture does not return a declaration-reference UUID, and the
+store's generated private capture references do not currently resolve
+the protected references written in declarations. Capturing and recording
+one file therefore neither authorizes a declared protected reference nor
+establishes a complete input bundle. Binding those references and closing
+the bundle require a separate future recorder integration.
+
 ## Output and limits
 
 Policy/capture errors contain only fixed codes. Policy representation
