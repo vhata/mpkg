@@ -442,6 +442,39 @@ class DockerBaselineTests(unittest.TestCase):
             install.assert_not_called()
 
 
+class VolumeKeepDiagnosticTests(unittest.TestCase):
+    def functions(self, **extra):
+        script = (PROOFS / 'guest-volume-keep-diagnostic.sh').read_text()
+        program = script.split("<<'PY'\n", 1)[1].rsplit('\nPY', 1)[0]
+        parsed = ast.parse(program)
+        nodes = [node for node in parsed.body if isinstance(node, ast.FunctionDef)
+                 and node.name in ('metadata', 'predicates', 'child_probe')]
+        namespace = {'stat': stat, 'Refused': core.Refused, **extra}
+        exec(compile(ast.Module(body=nodes, type_ignores=[]), '<volume-diagnostic-functions>', 'exec'), namespace)
+        return namespace
+
+    def test_reports_config_mode_separately_from_other_credential_predicates(self):
+        predicate = self.functions()['predicates']
+        config = {'directory': True, 'uid': 963, 'gid': 1001, 'mode': '0o2770'}
+        sentinel = {'regular': True, 'links': 1, 'uid': 963, 'gid': 1001, 'mode': '0o640'}
+        database = {'regular': True, 'links': 1, 'uid': 963, 'gid': 1001, 'size': 4096, 'mode': '0o664'}
+        baseline = predicate(config, sentinel, database, xattr_count=0, sentinel_matches=True)
+        self.assertTrue(all(baseline.values()))
+        changed = predicate(dict(config, mode='0o775'), sentinel, database, xattr_count=0, sentinel_matches=True)
+        self.assertEqual([name for name, value in changed.items() if not value], ['config_metadata'])
+        changed = predicate(config, sentinel, database, xattr_count=1, sentinel_matches=True)
+        self.assertEqual([name for name, value in changed.items() if not value], ['config_xattrs_empty'])
+
+    def test_namespace_failure_reports_stage_errno_without_private_exception(self):
+        operations = SimpleNamespace(CLONE_NEWNS=1, O_RDONLY=0, O_DIRECTORY=1, O_CLOEXEC=2,
+            open=mock.Mock(return_value=13), setns=mock.Mock(side_effect=PermissionError(1, 'PRIVATE_SENTINEL')))
+        function = self.functions(os=operations)['child_probe']
+        result = function(10, 11, 12, {'groups': [1001]}, b'synthetic only', 'sonarr')
+        self.assertEqual(result, {'stage': 'enter_mount_namespace', 'failed': True, 'error_kind': 'os_error', 'errno': 1})
+        self.assertNotIn('PRIVATE_SENTINEL', json.dumps(result))
+        operations.setns.assert_called_once_with(11, 1)
+
+
 class RealNativeConflictTests(unittest.TestCase):
     def test_real_conflict_cannot_be_replaced_by_synthetic_or_unresolved_failure(self):
         value = {'libalpm_version': '16.0.1', 'prepare_result': -1, 'error_number': 46,
