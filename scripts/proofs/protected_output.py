@@ -24,7 +24,7 @@ DEPENDENCIES = {
 FAULTS = {
     'failure': ('fixed_tool_failed', 10),
     'output-bound': ('tool_output_bound_external_work_unknown', 10),
-    'timeout': ('tool_timeout_external_work_unknown', 1),
+    'timeout': ('tool_timeout_external_work_unknown', 5),
 }
 # Input arrives only over stdin. These fixed children never spawn descendants.
 FAULT_SOURCE = r'''import os, sys, time
