@@ -101,9 +101,12 @@ source paths, opaque references and raw/keyed digests. Explicit source
 classification remains the recorder's responsibility; no automatic
 secret detection is claimed.
 
-These are time-bounded reads, not atomic writer exclusion. A writer can
-change data after capture, and before/after metadata checks do not prove
-a globally atomic filesystem snapshot. Reads may update filesystem
+Reads are byte-bounded and produce evidence about the observed read,
+not atomic writer exclusion. Synchronous filesystem latency has no
+elapsed-time bound here; a future supervising worker must impose any
+wall-clock deadline. A writer can change data after capture, and
+before/after metadata checks do not prove a globally atomic filesystem
+snapshot. Reads may update filesystem
 access times. Equal device numbers do not detect same-device bind mounts
 or every alias of an input tree. Those mounts are a detection limitation,
 not an enforced rejection. This library is not filesystem containment
