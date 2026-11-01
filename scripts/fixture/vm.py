@@ -110,7 +110,8 @@ def require_no_restore_pending():
             raise ValueError('interrupted checkpoint restore requires evidence reconciliation')
 
 
-def qemu_arguments(identity, installer, inputs=False, sources=False, console_log=None):
+def qemu_arguments(identity, installer, inputs=False, sources=False, console_log=None,
+                   outputs=False, built=False):
     arguments = ['/usr/bin/qemu-system-x86_64', '-no-user-config', '-nodefaults',
                  '-display', 'none', '-machine', 'q35,accel=tcg,dump-guest-core=off', '-cpu', 'qemu64',
                  '-smp', '4', '-m', '8192', '-uuid', identity['guest_id'],
@@ -134,6 +135,14 @@ def qemu_arguments(identity, installer, inputs=False, sources=False, console_log
         if not inputs:raise ValueError('source disk requires the original input disk binding')
         arguments += ['-drive', 'if=none,id=sources,format=raw,readonly=on,file=/run/mpkg-fixture/sources.img',
                       '-device', 'virtio-blk-pci,drive=sources,serial=mpkgsrc'+uuid.UUID(identity['guest_id']).hex[:13]]
+    if outputs:
+        if not sources:raise ValueError('build output disk requires the source/input bindings')
+        arguments += ['-drive', 'if=none,id=outputs,format=raw,file=/run/mpkg-fixture/outputs.img',
+                      '-device', 'virtio-blk-pci,drive=outputs,serial=mpkgout'+uuid.UUID(identity['guest_id']).hex[:13]]
+    if built:
+        if not outputs:raise ValueError('built input disk requires the output disk identity')
+        arguments += ['-drive', 'if=none,id=built,format=raw,readonly=on,file=/run/mpkg-fixture/built.img',
+                      '-device', 'virtio-blk-pci,drive=built,serial=mpkgbld'+uuid.UUID(identity['guest_id']).hex[:13]]
     if installer:
         arguments += ['-drive', 'if=none,id=cd,format=raw,readonly=on,media=cdrom,file=/run/mpkg-fixture/installer.iso',
                       '-device', 'ide-cd,drive=cd', '-kernel', '/run/mpkg-fixture/vmlinuz',
@@ -168,9 +177,23 @@ def start(installer):
             if (proof['guest_id']!=identity['guest_id'] or image.stat().st_size!=proof['disk_bytes']
                     or runner.sha256(image)!=proof['sha256']):
                 raise ValueError('read-only source disk does not match its binding')
+        outputs = (VM/'outputs-verification.json').exists()
+        if outputs:
+            proof=json.loads(runner.regular_file(VM/'outputs-verification.json').read_text())
+            image=runner.regular_file(VM/'outputs.img')
+            if proof['guest_id']!=identity['guest_id'] or image.stat().st_size!=128*1024**2:
+                raise ValueError('writable build output disk does not match its binding')
+        built = (VM/'built-verification.json').exists()
+        if built:
+            proof=json.loads(runner.regular_file(VM/'built-verification.json').read_text())
+            image=runner.regular_file(VM/'built.img')
+            if (proof['guest_id']!=identity['guest_id'] or image.stat().st_size!=proof['disk_bytes']
+                    or runner.sha256(image)!=proof['sha256']):
+                raise ValueError('read-only built artifact disk does not match its binding')
         console_log='serial-'+uuid.uuid4().hex+'.log'
         runner.write_new(VM/console_log,b'')
-        command = sandbox_command(qemu_arguments(identity, installer, inputs, sources,console_log), include_iso=installer)
+        command = sandbox_command(qemu_arguments(identity, installer, inputs, sources,console_log,
+                                                 outputs,built), include_iso=installer)
         print(json.dumps({'guest_id':identity['guest_id'],'boot':'installer' if installer else 'disk',
                           'host_shared_mounts_in_guest':False,'inbound_forwarding':False,
                           'private_console_log':console_log}),flush=True)
@@ -227,8 +250,8 @@ def console(script=None, seconds=10, prompt=False, login_root=False):
                      " <<'MPKG_INPUT'\n"+chunks+"\nMPKG_INPUT\n); then\n"+
                      "if printf '%s  %s\\n' "+digest+" "+guest_path+
                      " | sha256sum --strict --check >/dev/null; then\n"+
-                     "MPKG_GUEST_ID="+vm_identity()['guest_id']+" "+interpreter+" "+guest_path+
-                     "; code=$?; printf '%s\\n' \"$code\" > "+guest_path+".exit; "+
+                     "MPKG_GUEST_ID="+vm_identity()['guest_id']+" SYSTEMD_PAGER=cat PAGER=cat SYSTEMD_COLORS=0 "+interpreter+" "+guest_path+
+                     " </dev/null; code=$?; printf '%s\\n' \"$code\" > "+guest_path+".exit; "+
                      "printf '\\nMPKG_CONSOLE_EXIT=%s\\n' \"$code\"\n"+
                      "else printf '\\nMPKG_TRANSFER_HASH_FAILED\\n'; fi\n"+
                      "else printf '\\nMPKG_TRANSFER_DECODE_FAILED\\n'; fi\nstty echo\n")

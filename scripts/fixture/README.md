@@ -92,6 +92,32 @@ VM operator lock, so checkpoints cannot mutate a running disk. Restores
 preserve the prior disk and firmware checkpoint; interrupted restore
 markers block further snapshots and boot until explicitly reconciled.
 
+After Python installation, `guest_aur.py` starts a bounded, durable
+systemd build job for the pinned `perl-file-next` and `ack` recipes.
+The builder uses UID 1502 and an isolated network namespace; it verifies
+sources, compares generated `.SRCINFO`, and runs each recipe's checks.
+Only the newly built, identity/hash-bound fixture artifacts use a separate
+repository-free pacman configuration permitting unsigned local builds.
+The guest's repository signature policy remains unchanged. Build records
+include actual results, artifact hashes, configuration and worker hashes.
+
+Preserve `native-change` after the ack chain, Python and native service
+fixture are complete. While stopped, `build_output.py prepare` creates a
+128 MiB output disk bound to that checkpoint. `guest-build-gitstatus.sh`
+uses it to authorize the separate build state, installs only the seven
+signed build prerequisites and runs the pinned gitstatus recipe. After
+shutdown, `build_output.py harvest` reads fixed members through the private
+runner's `debugfs`, with the VM tree read-only and only a fresh export
+directory writable. It validates the build provenance and archive bytes,
+then creates a separate read-only return disk. Restore `native-change`
+before running `guest_import_build.py`; this imports the artifact without
+installing it or retaining build dependencies in the baseline.
+
+Each build has durable `started`, `exit`, `complete` and private log
+evidence. Manager timeouts can interrupt before an exit marker is written;
+missing completion is not proof of success. A running build blocks another
+heavy build, while a successful exited Python unit may retain its status.
+
 Relevant tool behavior is documented by the authoritative
 [bubblewrap manual](https://man.archlinux.org/man/bwrap.1.en),
 [QEMU invocation reference](https://www.qemu.org/docs/master/system/invocation.html)

@@ -145,6 +145,10 @@ class FixtureGuestBoundaryTests(unittest.TestCase):
         self.assertIn('dump-guest-core=off',joined)
         self.assertIn('readonly=on,file=/run/mpkg-fixture/inputs.img',joined)
         self.assertEqual(args[args.index('-uuid')+1],identity['guest_id'])
+        transferred=' '.join(vm.qemu_arguments(identity,False,True,True,outputs=True,built=True))
+        self.assertIn('readonly=on,file=/run/mpkg-fixture/built.img',transferred)
+        self.assertIn('drive=outputs,serial=mpkgout0000000000004',transferred)
+        with self.assertRaises(ValueError):vm.qemu_arguments(identity,False,True,True,built=True)
 
 
 class FixtureConsoleTransferTests(unittest.TestCase):
@@ -154,7 +158,7 @@ class FixtureConsoleTransferTests(unittest.TestCase):
         vm=importlib.util.module_from_spec(spec);spec.loader.exec_module(vm)
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp);scripts=root/'scripts';scripts.mkdir();source=scripts/'probe.sh'
-            payload=b'printf executed > "$MPKG_TEST_EXECUTED"\n';source.write_bytes(payload)
+            payload=b'if read -r unexpected; then exit 99; fi\nprintf executed > "$MPKG_TEST_EXECUTED"\n';source.write_bytes(payload)
             sock=mock.MagicMock();sock.recv.return_value=b''
             socket_context=mock.MagicMock();socket_context.__enter__.return_value=sock
             with mock.patch.object(RUNNER,'PROJECT',root),mock.patch.object(vm,'qmp_query',return_value={}), \
@@ -164,6 +168,7 @@ class FixtureConsoleTransferTests(unittest.TestCase):
                 vm.console(str(source),1)
             wire=sock.sendall.call_args.args[0].decode()
             encoded=base64.b64encode(payload).decode()
+            encoded='\n'.join(encoded[i:i+76] for i in range(0,len(encoded),76))
             variants={'valid':wire,'decode':wire.replace(encoded,'!'+encoded[1:]),
                       'hash':wire.replace(encoded,base64.b64encode(b'printf wrong\n').decode())}
             fakebin=root/'bin';fakebin.mkdir();(fakebin/'stty').write_text('#!/bin/sh\nexit 0\n');(fakebin/'stty').chmod(0o755)
@@ -171,7 +176,7 @@ class FixtureConsoleTransferTests(unittest.TestCase):
                 destination=root/name;destination.mkdir();marker=destination/'executed'
                 command=command.replace('/run/mpkg-fixture-input-',str(destination/'input-'))
                 result=subprocess.run(['/usr/bin/bash','-c',command],env={'PATH':str(fakebin)+':/usr/bin:/bin',
-                                      'MPKG_TEST_EXECUTED':str(marker)},capture_output=True,timeout=10)
+                                      'MPKG_TEST_EXECUTED':str(marker)},input=b'protocol tail must remain unread\n',capture_output=True,timeout=10)
                 self.assertEqual(marker.exists(),name=='valid',result.stdout+result.stderr)
                 if name!='valid':self.assertIn(b'MPKG_TRANSFER_',result.stdout)
 
@@ -210,6 +215,44 @@ class FixtureHandoffTests(unittest.TestCase):
                         with self.assertRaises(ValueError):module.operation('create','baseline')
                         create.assert_not_called();run.assert_not_called()
                     self.assertTrue(pending.exists());pending.unlink()
+
+
+class FixtureAurBoundaryTests(unittest.TestCase):
+    def load(self):
+        root=Path(__file__).resolve().parents[1]
+        spec=importlib.util.spec_from_file_location('core',root/'scripts/proofs/core.py')
+        core=importlib.util.module_from_spec(spec);spec.loader.exec_module(core)
+        with mock.patch.dict(sys.modules,{'core':core}):
+            spec=importlib.util.spec_from_file_location('fixture_guest_aur',root/'scripts/fixture/guest_aur.py')
+            module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)
+        return module
+
+    def test_reading_input_does_not_treat_its_atime_change_as_drift(self):
+        module=self.load()
+        with tempfile.TemporaryDirectory() as tmp:
+            path=Path(tmp)/'source';path.write_bytes(b'pinned input')
+            os.utime(path,ns=(1,2))
+            self.assertEqual(module.checked_file(path,root=False),b'pinned input')
+            with self.assertRaises(module.Refused):module.checked_file(path,'0'*64,root=False)
+            alias=Path(tmp)/'alias';alias.symlink_to(path)
+            with self.assertRaises(OSError):module.checked_file(alias,root=False)
+
+    def test_successful_exited_build_is_idle_but_running_or_transitioning_is_not(self):
+        module=self.load()
+        status={'MainPID':'0','ControlPID':'0','ActiveState':'active','SubState':'exited',
+                'ExecMainStatus':'0','Result':'success'}
+        module.require_idle_unit(status)
+        for change in ({'MainPID':'12'},{'ControlPID':'13'},{'ActiveState':'activating'},
+                       {'SubState':'running'},{'Result':'exit-code'}):
+            with self.subTest(change=change),self.assertRaises(module.Refused):
+                module.require_idle_unit(status|change)
+
+    def test_aur_entrypoint_rejects_host_before_mutating_guest_paths_or_services(self):
+        module=self.load()
+        with mock.patch.object(sys,'argv',['guest_aur.py']),mock.patch.object(module,'run') as run, \
+             mock.patch.object(module,'write_new') as write:
+            with self.assertRaises(module.Refused):module.main()
+            run.assert_not_called();write.assert_not_called()
 
 
 if __name__ == '__main__':unittest.main()
