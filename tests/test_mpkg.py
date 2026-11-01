@@ -327,18 +327,32 @@ if '-T' in sys.argv:
         before = (self.repo / 'vhata-test/PKGBUILD').read_bytes()
         head = self.git('rev-parse', 'HEAD')
         info = 'pkgver = 1\npkgrel = 1\ndepends = git>=2\ndepends = virtual'
+        (self.root / 'log').write_text('')
         result = self.invoke('test', '--refresh', SRCINFO=info)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn('up to date', result.stdout)
-        self.assertIn('["sudo", "pacman", "-D", "--asdeps", "git", "provider"]',
-                      (self.root / 'log').read_text())
-        for env in ({'INSTALLED': '0-1'}, {'MISSING': '127'}):
-            result = self.invoke('test', '--refresh', **env)
-            self.assertEqual(result.returncode, 0, result.stderr)
-            calls = [json.loads(line) for line in (self.root / 'log').read_text().splitlines()]
-            self.assertIn(['makepkg', '-sif'], calls)
+        calls = self.calls()
+        self.assertIn(['sudo', 'pacman', '-D', '--asdeps', 'git', 'provider'], calls)
+        self.assertFalse(any(call[0] == 'yay' or call in
+                             (['makepkg', '-si'], ['makepkg', '-sif']) for call in calls))
         self.assertEqual((self.repo / 'vhata-test/PKGBUILD').read_bytes(), before)
         self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+        for reason, env in [('outdated version', {'INSTALLED': '0-1'}),
+                            ('missing dependency', {'MISSING': '127'})]:
+            with self.subTest(reason=reason):
+                (self.root / 'log').write_text('')
+                result = self.invoke('test', '--refresh', **env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                calls = self.calls()
+                actions = [call for call in calls if call[0] in ('yay', 'sudo') or
+                           call in (['makepkg', '-si'], ['makepkg', '-sif'])]
+                expected = ([['yay', '-S', '--needed', '--asdeps', '--', 'git']]
+                            if 'MISSING' in env else [])
+                expected += [['makepkg', '-sif'],
+                             ['sudo', 'pacman', '-D', '--asdeps', 'git']]
+                self.assertEqual(actions, expected)
+                self.assertEqual((self.repo / 'vhata-test/PKGBUILD').read_bytes(), before)
+                self.assertEqual(self.git('rev-parse', 'HEAD'), head)
 
     def test_invalid_existing_array_is_never_executed(self):
         self.create()
