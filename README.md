@@ -1,5 +1,16 @@
 # mpkg
 
+The replacement server-environment manager begins with a strict TOML
+declaration validator:
+
+```sh
+.venv/bin/python -m mpkg_manager validate environment.toml --json
+```
+
+See [manager declarations](docs/manager-declarations.md) for setup, schema
+and examples. Validation does not record or apply host state. The existing
+`mpkg` helper below remains available.
+
 This repository currently contains an Arch Linux metapackage helper and
 five `vhata-*` package groups. `mpkg` is a Python executable; its
 existing mutation commands edit package definitions, install software,

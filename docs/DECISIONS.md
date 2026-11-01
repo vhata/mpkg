@@ -4,6 +4,21 @@ These entries index agreed direction and repository choices. The linked
 specifications carry the detailed requirements; recording a decision does
 not claim its implementation exists.
 
+## 2026-11-01: begin replacement implementation
+
+The user authorized implementation against the selected first-release
+design, including parallel work and reviewable PRs while unattended.
+Final review and landing remain with the user; this does not authorize
+production package, service or Docker operations.
+
+Keep the existing `mpkg` helper usable while the replacement is developed
+in the `mpkg_manager` Python 3.12 namespace. The first implemented command
+validates a closed TOML model and produces an immutable nonsecret snapshot.
+It does not imply observation, adoption, executable plans or application.
+The [declaration guide](manager-declarations.md) specifies its concrete
+schema choices; the original first-release contract and A1–A12 evidence
+requirements remain in force.
+
 ## 2026-11-01: disposable mechanism execution
 
 The user authorized assembling the isolated guest and running focused

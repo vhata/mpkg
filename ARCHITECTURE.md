@@ -4,7 +4,9 @@ This file maps the current implementation. The
 [proposed architecture](docs/specs/2026-10-31-server-environment-architecture.md)
 and
 [resource model](docs/specs/2026-10-31-server-environment-resources.md)
-describe future work; the redesign remains in planning.
+describe the replacement direction. Its initial declaration model and
+validation CLI are implemented; recording, host observation, application
+and product acceptance remain separate work.
 The [first-release contract](docs/specs/2026-10-31-first-release-contract.md)
 and [acceptance scenarios](docs/specs/2026-10-31-first-release-acceptance.md)
 refine that proposal without changing the current implementation.
@@ -19,6 +21,11 @@ replacement manager has been implemented.
 
 ## Current boundaries
 
+- `mpkg_manager/` is the Python 3.12 replacement namespace. Its initial
+  `validate` command reads and validates one TOML declaration without
+  recording or applying host state. The
+  [declaration guide](docs/manager-declarations.md) specifies the closed
+  schema, canonical snapshots and current boundaries.
 - `mpkg` contains the CLI, PKGBUILD metadata handling, dependency edits,
   package-tool calls, and scoped Git commits. Paths are resolved
   relative to the executable, including when invoked through a symlink.

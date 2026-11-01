@@ -9,6 +9,8 @@ import json
 import posixpath
 import re
 import tomllib
+from urllib.parse import urlsplit
+import uuid
 
 
 SCHEMA_VERSION = 1
@@ -61,9 +63,12 @@ def _json_value(value, path=()):
 
 def canonical_json(value):
     """Encode fixed JSON scalar types, preserving meaningful array order."""
-    _json_value(value)
-    return json.dumps(value, ensure_ascii=False, sort_keys=True,
-                      separators=(",", ":"), allow_nan=False).encode("utf-8")
+    try:
+        _json_value(value)
+        return json.dumps(value, ensure_ascii=False, sort_keys=True,
+                          separators=(",", ":"), allow_nan=False).encode("utf-8")
+    except RecursionError:
+        raise DeclarationError("declaration_nesting_limit") from None
 
 
 @dataclass(frozen=True)
@@ -93,6 +98,12 @@ def _object(value, allowed, required, path):
 def _string(value, path):
     if type(value) is not str or not value or "\0" in value:
         _fail("expected_nonempty_string", path)
+    return value
+
+
+def _text(value, path):
+    if type(value) is not str or "\0" in value:
+        _fail("expected_text", path)
     return value
 
 
@@ -133,6 +144,26 @@ def _path(value, path):
     return posixpath.normpath(value)
 
 
+def _relative_path(value, path):
+    value = _string(value, path)
+    normalized = posixpath.normpath(value)
+    if (value.startswith("/") or normalized in (".", "..")
+            or normalized.startswith("../")):
+        _fail("expected_contained_relative_path", path)
+    return normalized
+
+
+def _opaque_reference(value, path):
+    value = _string(value, path)
+    try:
+        valid = str(uuid.UUID(value)) == value
+    except ValueError:
+        valid = False
+    if not valid:
+        _fail("invalid_protected_reference", path)
+    return value
+
+
 def _list(value, path, validate, *, unique=True):
     if type(value) is not list:
         _fail("expected_array", path)
@@ -149,7 +180,13 @@ def _version(value, path):
         _fail("unexpected_version_binding", path)
     if policy == "exact" and "value" not in value:
         _fail("missing_exact_version", path)
-    return {key: _string(item, path + (key,)) for key, item in value.items()}
+    result = {key: _string(item, path + (key,)) for key, item in value.items()}
+    if "value" in result and (len(result["value"]) > 255 or
+                               any(char.isspace() for char in result["value"])):
+        _fail("invalid_exact_version", path + ("value",))
+    if "recipe_revision" in result and not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", result["recipe_revision"]):
+        _fail("invalid_recipe_revision", path + ("recipe_revision",))
+    return result
 
 
 def _images(value, path):
@@ -192,7 +229,7 @@ _PROPERTIES = {
     "user": {"present": _boolean, "home": _path, "shell": _path, "primary_group": _name,
              "groups": lambda value, path: _list(value, path, _name)},
     "group": {"present": _boolean, "members": lambda value, path: _list(value, path, _name)},
-    "file": _PATH_PROPERTIES | {"content": _string, "content_input": _identifier},
+    "file": _PATH_PROPERTIES | {"content": _text, "content_input": _identifier},
     "directory": _PATH_PROPERTIES,
     "symlink": _PATH_PROPERTIES | {"target": _string},
     "sonarr_xml": {"port": lambda value, path: _integer(value, path, 1024, 65535)},
@@ -216,6 +253,104 @@ def _identity(kind, value, path):
         else:
             result[key] = _name(item, at)
     return result
+
+
+def _input(value, path):
+    value = _object(value, ("id", "base_directory", "files"),
+                    ("id", "base_directory", "files"), path)
+    def item(entry, at):
+        entry = _object(entry, ("path", "classification", "reference"),
+                        ("path", "classification"), at)
+        result = {"path": _relative_path(entry["path"], at + ("path",)),
+                  "classification": _enum(entry["classification"], ("nonsecret", "protected"),
+                                          at + ("classification",))}
+        if result["classification"] == "protected":
+            if "reference" not in entry:
+                _fail("missing_protected_reference", at)
+            result["reference"] = _opaque_reference(entry["reference"], at + ("reference",))
+        elif "reference" in entry:
+            _fail("unexpected_protected_reference", at)
+        return result
+    files = _list(value["files"], path + ("files",), item)
+    if not files:
+        _fail("empty_input_bundle", path + ("files",))
+    if len({entry["path"] for entry in files}) != len(files):
+        _fail("duplicate_input_path", path + ("files",))
+    return {"id": _identifier(value["id"], path + ("id",)),
+            "base_directory": _path(value["base_directory"], path + ("base_directory",)),
+            "files": files}
+
+
+def _endpoint_url(value, path):
+    value = _string(value, path)
+    try:
+        parsed = urlsplit(value)
+        valid = (parsed.scheme in ("http", "https") and parsed.hostname in ("localhost", "127.0.0.1", "::1")
+                 and parsed.username is None and parsed.password is None
+                 and not parsed.fragment and not parsed.query and parsed.port is not None
+                 and not any(char.isspace() for char in value))
+    except ValueError:
+        valid = False
+    if not valid:
+        _fail("unsupported_endpoint_url", path)
+    return value
+
+
+def _check(value, path):
+    common = ("id", "kind", "resource", "timeout_seconds")
+    if type(value) is not dict:
+        _fail("expected_table", path)
+    kind = _enum(value.get("kind"), ("package", "service", "endpoint", "access"), path + ("kind",))
+    extra = {"package": ("expected",), "service": ("expected",),
+             "endpoint": ("url", "expected_status"),
+             "access": ("as_user", "operation", "consumer")}[kind]
+    _object(value, common + extra, common + extra, path)
+    result = {"id": _identifier(value["id"], path + ("id",)), "kind": kind,
+              "resource": _identifier(value["resource"], path + ("resource",)),
+              "timeout_seconds": _integer(value["timeout_seconds"], path + ("timeout_seconds",), 1, 60)}
+    if kind in ("package", "service"):
+        validators = ({"present": _boolean, "version": _string,
+                       "reason": lambda item, at: _enum(item, ("explicit", "dependency"), at)}
+                      if kind == "package" else {"running": _boolean, "enabled": _boolean})
+        expected = _object(value["expected"], validators, (), path + ("expected",))
+        if not expected:
+            _fail("empty_check_expectation", path + ("expected",))
+        result["expected"] = {key: validators[key](item, path + ("expected", key))
+                              for key, item in expected.items()}
+    elif kind == "endpoint":
+        result["url"] = _endpoint_url(value["url"], path + ("url",))
+        result["expected_status"] = _integer(value["expected_status"], path + ("expected_status",), 100, 599)
+    else:
+        result["as_user"] = _name(value["as_user"], path + ("as_user",))
+        result["operation"] = _enum(value["operation"], ("read", "list"), path + ("operation",))
+        result["consumer"] = _identifier(value["consumer"], path + ("consumer",))
+    return result
+
+
+def _runtime_rule(value, path):
+    keys = ("id", "component", "root", "patterns", "types", "exceptions")
+    value = _object(value, keys, keys, path)
+    def pattern(item, at):
+        item = _string(item, at)
+        if item.startswith("/") or ".." in item.split("/"):
+            _fail("invalid_runtime_pattern", at)
+        return item
+    result = {"id": _identifier(value["id"], path + ("id",)),
+              "component": _identifier(value["component"], path + ("component",)),
+              "root": _path(value["root"], path + ("root",)),
+              "patterns": _list(value["patterns"], path + ("patterns",), pattern),
+              "types": _list(value["types"], path + ("types",),
+                             lambda item, at: _enum(item, ("file", "directory", "symlink"), at)),
+              "exceptions": _list(value["exceptions"], path + ("exceptions",), _path)}
+    if not result["patterns"] or not result["types"]:
+        _fail("empty_runtime_scope", path)
+    if any(not _within(item, result["root"]) for item in result["exceptions"]):
+        _fail("runtime_exception_outside_root", path + ("exceptions",))
+    return result
+
+
+def _within(path, root):
+    return root == "/" or path == root or path.startswith(root + "/")
 
 
 def _physical_key(resource):
@@ -302,17 +437,13 @@ def _validate(model):
     result = {"schema": SCHEMA_VERSION,
               "components": _list(model["components"], ("components",), _component),
               "resources": _list(model["resources"], ("resources",), _resource)}
-    # These typed extensions are intentionally unavailable in the first API
-    # checkpoint rather than accepting unchecked opaque values.
-    for key in ("inputs", "checks", "runtime_rules"):
-        value = model.get(key, [])
-        if type(value) is not list:
-            _fail("expected_array", (key,))
-        if value:
-            _fail("declaration_extension_not_supported", (key,))
-        result[key] = []
+    for key, validator in (("inputs", _input), ("checks", _check), ("runtime_rules", _runtime_rule)):
+        result[key] = _list(model.get(key, []), (key,), validator)
     components = _unique(result["components"], ("components",))
     resources = _unique(result["resources"], ("resources",))
+    inputs = _unique(result["inputs"], ("inputs",))
+    checks = _unique(result["checks"], ("checks",))
+    _unique(result["runtime_rules"], ("runtime_rules",))
     physical = set()
     for index, resource in enumerate(result["resources"]):
         at = ("resources", index)
@@ -321,17 +452,30 @@ def _validate(model):
             _fail("duplicate_physical_identity", at + ("identity",))
         physical.add(key)
         for reference in resource["consumers"]:
-            if reference not in components and not reference.startswith("external:"):
+            if (reference not in components and not reference.startswith("external:")
+                    or reference == "external:"):
                 _fail("missing_consumer", at + ("consumers",))
+            if reference in components and resource["id"] not in components[reference]["resources"]:
+                _fail("consumer_without_resource_reference", at + ("consumers",))
         if any(reference not in resources for reference in resource["requires"]):
             _fail("missing_resource", at + ("requires",))
-        if resource["checks"] or "input" in resource or "content_input" in resource["desired"]:
-            _fail("missing_reference", at)
+        for reference in resource["checks"]:
+            if reference not in checks or checks[reference]["resource"] != resource["id"]:
+                _fail("missing_or_mismatched_check", at + ("checks",))
+        if "input" in resource and resource["input"]["bundle"] not in inputs:
+            _fail("missing_input", at + ("input",))
+        if "content_input" in resource["desired"]:
+            reference = resource["desired"]["content_input"]
+            if reference not in inputs or len(inputs[reference]["files"]) != 1:
+                _fail("content_requires_single_file_input", at + ("desired", "content_input"))
     requirements = {}
     for index, component in enumerate(result["components"]):
         at = ("components", index)
         if any(reference not in resources for reference in component["resources"]):
             _fail("missing_resource", at + ("resources",))
+        for reference in component["resources"]:
+            if component["id"] not in resources[reference]["consumers"]:
+                resources[reference]["consumers"].append(component["id"])
         for requirement in component["requirements"]:
             reference, prop = requirement["resource"], requirement["property"]
             if reference not in component["resources"]:
@@ -348,6 +492,27 @@ def _validate(model):
             if prop in resource["desired"] and canonical_json(resource["desired"][prop]) != encoded:
                 _fail("conflicting_requirements", at + ("requirements",))
             requirements[key] = encoded
+    check_resources = {"package": {"package"}, "service": {"service"},
+                       "endpoint": {"compose", "service"},
+                       "access": {"file", "directory", "symlink", "volume"}}
+    for index, check in enumerate(result["checks"]):
+        at = ("checks", index)
+        if check["resource"] not in resources:
+            _fail("missing_resource", at + ("resource",))
+        resource = resources[check["resource"]]
+        if resource["kind"] not in check_resources[check["kind"]]:
+            _fail("check_resource_kind_mismatch", at + ("resource",))
+        if check["kind"] == "access" and check["consumer"] not in resource["consumers"]:
+            _fail("unknown_access_consumer", at + ("consumer",))
+    for index, rule in enumerate(result["runtime_rules"]):
+        at = ("runtime_rules", index)
+        if rule["component"] not in components:
+            _fail("missing_component", at + ("component",))
+        for resource in resources.values():
+            if (resource["kind"] in ("file", "sonarr_xml")
+                    and _within(resource["identity"]["path"], rule["root"])
+                    and resource["identity"]["path"] not in rule["exceptions"]):
+                _fail("runtime_scope_hides_configuration", at + ("exceptions",))
     # Iterative traversal keeps deeply nested valid graphs off Python's stack.
     states = {}
     for root in resources:
