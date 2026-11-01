@@ -460,6 +460,44 @@ class FixtureImageIndexPreparationTests(unittest.TestCase):
                 with self.assertRaises(ValueError):module['members'](tar)
 
 
+class FixtureGitstatusDiagnosticTests(unittest.TestCase):
+    def load(self):
+        path=Path(__file__).resolve().parents[1]/'scripts/fixture/guest_gitstatus_diagnose.py'
+        program=ast.parse(path.read_text())
+        nodes=[n for n in program.body if isinstance(n,ast.FunctionDef)
+               and n.name in ('expected_inventory','complete')
+               or isinstance(n,ast.Assign) and isinstance(n.targets[0],ast.Name)
+               and n.targets[0].id=='DEPENDENCIES']
+        namespace={'Refused':ValueError}
+        exec(compile(ast.Module(body=nodes,type_ignores=[]),'gitstatus-diagnostic-functions','exec'),namespace)
+        return namespace
+
+    def test_gitstatus_expected_build_inventory_excludes_the_returned_artifact(self):
+        import json
+        source=json.loads((Path(__file__).resolve().parents[1]/'docs/fixtures/2026-10-31-arch-native-inputs.json').read_text())
+        expected=self.load()['expected_inventory'](source)
+        self.assertEqual(len(expected),216)
+        self.assertTrue({'ack','perl-file-next','cmake','zsh'}<=expected.keys())
+        self.assertFalse({'tmux','ripgrep','libutempter','gitstatus'} & expected.keys())
+        self.assertEqual(expected['gnupg'],'2.4.9-3')
+
+    def test_completion_requires_inventory_export_markers_and_actual_quiescence(self):
+        completed=self.load()['complete']
+        manager={'ActiveState':'inactive','SubState':'dead','Result':'success','ExecMainStatus':'0',
+                 'MainPID':'0','ControlPID':'0'}
+        group={'present':False,'pids':[],'events':{}}
+        markers={'started':'guest','complete':'guest','exit':'0'}
+        self.assertTrue(completed(manager,group,[],markers,'guest',True,True))
+        variants=[(dict(manager,MainPID='12'),group,[],markers,True,True),
+                  (manager,{'present':True,'pids':[],'events':{'populated':'1'}},[],markers,True,True),
+                  (manager,group,[{'pid':12}],markers,True,True),
+                  (manager,group,[],dict(markers,complete='other'),True,True),
+                  (manager,group,[],markers,False,True),(manager,group,[],markers,True,False)]
+        for status,cgroup,builders,values,inventory,export in variants:
+            with self.subTest(status=status,cgroup=cgroup,builders=builders,values=values,inventory=inventory,export=export):
+                self.assertFalse(completed(status,cgroup,builders,values,'guest',inventory,export))
+
+
 class FixtureProofAdditionTests(unittest.TestCase):
     def load(self):
         sys.modules['runner']=RUNNER
