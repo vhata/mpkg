@@ -18,7 +18,7 @@ establish any A1–A12 product acceptance result.
 | Native transaction | Frozen prepare-only checks and conflict refusal passed; no package transaction commit inferred |
 | Ordinary Docker fixture | Assembly and repeat check passed; separate restore/reboot check pending |
 | Compose mechanism experiment | All ten asserted checks passed, with the lifecycle limits below |
-| Volume, network and image-policy variants | Volume keep passed through retirement; the other five branches remain pending |
+| Volume, network and image-policy variants | Both volume variants passed through retirement; four network/image-policy branches remain pending |
 | Replacement manager and A1–A12 | Not implemented or executed by this work |
 
 ## Acquired inputs
@@ -623,12 +623,36 @@ After orderly shutdown, `volume-keep-mechanism` was saved as offline
 snapshot ID `25`, with no memory state and firmware variables SHA-256
 `4ba5f05f3fe1214089e691d3c9887bf67e4ebacb9e92ef0743ac6271d16beddd`.
 
+On its own fresh branch, `volume-delete` setup and the separate check
+both passed with identical complete observations, including its sole
+Sonarr volume consumer and actual Radarr discovery. After orderly
+shutdown, the `volume-delete` baseline was saved as offline snapshot
+ID `27`, with no memory state and firmware variables SHA-256
+`850fb33fbf7a3376a3f9acb5df8471c3906ed7b4ace6d9e02b889e99ff078f89`.
+Independent review verified both checks, shutdown and the saved baseline.
+Its check-only reboot then passed with the same container, image, volume
+and configuration bindings, expected data metadata and sentinels, fresh
+process/listener attribution and successful access and Radarr discovery.
+The complete reboot interval was
+independently verified before the port experiment.
+That experiment also passed: the same Sonarr container restarted on
+`18990`, Radarr's complete attribution remained unchanged, and resource,
+configuration/access and discovery checks passed with unchanged assembly
+history. Independent review verified its fresh completion interval.
+Exclusive-volume retirement then passed. The recorded Sonarr container
+and declared named volume were removed after consumer/identity checks,
+with actual absence and final inventory verified. Radarr's attribution,
+directory discovery, shared sentinel and prior history remained valid.
+After orderly shutdown, `volume-delete-mechanism` was saved as offline
+snapshot ID `28`, with no memory state and firmware variables SHA-256
+`4ba5f05f3fe1214089e691d3c9887bf67e4ebacb9e92ef0743ac6271d16beddd`.
+
 The supplemental runtime gates currently stand as follows:
 
 | Variant | Assembly | Reboot check | Experiment | Retirement |
 | --- | --- | --- | --- | --- |
 | Volume keep | Setup and check passed; baseline ID 24 saved | Passed | Port change passed | Passed; final ID 25 saved |
-| Volume delete | Pending | Pending | Pending | Pending |
+| Volume delete | Setup and check passed; baseline ID 27 saved | Passed | Port change passed | Passed; final ID 28 saved |
 | Shared network | Pending | Pending | Pending | Pending |
 | Exclusive network deletion | Pending | Pending | Pending | Pending |
 | Allowed-tag image update | Pending | Pending | Pending | Not required |
