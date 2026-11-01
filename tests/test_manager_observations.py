@@ -252,7 +252,7 @@ class BoundedQueryTests(unittest.TestCase):
             seen.append((argv, kwargs))
             return real_popen([sys.executable, "-c", code], **kwargs)
 
-        with patch("mpkg_manager.observe_native.subprocess.Popen", side_effect=launch):
+        with patch("mpkg_manager.query_process.subprocess.Popen", side_effect=launch):
             result = run_readonly(PACKAGE_VERSIONS, **bounds)
         self.assertEqual(seen[0][0], PACKAGE_VERSIONS)
         self.assertEqual(seen[0][1]["env"], ENVIRONMENT)
@@ -267,7 +267,7 @@ class BoundedQueryTests(unittest.TestCase):
                  ("/usr/bin/sudo", "pacman", "-Q"), ("pacman", "-Q"),
                  SERVICE_QUERY + ("--user",), SERVICE_QUERY + ("bad\n.service",),
                  SERVICE_QUERY + ("example.socket",)]
-        with patch("mpkg_manager.observe_native.subprocess.Popen") as spawn:
+        with patch("mpkg_manager.query_process.subprocess.Popen") as spawn:
             for argv in cases:
                 self.assertEqual(run_readonly(argv).code, "invalid_query")
             spawn.assert_not_called()
@@ -291,7 +291,7 @@ class BoundedQueryTests(unittest.TestCase):
         for error, code in [(FileNotFoundError(SECRET), "tool_unavailable"),
                             (PermissionError(SECRET), "permission_denied"),
                             (OSError(SECRET), "start_failed")]:
-            with patch("mpkg_manager.observe_native.subprocess.Popen", side_effect=error):
+            with patch("mpkg_manager.query_process.subprocess.Popen", side_effect=error):
                 result = run_readonly(PACKAGE_VERSIONS)
             self.assertEqual(result.code, code)
             self.assertNotIn(SECRET, repr(result))
@@ -383,8 +383,8 @@ else:
                         return selector
 
                     started = time.monotonic()
-                    with patch("mpkg_manager.observe_native.subprocess.Popen", side_effect=launch), \
-                            patch("mpkg_manager.observe_native.selectors.DefaultSelector",
+                    with patch("mpkg_manager.query_process.subprocess.Popen", side_effect=launch), \
+                            patch("mpkg_manager.query_process.selectors.DefaultSelector",
                                   side_effect=selector_factory), \
                             self.assertRaises(exception_type) as caught:
                         run_readonly(PACKAGE_VERSIONS, timeout=0.1)
@@ -397,7 +397,7 @@ else:
                     self.assertFalse(marker.exists())
 
     def test_query_bounds_cannot_disable_limits(self):
-        with patch("mpkg_manager.observe_native.subprocess.Popen") as spawn:
+        with patch("mpkg_manager.query_process.subprocess.Popen") as spawn:
             for bounds in ({"timeout": 0}, {"timeout": float("inf")}, {"timeout": True},
                            {"max_output": 0}, {"max_output": 2**30}):
                 with self.subTest(bounds=bounds), self.assertRaises(ValueError):
