@@ -181,6 +181,46 @@ recipe has no check function; this record must say `not-defined`, not
 manufacture a passing check. Missing build evidence blocks publication.
 This helper installs nothing and never refreshes a package database.
 
+### Docker daemon readiness
+
+Before importing images, `docker_ready.py --guest-id <UUID>` requires
+inactive Docker/socket/containerd units, empty guest engine directories,
+absent daemon configuration overrides and sockets, and no Docker-group
+members. It binds installed versions and unit bytes to the actual signed
+acquisition records and fixed archive digests. The helper adds only
+fixed core-limit drop-ins, then starts `docker.service` and its packaged
+dependencies. It does not enable startup, pull, build, import or create
+containers. Default engine storage and guest network state are initialized
+by daemon startup, as described in the
+[Docker daemon documentation](https://docs.docker.com/engine/daemon/).
+
+The observed result binds fixed startup arguments, empty environment
+option sources, process identities and the owned local Unix socket.
+Unexpected daemon TCP listeners refuse. Engine version/platform/data
+root, inactive swarm and empty containers/images/volumes must match the
+fresh baseline. The result and durable attempt are private under
+`docker-readiness`; a start timeout leaves uncertainty without retry or
+automatic stop. Image-store compatibility remains an import-time check.
+
+### Console wrappers
+
+The reviewed console transport may execute these fixed Bash files with
+the independently supplied `MPKG_GUEST_ID`. They accept no operation
+arguments and stop on the first failing command. Installed Python
+entrypoints still enforce the marker, actual guest disk and code owner
+before any system mutation.
+
+- `guest-basics.sh`: journal, inputs, XML, retirement and supervision.
+- `guest-docker-ready.sh`: fixed daemon readiness/start.
+- `guest-native-service.sh`: native SSH baseline setup/check.
+- `guest-image-import.sh`: archive import, then observed image manifest.
+- `guest-native-proof.sh`: actual native manifest, then prepare-only proof.
+- `guest-compose-proof.sh`: fixed Sonarr/Radarr experiment.
+
+The wrappers do not transfer or install code. A newly added Python helper
+must first be installed root-owned under `/opt/mpkg-proofs` through the
+separately reviewed transport; the immutable source image is not modified.
+
 ### Native service baseline
 
 `native_service.py setup --guest-id <UUID>` assembles only the fixed

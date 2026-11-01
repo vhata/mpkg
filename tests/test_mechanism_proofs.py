@@ -31,6 +31,7 @@ import image_import
 import native_manifest
 import native_service
 import run as proof_run
+import docker_ready
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -82,7 +83,7 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(list(Path(temporary).iterdir()), [])
 
     def test_guest_image_entrypoints_refuse_host_before_docker(self):
-        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py'):
+        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py'):
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as temporary:
                 result = subprocess.run([
                     sys.executable, '-I', str(PROOFS / filename),
@@ -103,6 +104,45 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout)['status'], 'refused')
             self.assertEqual(result.stderr, '')
             self.assertEqual(list(Path(temporary).iterdir()), [])
+
+    def test_console_wrappers_require_expected_uuid_before_execution(self):
+        for script in PROOFS.glob('guest-*.sh'):
+            with self.subTest(script=script.name), tempfile.TemporaryDirectory() as temporary:
+                result = subprocess.run(['/bin/bash', str(script)], cwd=temporary,
+                                        env={'PATH': '/usr/bin:/bin'}, capture_output=True,
+                                        text=True, timeout=10)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('expected guest UUID is required', result.stderr)
+                self.assertEqual(result.stdout, '')
+                self.assertEqual(list(Path(temporary).iterdir()), [])
+
+
+class DockerReadinessTests(unittest.TestCase):
+    def test_service_must_be_packaged_and_start_only_fixed_local_arguments(self):
+        value = {
+            'LoadState': 'loaded', 'FragmentPath': '/usr/lib/systemd/system/docker.service',
+            'DropInPaths': '', 'UnitFileState': 'disabled', 'ActiveState': 'inactive', 'MainPID': '0',
+            'Environment': '', 'EnvironmentFiles': '', 'PassEnvironment': '',
+            'ExecStart': '{ path=/usr/bin/dockerd ; argv[]=/usr/bin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock ; ignore_errors=no ; pid=0 ; }',
+        }
+        docker_ready.assert_unit('docker.service', value)
+        for field, replacement in [('ExecStart', value['ExecStart'].replace('-H fd://', '-H tcp://0.0.0.0:2375')),
+                                   ('DropInPaths', '/etc/systemd/system/docker.service.d/unmanaged.conf'),
+                                   ('EnvironmentFiles', '/etc/docker/daemon-env'),
+                                   ('ActiveState', 'active')]:
+            with self.subTest(field=field), self.assertRaises(docker_ready.Refused):
+                docker_ready.assert_unit('docker.service', dict(value, **{field: replacement}))
+
+    def test_engine_must_match_empty_fixed_baseline(self):
+        value = {'ID': 'fixture-engine', 'ServerVersion': '29.9.2', 'OSType': 'linux',
+                 'Architecture': 'x86_64', 'DockerRootDir': '/var/lib/docker',
+                 'Containers': 0, 'Images': 0, 'Swarm': {'LocalNodeState': 'inactive'}}
+        self.assertEqual(docker_ready.validate_engine(value), 'fixture-engine')
+        for field, replacement in [('Containers', 1), ('Images', 1), ('DockerRootDir', '/unbound'),
+                                   ('Swarm', {'LocalNodeState': 'active'}), ('ServerVersion', 'other')]:
+            with self.subTest(field=field), self.assertRaisesRegex(
+                    docker_ready.Refused, 'docker_engine_baseline_mismatch'):
+                docker_ready.validate_engine(dict(value, **{field: replacement}))
 
 
 class NativeServiceTests(unittest.TestCase):
