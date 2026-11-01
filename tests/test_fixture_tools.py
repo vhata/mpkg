@@ -5,6 +5,8 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest import mock
+from types import SimpleNamespace
 
 SPEC = importlib.util.spec_from_file_location(
     'fixture_runner', Path(__file__).resolve().parents[1] / 'scripts/fixture/runner.py')
@@ -71,6 +73,34 @@ class FixtureExtractionTests(unittest.TestCase):
                     'https://user@archive.archlinux.org/a','https://archive.archlinux.org/../a',
                     'https://archive.archlinux.org/a?token=secret']:
             with self.subTest(url=url),self.assertRaises(ValueError):RUNNER.checked_url(url)
+
+
+class FixtureTrustTests(unittest.TestCase):
+    def test_failed_initialization_never_publishes_a_partial_store(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);cache=root/'fixture';cache.mkdir();keys=root/'keys';keys.mkdir()
+            for name in ('archlinux.gpg','archlinux-revoked'):(keys/name).write_text('')
+            (keys/'archlinux-trusted').write_text('A'*40+':4:\n')
+            result=SimpleNamespace(returncode=2,stderr=b'explicit failure')
+            with mock.patch.object(RUNNER,'KEYRINGS',keys), mock.patch.object(RUNNER,'run_gpg',return_value=result):
+                with self.assertRaises(RuntimeError):RUNNER.trust_home(cache)
+            self.assertFalse((root/'fgpg').exists())
+            diagnostics=list(root.glob('g*/failed-step-0.txt'))
+            self.assertEqual(len(diagnostics),1)
+            self.assertEqual(diagnostics[0].read_bytes(),b'explicit failure')
+
+    def test_good_signature_without_full_trust_and_revoked_primary_are_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root=Path(tmp);artifact=root/'artifact';artifact.write_bytes(b'archive')
+            signature=root/'signature';signature.write_bytes(b'signature')
+            primary='A'*40;signer='B'*40
+            (root/'archlinux-revoked').write_text('')
+            valid=f'[GNUPG:] VALIDSIG {signer} 2026-11-01 123 0 4 0 1 10 00 {primary}\n'
+            for trust,revoked in [('TRUST_UNDEFINED',''),('TRUST_FULLY',primary)]:
+                (root/'archlinux-revoked').write_text(revoked+'\n')
+                result=SimpleNamespace(returncode=0,stdout=(valid+f'[GNUPG:] {trust} 0 pgp\n').encode())
+                with mock.patch.object(RUNNER,'KEYRINGS',root),mock.patch.object(RUNNER,'run_gpg',return_value=result):
+                    with self.assertRaises(ValueError):RUNNER.verify_signature(root,artifact,signature)
 
 
 if __name__ == '__main__':unittest.main()

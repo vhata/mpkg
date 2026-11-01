@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import resource
 import select
 import shutil
 import socket
@@ -104,7 +105,7 @@ def prepare():
 
 def qemu_arguments(identity, installer):
     arguments = ['/usr/bin/qemu-system-x86_64', '-no-user-config', '-nodefaults',
-                 '-display', 'none', '-machine', 'q35,accel=tcg', '-cpu', 'qemu64',
+                 '-display', 'none', '-machine', 'q35,accel=tcg,dump-guest-core=off', '-cpu', 'qemu64',
                  '-smp', '4', '-m', '8192', '-uuid', identity['guest_id'],
                  '-sandbox', 'on,obsolete=deny,elevateprivileges=deny,spawn=deny,resourcecontrol=deny',
                  '-drive', 'if=pflash,format=raw,readonly=on,file=/usr/share/edk2/x64/OVMF_CODE.4m.fd',
@@ -175,7 +176,7 @@ def console(script=None, seconds=10):
         if script is not None:
             source=Path(script).resolve()
             allowed=runner.PROJECT/'scripts'
-            if not source.is_relative_to(allowed) or source.suffix not in {'.sh','.py'}:
+            if not source.is_relative_to(allowed) or source.suffix != '.sh':
                 raise ValueError('console input must be a reviewed script in this worktree')
             data=runner.regular_file(source).read_bytes()
             if len(data)>262144:raise ValueError('console script exceeds input bound')
@@ -203,6 +204,7 @@ def main():
     if sys.version_info[:2]!=(3,12):parser.error('Python 3.12 is required')
     if not 1<=args.seconds<=30:parser.error('console observation must be 1–30 seconds')
     os.umask(0o077)
+    resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     if args.operation=='prepare':prepare()
     elif args.operation.startswith('start-'):start(args.operation=='start-installer')
     elif args.operation=='console':console(args.script,args.seconds)

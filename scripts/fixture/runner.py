@@ -132,8 +132,11 @@ def run_gpg(home, arguments, input_bytes=None):
 
 
 def trust_home(cache):
-    """Use explicit Arch master trust roots, not ambient user trust."""
-    home = cache / 'gnupg'
+    """Publish a complete private trust store; keep failed staging for diagnosis."""
+    # Long worktree paths exceed the Unix socket limit even with --no-autostart.
+    home = cache.parent / 'fgpg'
+    if len(os.fsencode(home / 'S.gpg-agent')) >= 108:
+        raise ValueError('worktree path is too long for the private GPG socket name')
     if home.exists():
         private_directory(home)
         marker = regular_file(home / 'keyring-inputs.json')
@@ -142,8 +145,7 @@ def trust_home(cache):
             if sha256(KEYRINGS / name) != digest:
                 raise ValueError('host Arch trust input changed; create a new cache')
         return home
-    private_directory(home)
-    os.chmod(home, 0o700)
+    staging = Path(tempfile.mkdtemp(prefix='g', dir=cache.parent))
     files = ['archlinux.gpg', 'archlinux-trusted', 'archlinux-revoked']
     hashes = {name: sha256(KEYRINGS / name) for name in files}
     roots = []
@@ -156,16 +158,18 @@ def trust_home(cache):
         roots.append(fingerprint)
     if not roots:
         raise ValueError('no trusted Arch master keys')
-    imported = run_gpg(home, ['--import', str(KEYRINGS / 'archlinux.gpg')])
-    if imported.returncode:
-        raise RuntimeError('could not initialize private public keyring')
-    # The distro-maintained master list is this private trust store's root.
-    trust = ''.join(f'{fingerprint}:6:\n' for fingerprint in roots).encode()
-    if run_gpg(home, ['--import-ownertrust'], trust).returncode:
-        raise RuntimeError('could not install explicit private trust roots')
-    if run_gpg(home, ['--check-trustdb']).returncode:
-        raise RuntimeError('private public-key trust evaluation failed')
-    write_new(home / 'keyring-inputs.json', (json.dumps(hashes, indent=2) + '\n').encode())
+    steps = [(['--import', str(KEYRINGS / 'archlinux.gpg')], None),
+             (['--import-ownertrust'], ''.join(f'{key}:6:\n' for key in roots).encode()),
+             (['--check-trustdb'], None)]
+    for index, (arguments, input_bytes) in enumerate(steps):
+        result = run_gpg(staging, arguments, input_bytes)
+        if result.returncode:
+            write_new(staging / f'failed-step-{index}.txt', result.stderr[:262144])
+            raise RuntimeError(f'private GPG initialization step {index} failed; preserved {staging.name}')
+    write_new(staging / 'keyring-inputs.json', (json.dumps(hashes, indent=2) + '\n').encode())
+    if home.exists() or home.is_symlink():
+        raise ValueError('private GPG publication target appeared during initialization')
+    staging.rename(home)
     return home
 
 
@@ -173,7 +177,7 @@ def verify_signature(home, artifact, signature):
     regular_file(artifact)
     regular_file(signature)
     result = run_gpg(home, ['--status-fd', '1', '--verify', str(signature), str(artifact)])
-    statuses = [line[len('[GNUPG:] '):].split() for line in result.stdout.decode().splitlines()
+    statuses = [line[len('[GNUPG:] '):].split() for line in result.stdout.decode(errors='replace').splitlines()
                 if line.startswith('[GNUPG:] ')]
     valid = [line for line in statuses if line[0] == 'VALIDSIG']
     trusted = any(line[0] in {'TRUST_FULLY', 'TRUST_ULTIMATE'} for line in statuses)
