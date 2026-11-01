@@ -38,6 +38,7 @@ import docker_baseline
 import native_conflict
 import service_environment
 import docker_resume
+import account_defaults
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -387,6 +388,37 @@ class DockerReadinessTests(unittest.TestCase):
             with self.subTest(field=field), self.assertRaisesRegex(
                     docker_ready.Refused, 'docker_engine_baseline_mismatch'):
                 docker_ready.validate_engine(dict(value, **{field: replacement}))
+
+
+class FixtureAccountTests(unittest.TestCase):
+    def test_account_arguments_use_bound_defaults_and_preserve_fixed_homes(self):
+        expected = {'native': ('fixture-native', '1500', '1500', '/home/fixture-native'),
+                    'external': ('fixture-external', '1501', '1501', '/home/fixture-external'),
+                    'compose': ('compose', '963', '962', '/opt/docker')}
+        with mock.patch.object(account_defaults, 'require_mail_defaults') as checked:
+            for role, (name, uid, gid, home) in expected.items():
+                argv = account_defaults.useradd_arguments(role)
+                self.assertEqual(argv[0], '/usr/bin/useradd')
+                self.assertEqual(argv[-1], name)
+                for key, value in (('--uid', uid), ('--gid', gid), ('--home-dir', home), ('--groups', 'media')):
+                    self.assertEqual(argv[argv.index(key) + 1], value)
+                self.assertNotIn('-K', argv)
+                self.assertNotIn('CREATE_MAIL_SPOOL=no', argv)
+                self.assertIn('--no-create-home' if role == 'compose' else '--create-home', argv)
+            self.assertEqual(checked.call_count, 3)
+            with self.assertRaisesRegex(account_defaults.Refused, 'role_unsupported'):
+                account_defaults.useradd_arguments('arbitrary')
+            self.assertEqual(checked.call_count, 3)
+
+    def test_changed_defaults_refuse_before_any_package_or_account_tool(self):
+        metadata = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        identity = [1, 2, 3, 4, 0, 0, stat.S_IFREG | 0o644, 1]
+        with mock.patch.object(Path, 'lstat', return_value=metadata), mock.patch.object(
+                account_defaults, 'read_regular', return_value=(b'CREATE_MAIL_SPOOL=yes\n', identity)), \
+                mock.patch.object(account_defaults, 'command') as command:
+            with self.assertRaisesRegex(account_defaults.Refused, 'defaults_changed'):
+                account_defaults.useradd_arguments('native')
+            command.assert_not_called()
 
 
 class NativeServiceTests(unittest.TestCase):

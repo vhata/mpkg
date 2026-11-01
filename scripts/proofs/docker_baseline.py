@@ -25,6 +25,7 @@ from image_import import validate_acquisition
 from native_manifest import trusted_json
 from native_service import identity as native_identity, trusted_path
 from run import ENV, command, trusted_install
+from account_defaults import require_mail_defaults, useradd_arguments
 
 
 BASE = Path('/opt/docker')
@@ -369,6 +370,7 @@ class Baseline:
         return result
 
     def setup(self):
+        require_mail_defaults()
         self.engine(enabled=False)
         self.image_ids = self.images()
         native_identity('native')
@@ -401,9 +403,7 @@ class Baseline:
         attempt = str(uuid.uuid4())
         self.journal.begin(attempt)
         command(['/usr/bin/groupadd', '--gid', '962', 'compose'])
-        command(['/usr/bin/useradd', '--uid', '963', '--gid', '962', '--groups', 'media',
-                 '--home-dir', str(BASE), '--no-create-home', '--shell', '/usr/bin/nologin',
-                 '--no-user-group', '-K', 'CREATE_MAIL_SPOOL=no', 'compose'])
+        command(useradd_arguments('compose'))
         make_directory(BASE, 963, 962, 0o750)
         assert_compose_account()
         for path in (RADARR_ROOT, SENTINEL):

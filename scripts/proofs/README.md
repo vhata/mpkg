@@ -334,6 +334,12 @@ through bounded private stdin; the servers permit only public-key
 authentication and force internal SFTP. Key material is captured in the
 private journal and referred to by opaque IDs, never exported or hashed
 into public results. This is disposable fixture setup, not adoption.
+Native and Compose account creation require the exact acquired shadow
+package's `/etc/default/useradd` bytes, which disable mail spooling.
+The closed account helper preserves the specified names, IDs, homes and
+shells. It does not pass `CREATE_MAIL_SPOOL` through `-K`: upstream
+[shadow 4.20.0](https://github.com/shadow-maint/shadow/blob/4.20.0/src/useradd.c)
+uses that option for a separate set of `login.defs` keys and rejects it.
 
 `check` validates `sshd -t`, effective configuration, exact memberships,
 service state/enablement, protected inputs and metadata, then performs

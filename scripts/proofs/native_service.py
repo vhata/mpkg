@@ -21,6 +21,7 @@ from native_manifest import SOURCE_SHA256, check_archive, trusted_json, validate
 from run import command, trusted_install
 from compose_proof import covering_listeners
 from service_environment import verified_environment_files
+from account_defaults import require_mail_defaults, useradd_arguments
 
 
 PUBLIC = Path('/etc/mpkg-fixture-ssh')
@@ -329,6 +330,7 @@ def check(guest, external_only=False):
 
 
 def setup(guest):
+    require_mail_defaults()
     root = state_root(guest)
     baseline, metadata, packaged_unit, version = preflight(root)
     private_directory(root)
@@ -347,9 +349,7 @@ def setup(guest):
             command(['/usr/bin/groupadd', '--gid', '1001', 'media'])
         for role, (name, number, port, _) in ROLES.items():
             command(['/usr/bin/groupadd', '--gid', str(number), name])
-            command(['/usr/bin/useradd', '--uid', str(number), '--gid', str(number),
-                     '--groups', 'media', '--create-home', '--home-dir', '/home/' + name,
-                     '--shell', '/usr/bin/bash', '--no-user-group', '-K', 'CREATE_MAIL_SPOOL=no', name])
+            command(useradd_arguments(role))
             # Unlock account with an unknown generated password; both servers
             # accept only public keys. Password bytes never enter argv or logs.
             command(['/usr/bin/chpasswd'], input_bytes=(name + ':' + secrets.token_hex(32) + '\n').encode())
