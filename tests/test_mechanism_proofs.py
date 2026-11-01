@@ -1,5 +1,8 @@
 """Host-safe tests: temporary files/SQLite only, no real service/package tools."""
 import importlib.util
+import contextlib
+import hashlib
+import io
 import json
 import os
 from pathlib import Path
@@ -9,8 +12,10 @@ import subprocess
 import sys
 import tempfile
 import time
+import tarfile
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 import uuid
 
 
@@ -21,6 +26,7 @@ SPEC.loader.exec_module(core)
 sys.path.insert(0, str(PROOFS))
 import compose_proof
 import native_proof
+import oci_acquire
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -290,6 +296,99 @@ class LocalMechanismTests(unittest.TestCase):
         manifest['exact_versions']['tmux'] = 'unsupported-version'
         with self.assertRaisesRegex(native_proof.Refused, 'exact_pin_unavailable'):
             native_proof.enforce_version_intent(rows, manifest)
+
+
+class OciAcquisitionTests(unittest.TestCase):
+    def test_descriptor_rejects_bad_digest_size_and_media(self):
+        valid = {'mediaType': 'allowed', 'digest': 'sha256:' + '1' * 64, 'size': 3}
+        self.assertEqual(oci_acquire.descriptor(valid, {'allowed'}, 10),
+                         (valid['digest'], 3))
+        for key, value in [('digest', '../../escape'), ('size', 11),
+                           ('size', True), ('mediaType', 'unknown')]:
+            with self.subTest(key=key), self.assertRaises(oci_acquire.Refused):
+                oci_acquire.descriptor(dict(valid, **{key: value}), {'allowed'}, 10)
+
+    def test_redirect_drops_bearer_without_logging_signed_query(self):
+        class Response:
+            def __init__(self, status, headers, body=b''):
+                self.status, self.headers, self.body = status, headers, io.BytesIO(body)
+            def close(self):
+                pass
+            def read1(self, size):
+                return self.body.read(size)
+        requests = []
+        responses = [Response(307, {'Location': 'https://pkg-containers.githubusercontent.com/blob?signature=private'}),
+                     Response(200, {'Content-Type': 'application/octet-stream'}, b'abc')]
+        class Opener:
+            def open(self, request, timeout):
+                requests.append(request)
+                return responses.pop(0)
+        registry = oci_acquire.Registry()
+        registry.opener = Opener()
+        output, logs = io.BytesIO(), io.StringIO()
+        with contextlib.redirect_stdout(logs):
+            registry.transfer('https://lscr.io/v2/example/blobs/sha256:fake',
+                              {'Authorization': 'Bearer private-token'}, output, 3, 2)
+        self.assertEqual(requests[0].get_header('Authorization'), 'Bearer private-token')
+        self.assertIsNone(requests[1].get_header('Authorization'))
+        self.assertEqual(output.getvalue(), b'abc')
+        self.assertEqual(logs.getvalue(), '')
+
+    def test_acquisition_archives_only_verified_selected_closure(self):
+        def digest(raw):
+            return 'sha256:' + hashlib.sha256(raw).hexdigest()
+        config = core.canonical({'os': 'linux', 'architecture': 'amd64',
+                                 'config': {'Labels': {'org.opencontainers.image.version': 'fixture-version'}}})
+        layer = b'opaque compressed layer fixture; never extracted'
+        config_record = {'mediaType': 'application/vnd.oci.image.config.v1+json',
+                         'digest': digest(config), 'size': len(config)}
+        layer_record = {'mediaType': 'application/vnd.oci.image.layer.v1.tar+gzip',
+                        'digest': digest(layer), 'size': len(layer)}
+        manifest = core.canonical({'schemaVersion': 2,
+            'mediaType': 'application/vnd.oci.image.manifest.v1+json',
+            'config': config_record, 'layers': [layer_record]})
+        selected = {'mediaType': 'application/vnd.oci.image.manifest.v1+json',
+                    'digest': digest(manifest), 'size': len(manifest),
+                    'platform': {'os': 'linux', 'architecture': 'amd64'}}
+        index = core.canonical({'schemaVersion': 2,
+            'mediaType': 'application/vnd.oci.image.index.v1+json', 'manifests': [selected]})
+        blobs = {digest(raw): raw for raw in (config, layer, manifest, index)}
+        class Registry:
+            def manifest(self, repository, wanted):
+                return blobs[wanted], json.loads(blobs[wanted])
+            def headers(self, repository):
+                return {}
+            def transfer(self, url, headers, sink, limit, seconds):
+                raw = blobs[url.rsplit('/', 1)[1]]
+                self.assert_bound = len(raw) <= limit
+                if not self.assert_bound:
+                    raise AssertionError('fixture exceeds declared bound')
+                sink.write(raw)
+        images = (('fixture', 'linuxserver/sonarr', digest(index)[7:],
+                   digest(manifest)[7:], digest(config)[7:], 'fixture-version'),)
+        with tempfile.TemporaryDirectory() as temporary:
+            cache = Path(temporary) / 'cache'
+            core.private_directory(cache)
+            core.private_directory(cache / 'layout')
+            blob_dir = core.private_directory(cache / 'layout' / 'blobs' / 'sha256')
+            unrelated = b'private unrelated cache entry'
+            core.write_new(blob_dir / digest(unrelated)[7:], unrelated)
+            with mock.patch.object(oci_acquire, 'Registry', Registry), \
+                    mock.patch.object(oci_acquire, 'IMAGES', images), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                oci_acquire.acquire(cache)
+            snapshot = next(cache.glob('snapshot-*'))
+            report = json.loads((snapshot / 'acquisition.json').read_bytes())
+            self.assertFalse(report['docker_or_runtime_operations'])
+            self.assertFalse(report['registry_signatures_verified'])
+            with tarfile.open(snapshot / 'images.oci.tar') as archive:
+                names = set(archive.getnames())
+                self.assertEqual(names, {'index.json', 'oci-layout'} |
+                                 {'blobs/sha256/' + key[7:] for key in blobs})
+                self.assertNotIn('blobs/sha256/' + digest(unrelated)[7:], names)
+                self.assertEqual(archive.extractfile('blobs/sha256/' + digest(layer)[7:]).read(), layer)
+            archive_bytes = (snapshot / 'images.oci.tar').read_bytes()
+            self.assertEqual(hashlib.sha256(archive_bytes).hexdigest(), report['archive']['sha256'])
 
 
 if __name__ == '__main__':

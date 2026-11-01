@@ -14,7 +14,7 @@ by other users, under `/opt/mpkg-proofs`. It supplies Python 3.12 at
 `/opt/mpkg-python/3.12.16/bin/python3.12`. No script installs packages,
 pulls images, fetches sources or creates a VM. There is no host fallback.
 
-Every entrypoint requires root, Python 3.12, a regular root-owned `0600`
+Every guest entrypoint requires root, Python 3.12, a regular root-owned `0600`
 marker at `/etc/mpkg-fixture/identity.json`, and an independently supplied
 expected UUID matching QEMU's DMI product UUID. The mounted root's actual
 major/minor must identify `/dev/vda2`, whose parent disk has the bound
@@ -89,6 +89,40 @@ cleans up only its exact container and leaves its journal unresolved;
 container cleanup does not invent a successful interrupted attempt.
 
 ## Bound inputs
+
+### File-only image acquisition
+
+`oci_acquire.py` is a separate host preparation tool. It uses anonymous
+HTTPS to acquire only the three fixed Sonarr/Radarr image identities.
+It has no Docker/socket call, archive extraction or executable payload
+operation. Run it with Python 3.12 and an explicit ignored private cache:
+
+```text
+.venv/bin/python -I scripts/proofs/oci_acquire.py --cache /home/vhata/src/mpkg/.cache/fixture-oci
+```
+
+It verifies index/selected-manifest identity, config platform/version,
+and every selected layer's exact size and SHA-256. Tokens and signed
+redirect queries remain in memory; credential headers never cross
+hostnames. Requests have byte and whole-request time bounds. Partial
+downloads remain private and are never published as complete artifacts.
+The tool does not automatically retry failed requests.
+
+The cache contains immutable blob bytes and a new snapshot directory
+with `images.oci.tar` and sanitized `acquisition.json`. The archive's
+root index references only the selected amd64 images; original source
+indexes are retained as provenance blobs, without acquiring their other
+platforms. Only the bound closure is archived, even if the cache has
+unrelated blobs. No downloaded archive is extracted on the host.
+
+Digest identity does not establish publisher signature trust. Guest
+Docker's OCI import and original RepoDigest association must be observed;
+the acquisition report does not claim either. After reviewed import,
+`image_manifest.py --guest-id <UUID>` checks the guarded guest engine and
+local image associations and records `compose.json`. If associations are
+missing it refuses; it does not repair them by pulling or retagging.
+
+### Guest proof manifests
 
 The runner provides root-owned manifests under `/opt/mpkg-proof-inputs`.
 They must be reviewed along with the acquisition/assembly evidence.
