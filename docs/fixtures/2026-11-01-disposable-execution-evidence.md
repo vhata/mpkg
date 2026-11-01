@@ -480,6 +480,19 @@ SHA-256
 `36b4ee16785f54cc2424a9632ef217725a5cb2c5e172384f857be24444168361`.
 Independent review verified the diagnostic and preserved checkpoint.
 
+The reviewed source correction holds the child's own namespace directory
+before entering the container namespace and verifies the result through
+that descriptor. Volume initialization now runs with the intended group
+and requires actual owner/group/mode `963:1001:2770` before continuing.
+It adds no capability and keeps the later mode check unchanged. These
+changes address the observed failures without claiming which old
+initialization step lost setgid.
+
+The separate delivery procedure accepts only the pristine image state,
+verifies the complete helper dependency set and preserves the original
+helper with a durable receipt before replacement. Source and delivery
+review do not establish successful guest execution.
+
 The six supplemental resource/update variants remain runtime gates.
 Applied product restore points remain unavailable until actual product
 operations create them.
@@ -488,9 +501,9 @@ operations create them.
 
 Repository setup selected Python 3.12 and enabled the tracked hooks via
 the authorized elevated Git configuration operation. At checkpoint
-`7cf36c5`, the coordinator's combined checks passed 172 tests, syntax for
-133 files, eight queue entries and relative links. Subsequent edits
-require final checks and independent integration review. Host tests
+`5edaffb`, the coordinator's combined checks passed 180 tests, syntax,
+eight queue entries and relative links. Subsequent edits require final
+checks and independent integration review. Host tests
 exercise isolated primitives and refusal paths; they do not establish
 real guest behavior.
 
