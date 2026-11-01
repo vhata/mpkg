@@ -23,6 +23,15 @@ SOURCE_SHA = 'c4713eff10cd435487a043a093e02bc596e88a10853e2d6e8ae7d3e384418c30'
 UID = 1502
 ENV = {'PATH': '/usr/bin', 'LC_ALL': 'C', 'HOME': '/root'}
 BUILD_DEPENDENCIES = {'cmake', 'cppdap', 'hicolor-icon-theme', 'jsoncpp', 'libuv', 'rhash', 'zsh'}
+ACK_RECIPE_COMMIT = '1555404507ff0db4291d7f88c9a989b957ea1f48'
+ACK_URL_RECONCILIATION = {
+    'kind': 'pinned-ack-homepage-url', 'field': 'url',
+    'pinned_value': 'http://betterthangrep.com/',
+    'generated_value': 'http://beyondgrep.com/',
+    'pinned_srcinfo_sha256': '5c07dda29ca3ead439ea5686a2d1692341535cad40ba491c4840605c059df9c3',
+    'generated_srcinfo_sha256': '286dd23dac5e303172a084fbefcc0e39f6752425c306b9e2e47e249452d48bbb',
+    'all_other_normalized_fields_equal': True,
+}
 
 
 def run(argv, **kwargs):
@@ -71,6 +80,22 @@ def normalized_srcinfo(data):
                   if line.strip() and not line.lstrip().startswith('#'))
 
 
+def srcinfo_evidence(package, recipe_commit, pinned, generated):
+    left, right = normalized_srcinfo(pinned), normalized_srcinfo(generated)
+    if left == right:
+        return {'generated_metadata_matches': True}
+    approved = ACK_URL_RECONCILIATION
+    old = 'url = '+approved['pinned_value']
+    new = 'url = '+approved['generated_value']
+    if (package == 'ack' and recipe_commit == ACK_RECIPE_COMMIT
+            and hashlib.sha256(pinned).hexdigest() == approved['pinned_srcinfo_sha256']
+            and hashlib.sha256(generated).hexdigest() == approved['generated_srcinfo_sha256']
+            and left.count(old) == 1 and right.count(new) == 1
+            and sorted(new if line == old else line for line in left) == right):
+        return {'generated_metadata_matches': False, 'metadata_reconciliation': dict(approved)}
+    raise Refused('generated_srcinfo_differs_from_pinned_recipe')
+
+
 def require_idle_unit(status):
     if status.get('MainPID') != '0' or status.get('ControlPID') != '0':
         raise Refused('another_heavy_guest_build_is_active')
@@ -111,8 +136,8 @@ def build_one(source, package, guest, state):
     generated = state/(package+'-generated.SRCINFO')
     with generated.open('xb') as output:
         as_builder(arguments+['--printsrcinfo'], work, output)
-    if normalized_srcinfo(generated.read_bytes()) != normalized_srcinfo((work/'.SRCINFO').read_bytes()):
-        raise Refused('generated_srcinfo_differs_from_pinned_recipe')
+    metadata_evidence = srcinfo_evidence(package, recipe['recipe_commit'],
+                                        (work/'.SRCINFO').read_bytes(), generated.read_bytes())
     as_builder(arguments+['--verifysource', '--noconfirm'], work)
     as_builder(arguments+['--cleanbuild', '--noconfirm'], work)
     for name, digest in recipe_hashes.items():
@@ -137,7 +162,7 @@ def build_one(source, package, guest, state):
     result = {'schema': 1, 'guest_id': guest, 'package_base': package,
               'recipe_commit': recipe['recipe_commit'], 'recipe_files': recipe_hashes,
               'sources': verified_sources, 'build_uid': UID, 'source_verification_exit_code': 0,
-              'generated_metadata_matches': True, 'build_exit_code': 0,
+              **metadata_evidence, 'build_exit_code': 0,
               'check_status': 'not-defined' if package == 'gitstatus' else 'passed',
               'makepkg_configuration_sha256': hashlib.sha256(config).hexdigest(),
               'worker_sha256': hashlib.sha256(checked_file(INSTALLED)).hexdigest(),

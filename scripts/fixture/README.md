@@ -100,6 +100,11 @@ Only the newly built, identity/hash-bound fixture artifacts use a separate
 repository-free pacman configuration permitting unsigned local builds.
 The guest's repository signature policy remains unchanged. Build records
 include actual results, artifact hashes, configuration and worker hashes.
+The pinned ack revision's `.SRCINFO` homepage uses `betterthangrep.com`
+while its `PKGBUILD` generates `beyondgrep.com`. Only that exact pair of
+metadata byte hashes and that one field change are reconciled, with
+`generated_metadata_matches: false` and explicit old/new/hash evidence.
+The pinned files remain intact; every other metadata difference fails.
 
 Preserve `native-change` after the ack chain, Python and native service
 fixture are complete. While stopped, `build_output.py prepare` creates a

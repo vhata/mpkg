@@ -258,6 +258,35 @@ class FixtureAurBoundaryTests(unittest.TestCase):
             with self.assertRaises(module.Refused):module.main()
             run.assert_not_called();write.assert_not_called()
 
+    def test_only_the_observed_pinned_ack_url_difference_is_reconciled(self):
+        module=self.load()
+        pinned=('pkgbase = ack\n'
+                '\tpkgdesc = A Perl-based grep replacement, aimed at programmers with large trees of heterogeneous source code\n'
+                '\tpkgver = 3.10.0\n\tpkgrel = 1\n\turl = http://betterthangrep.com/\n'
+                '\tarch = any\n\tlicense = GPL\n\tlicense = PerlArtistic\n'
+                '\tcheckdepends = perl-yaml-pp\n\tdepends = perl-file-next\n\toptions = !emptydirs\n'
+                '\tsource = https://cpan.metacpan.org/authors/id/P/PE/PETDANCE/ack-v3.10.0.tar.gz\n'
+                '\tmd5sums = 424a6d5637d03f9fa8980000e0d6cbb3\n'
+                '\tsha256sums = 65e83cfb38a71fca725e9a14a8201ee871e629fc6b10231e1303dd3501ba563a\n'
+                '\npkgname = ack\n').encode()
+        generated=pinned.replace(b'http://betterthangrep.com/',b'http://beyondgrep.com/')
+        self.assertEqual(hashlib.sha256(pinned).hexdigest(),module.ACK_URL_RECONCILIATION['pinned_srcinfo_sha256'])
+        self.assertEqual(hashlib.sha256(generated).hexdigest(),module.ACK_URL_RECONCILIATION['generated_srcinfo_sha256'])
+        evidence=module.srcinfo_evidence('ack',module.ACK_RECIPE_COMMIT,pinned,generated)
+        self.assertIs(evidence['generated_metadata_matches'],False)
+        self.assertEqual(evidence['metadata_reconciliation'],module.ACK_URL_RECONCILIATION)
+        for package,commit,candidate in [
+            ('gitstatus',module.ACK_RECIPE_COMMIT,generated),
+            ('ack','different-revision',generated),
+            ('ack',module.ACK_RECIPE_COMMIT,generated.replace(b'pkgrel = 1',b'pkgrel = 2')),
+            ('ack',module.ACK_RECIPE_COMMIT,generated.replace(b'depends = perl-file-next',b'depends = perl')),
+            ('ack',module.ACK_RECIPE_COMMIT,generated.replace(b'beyondgrep.com',b'other.invalid')),
+        ]:
+            with self.subTest(package=package,commit=commit,candidate=candidate),self.assertRaises(module.Refused):
+                module.srcinfo_evidence(package,commit,pinned,candidate)
+        self.assertEqual(module.srcinfo_evidence('perl-file-next','pinned',pinned,pinned),
+                         {'generated_metadata_matches':True})
+
 
 class FixtureProofAdditionTests(unittest.TestCase):
     def load(self):
