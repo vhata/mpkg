@@ -761,6 +761,26 @@ offline snapshot ID `39`, with no memory state and firmware variables
 SHA-256
 `850fb33fbf7a3376a3f9acb5df8471c3906ed7b4ace6d9e02b889e99ff078f89`.
 
+The reviewed correction skips only `ENOENT` from reading an individual
+enumerated descriptor symlink. Missing directories/processes, other
+errors and absent listener ownership still block. It additionally
+rechecks process start time, namespaces, executable and listener set
+after enumeration. No request, setup or lifecycle retry was added.
+Focused regressions include an actual descriptor-symlink disappearance,
+lost listeners, identity changes and refusal before HTTP dispatch.
+This closes the observed enumeration boundary without identifying the
+specific descriptor lost in the failed run.
+
+On an independent restore of the original image-only ID `11`, the
+code-only replacement passed with exit zero and `executed: false`.
+It installed helper SHA-256
+`1515a3b8ebd888c8bc1e555ed94c8c2606d64358e39230d5b80bf74e2589f447`,
+preserving all 27 prior image-history hashes and the unused resume state.
+After orderly shutdown, `image-ready-variants-v4` was saved as offline
+snapshot ID `43`, with no memory state and firmware variables SHA-256
+`36b4ee16785f54cc2424a9632ef217725a5cb2c5e172384f857be24444168361`.
+The failed exact-digest state in ID `39` was not replayed.
+
 The supplemental runtime gates currently stand as follows:
 
 | Variant | Assembly | Reboot check | Experiment | Retirement |
@@ -779,7 +799,7 @@ operations create them.
 
 Repository setup selected Python 3.12 and enabled the tracked hooks via
 the authorized elevated Git configuration operation. At checkpoint
-`11307d5`, the coordinator's combined checks passed 188 tests, syntax,
+`e75d90c`, the combined checks passed 193 tests, syntax,
 eight queue entries and relative links. Subsequent edits require final
 checks and independent integration review. Host tests
 exercise isolated primitives and refusal paths; they do not establish
