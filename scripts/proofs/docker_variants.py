@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Assemble isolated Docker resource/update fixtures without product history."""
 import argparse
+import errno
 import grp
 import json
 import os
@@ -103,6 +104,20 @@ def reserve(path):
     finally:
         os.close(descriptor)
     return private_directory(path)
+
+
+def descriptor_targets(directory):
+    """A live process may close an individual descriptor after enumeration."""
+    targets = set()
+    for path in directory.iterdir():
+        try:
+            targets.add(os.readlink(path))
+        except FileNotFoundError as error:
+            if error.errno != errno.ENOENT:
+                raise
+            # The caller must still prove all listener ownership and stable
+            # process/namespace identity. Do not retry a request or effect.
+    return targets
 
 
 def config_credential_check(root_descriptor, namespace_descriptor, namespace_inode, credentials, sentinel, role):
@@ -268,14 +283,21 @@ class Variant(Baseline):
                 or (namespaces['net'] != os.stat('/proc/self/ns/net').st_ino) != self.plan['bridge']):
             raise Refused('docker_variant_application_credentials_mismatch')
         start = (process / 'stat').read_bytes().rsplit(b')', 1)[1].split()[19].decode()
+        executable = os.readlink(process / 'exe')
         inodes = covering_listeners((process / 'net/tcp').read_text(), (process / 'net/tcp6').read_text(), self.specs[role]['port'])
-        owned = {os.readlink(path) for path in (process / 'fd').iterdir()}
+        owned = descriptor_targets(process / 'fd')
+        if ((process / 'stat').read_bytes().rsplit(b')', 1)[1].split()[19].decode() != start
+                or {name: os.stat(process / 'ns' / name).st_ino for name in namespaces} != namespaces
+                or os.readlink(process / 'exe') != executable
+                or covering_listeners((process / 'net/tcp').read_text(), (process / 'net/tcp6').read_text(),
+                                      self.specs[role]['port']) != inodes):
+            raise Refused('docker_variant_process_or_listener_changed_during_attribution')
         if not inodes or not inodes <= owned:
             raise Refused('docker_baseline_listener_pending')
         return {'container_id': container['Id'], 'started_at': container['State']['StartedAt'],
                 'pid': pids[0], 'start_ticks': start, 'uid_slots': uids, 'gid_slots': gids, 'groups': groups,
                 'capabilities': capabilities, 'id_maps': maps, 'namespaces': namespaces,
-                'executable': os.readlink(process / 'exe'), 'umask': values.get('Umask'), 'listener_inodes': sorted(inodes)}
+                'executable': executable, 'umask': values.get('Umask'), 'listener_inodes': sorted(inodes)}
 
     def request(self, role, route, key=None, body=None):
         allowed = ('/ping', '/api/v3/config/naming', '/api/v3/rootfolder')

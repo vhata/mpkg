@@ -553,6 +553,16 @@ generic exception. It does not infer the lost cause of an earlier failed
 attempt, authorize a repeated POST or complete an unknown journal entry.
 Separate fixed read-only diagnostics inspect preserved phase evidence and
 attributed GET responses without replaying setup or registration.
+Live descriptor enumeration permits only `ENOENT` for an individual
+descriptor closed between enumeration and `readlink`. Missing process or
+descriptor directories and other errors still fail. Every covering
+listener must remain positively owned; process start, namespaces,
+executable and covering-listener inventory are rechecked after the scan.
+This does not retry an API call or reinterpret an uncertain attempt.
+Linux documents the per-descriptor links in
+[proc_pid_fd](https://man7.org/linux/man-pages/man5/proc_pid_fd.5.html)
+and missing-link errors in
+[readlink](https://man7.org/linux/man-pages/man2/readlink.2.html).
 
 ## Protected output boundary
 

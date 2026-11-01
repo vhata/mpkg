@@ -204,6 +204,106 @@ class ProtectedOutputTests(unittest.TestCase):
                 protected_output.command_faults(Path(temporary), b'SENTINEL', {})
 
 
+class DockerAttributionDescriptorTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.proc = Path(self.temporary.name)
+        self.process = self.proc / '123'
+        self.process.mkdir()
+        for name in ('fd', 'ns', 'net'):
+            (self.process / name).mkdir()
+        fields = {'Uid': '963 963 963 963', 'Gid': '1001 1001 1001 1001', 'Groups': '1000 1001',
+                  'Umask': '0002', **{name: '0000000000000000' for name in
+                                    ('CapInh', 'CapPrm', 'CapEff', 'CapBnd', 'CapAmb')}}
+        (self.process / 'status').write_text(''.join(name + ':\t' + value + '\n' for name, value in fields.items()))
+        self.stat_raw = '123 (Radarr) ' + ' '.join(['S'] + ['0'] * 18 + ['123'])
+        (self.process / 'stat').write_text(self.stat_raw)
+        for name in ('uid_map', 'gid_map'):
+            (self.process / name).write_text('0 0 4294967295\n')
+        for name in ('user', 'mnt', 'net'):
+            (self.process / 'ns' / name).touch()
+        self.net_inode = (self.process / 'ns/net').stat().st_ino
+        (self.process / 'net/tcp').write_text('header\n0: 0100007F:45D6 00000000:0000 0A 0:0 0:0 0 0 0 77\n')
+        (self.process / 'net/tcp6').write_text('header\n')
+        (self.process / 'exe').symlink_to('/fixed/Radarr')
+        (self.process / 'fd/10').symlink_to('/unrelated/file')
+        (self.process / 'fd/11').symlink_to('socket:[77]')
+        self.fixture = object.__new__(docker_variants.Variant)
+        self.fixture.plan = {'bridge': False}
+        self.fixture.specs = {'radarr': {'process': 'Radarr', 'port': 17878}}
+        self.fixture.container = mock.Mock(return_value={'Id': 'container', 'State': {'Running': True, 'StartedAt': 'start'}})
+        self.fixture.docker = mock.Mock(return_value=b'PID COMMAND\n123 Radarr\n')
+
+    def observe(self, vanish=None, error=None, changed_process=False, changed_listener=False,
+                process_gone=False, changed_namespace=False):
+        real_readlink, real_stat = os.readlink, os.stat
+        def readlink(path):
+            if Path(path) == self.process / 'fd' / str(vanish):
+                if error:
+                    raise error
+                Path(path).unlink()
+                if changed_process:
+                    (self.process / 'stat').write_text(self.stat_raw[:-3] + '456')
+                if changed_listener:
+                    (self.process / 'net/tcp').write_text('header\n')
+                if process_gone:
+                    (self.process / 'stat').unlink()
+                if changed_namespace:
+                    (self.process / 'ns/mnt').rename(self.process / 'ns/mnt.old')
+                    (self.process / 'ns/mnt').touch()
+            return real_readlink(path)
+        def observed_stat(path, *args, **kwargs):
+            if os.fspath(path) == '/proc/self/ns/net':
+                return SimpleNamespace(st_ino=self.net_inode)
+            return real_stat(path, *args, **kwargs)
+        with mock.patch.object(docker_variants, 'Path', side_effect=lambda path: self.proc if path == '/proc' else Path(path)), \
+                mock.patch.object(docker_variants.os, 'readlink', side_effect=readlink), \
+                mock.patch.object(docker_variants.os, 'stat', side_effect=observed_stat):
+            return self.fixture.attribution('radarr')
+
+    def test_disappearing_unrelated_fd_keeps_positive_listener_attribution(self):
+        result = self.observe(vanish=10)
+        self.assertEqual(result['listener_inodes'], ['socket:[77]'])
+        self.assertEqual(result['start_ticks'], '123')
+        self.assertEqual(result['groups'], [1000, 1001])
+
+    def test_disappearing_listener_or_permission_failure_is_not_accepted(self):
+        with self.assertRaisesRegex(docker_variants.Refused, 'listener_pending'):
+            self.observe(vanish=11)
+        with self.assertRaises(PermissionError):
+            self.observe(vanish=10, error=PermissionError(13, 'private details'))
+        with self.assertRaises(FileNotFoundError):
+            docker_variants.descriptor_targets(self.process / 'missing-fd-directory')
+
+    def test_process_or_listener_change_during_fd_churn_refuses(self):
+        with self.assertRaisesRegex(docker_variants.Refused, 'changed_during_attribution'):
+            self.observe(vanish=10, changed_process=True)
+        (self.process / 'fd/10').symlink_to('/unrelated/file')
+        with self.assertRaisesRegex(docker_variants.Refused, 'changed_during_attribution'):
+            self.observe(vanish=10, changed_listener=True)
+
+    def test_process_disappearance_and_namespace_replacement_are_not_skipped(self):
+        with self.assertRaises(FileNotFoundError):
+            self.observe(vanish=10, process_gone=True)
+        (self.process / 'stat').write_text(self.stat_raw)
+        (self.process / 'fd/10').symlink_to('/unrelated/file')
+        with self.assertRaisesRegex(docker_variants.Refused, 'changed_during_attribution'):
+            self.observe(vanish=10, changed_namespace=True)
+
+    def test_pre_request_attribution_failure_never_dispatches_or_retries_http(self):
+        self.fixture.enabled = False
+        before = {'pid': 123, 'namespaces': {'net': 42}}
+        with mock.patch.object(self.fixture, 'engine', return_value={'engine': 'bound'}), \
+                mock.patch.object(self.fixture, 'attribution', side_effect=[before,
+                    docker_variants.Refused('docker_baseline_listener_pending')]) as attribution, \
+                mock.patch.object(docker_variants, 'bounded_request') as request:
+            with self.assertRaisesRegex(docker_variants.Refused, 'listener_pending'):
+                self.fixture.request('radarr', '/api/v3/config/naming', key='PRIVATE_SENTINEL')
+            self.assertEqual(attribution.call_count, 2)
+            request.assert_not_called()
+
+
 class DockerVariantPrimitiveTests(unittest.TestCase):
     def test_radarr_response_status_and_shape_precede_field_access(self):
         self.assertEqual(docker_variants.response_object(201, b'{"id":1}', 201), {'id': 1})
