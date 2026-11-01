@@ -18,7 +18,7 @@ establish any A1–A12 product acceptance result.
 | Native transaction | Frozen prepare-only checks and conflict refusal passed; no package transaction commit inferred |
 | Ordinary Docker fixture | Assembly and repeat check passed; separate restore/reboot check pending |
 | Compose mechanism experiment | All ten asserted checks passed, with the lifecycle limits below |
-| Volume, network and image-policy variants | Six independent runtime branches remain pending |
+| Volume, network and image-policy variants | Volume keep passed through retirement; the other five branches remain pending |
 | Replacement manager and A1–A12 | Not implemented or executed by this work |
 
 ## Acquired inputs
@@ -583,7 +583,57 @@ snapshot ID `22`, with no memory state and firmware variables SHA-256
 Independent review verified the replacement receipt, serial interval,
 shutdown and saved checkpoint before a fresh variant branch began.
 
-The six supplemental resource/update variants remain runtime gates.
+The fresh `volume-keep` setup completed with exit zero. Its exact named
+volume had only the recorded Sonarr consumer; both applications passed
+image, process, configuration-access and shared-sentinel checks, including
+the required configuration mode `2770`. Actual Radarr directory discovery
+passed, and Docker startup was enabled. Independent review matched the
+result to the fresh serial interval and source. This successful attempt
+does not recover the cause of the earlier generic failure.
+
+Its separate check also returned exit zero with the same complete result.
+After orderly shutdown, the `volume-keep` assembly baseline was saved as
+offline snapshot ID `24`, with no memory state and firmware variables
+SHA-256
+`850fb33fbf7a3376a3f9acb5df8471c3906ed7b4ace6d9e02b889e99ff078f89`.
+
+The separate check-only reboot also passed. The same container, image,
+volume, data and configuration bindings survived, with fresh process and
+listener attribution and successful Radarr discovery. Independent review
+verified the stopped checkpoint and the complete reboot-check interval.
+No setup or supplemental resumption was replayed on this assembled state.
+
+The separate port experiment then completed with exit zero. Sonarr
+restarted in the same container on port `18990`; Radarr's complete
+process/container observation remained unchanged. Volume identity,
+configuration semantics, data/access checks and actual Radarr discovery
+passed. The original assembly database and manifest stayed unchanged;
+the experiment used a separate mechanism journal. Independent review
+verified the source and fresh completion interval.
+
+Keep-volume retirement then completed with exit zero. Sonarr was removed,
+while the same named volume, protected configuration, sentinel and
+readable database metadata were retained. Inspection used a fixed offline
+helper without restarting Sonarr. Radarr's attribution and actual
+directory discovery stayed valid, and the shared sentinel and earlier
+assembly/port records were preserved. Independent review verified the
+complete sequence through retirement.
+
+After orderly shutdown, `volume-keep-mechanism` was saved as offline
+snapshot ID `25`, with no memory state and firmware variables SHA-256
+`4ba5f05f3fe1214089e691d3c9887bf67e4ebacb9e92ef0743ac6271d16beddd`.
+
+The supplemental runtime gates currently stand as follows:
+
+| Variant | Assembly | Reboot check | Experiment | Retirement |
+| --- | --- | --- | --- | --- |
+| Volume keep | Setup and check passed; baseline ID 24 saved | Passed | Port change passed | Passed; final ID 25 saved |
+| Volume delete | Pending | Pending | Pending | Pending |
+| Shared network | Pending | Pending | Pending | Pending |
+| Exclusive network deletion | Pending | Pending | Pending | Pending |
+| Allowed-tag image update | Pending | Pending | Pending | Not required |
+| Exact-digest candidate refusal | Pending | Pending | Pending | Not required |
+
 Applied product restore points remain unavailable until actual product
 operations create them.
 
