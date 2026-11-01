@@ -242,6 +242,10 @@ new Radarr directories use the exact declared synthetic sentinel.
 Both services use explicit preacquired digest/platform bindings, host
 networking, `unless-stopped`, and the specified PUID/PGID/UMASK/timezone.
 Setup enables only guest `docker.service` for later offline restoration.
+The Compose execution reference is the immutable registry index digest
+with explicit `linux/amd64`; acquisition and runtime checks separately
+bind the selected amd64 manifest and image-config digests. The helper
+does not invent or require a separate local child-reference alias.
 
 The private assembly journal captures source inputs, rendered Compose,
 generated-credential XML and accepted post-startup XML. It is separate
