@@ -543,6 +543,35 @@ with abort-on-error semantics in [sftp](https://man.openbsd.org/sftp).
 Actual package compatibility and authenticated behavior require the guest
 run; host-safe configuration tests cannot establish either.
 
+## Protected output boundary
+
+`guest-protected-output.sh` runs a separate one-shot proof after the full
+guest/root-disk and exact installed core/command-helper checks. It captures
+a generated synthetic secret in a private journal, exports only the public
+attempt projection, and commits that projection into a new private guest
+Git repository. Global/system configuration, inherited Git variables,
+attributes, templates, hooks, credential helpers, signing and network
+protocols are excluded. The proof checks every object as well as the
+reachable set: exactly one commit, tree and projection blob, with no secret,
+private reference, keyed token or key bytes in their contents. No secret
+or public secret hash is printed.
+
+Three fixed Python children receive the sentinel only on stdin, emit it to
+both captured streams, and exercise nonzero exit, the command output limit
+and the whole-command deadline. A separate private emission receipt prevents
+an unrelated startup failure from counting as a successful injection. Only
+fixed error codes and nonsecret predicates enter the result. The children
+have no descendants or daemon effects; this does not broaden timeout
+cleanup guarantees for arbitrary commands. Existing attempt records stay
+untouched, and any new incomplete attempt blocks rerunning this helper.
+
+This establishes the selected projection and command boundaries, not an
+unimplemented product Git staging path or every future product error.
+Git documents its isolated configuration/environment controls in
+[git](https://git-scm.com/docs/git), template selection in
+[git-init](https://git-scm.com/docs/git-init), and complete object traversal
+in [git-cat-file](https://git-scm.com/docs/git-cat-file).
+
 ## Validation
 
 Run `bash scripts/setup.sh` and `bash scripts/check.sh` from the worktree.

@@ -47,6 +47,7 @@ import docker_variants
 import docker_variant_experiment
 import docker_variant_retire
 import docker_supplement_resume
+import protected_output
 
 
 class GuestGuardTests(unittest.TestCase):
@@ -98,7 +99,7 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(list(Path(temporary).iterdir()), [])
 
     def test_guest_image_entrypoints_refuse_host_before_docker(self):
-        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py', 'native_conflict.py', 'docker_resume.py', 'native_service_recover.py', 'native_service_observe.py', 'docker_diagnostic_resume.py', 'docker_supplement_resume.py'):
+        for filename in ('image_import.py', 'image_manifest.py', 'native_manifest.py', 'docker_ready.py', 'native_conflict.py', 'docker_resume.py', 'native_service_recover.py', 'native_service_observe.py', 'docker_diagnostic_resume.py', 'docker_supplement_resume.py', 'protected_output.py'):
             with self.subTest(filename=filename), tempfile.TemporaryDirectory() as temporary:
                 result = subprocess.run([
                     sys.executable, '-I', str(PROOFS / filename),
@@ -130,6 +131,77 @@ class GuestGuardTests(unittest.TestCase):
             self.assertEqual(json.loads(result.stdout)['status'], 'refused')
             self.assertEqual(result.stderr, '')
             self.assertEqual(list(Path(temporary).iterdir()), [])
+
+
+class ProtectedOutputTests(unittest.TestCase):
+    def test_git_environment_discards_inherited_config_and_credentials(self):
+        with mock.patch.dict(os.environ, {'GIT_DIR': '/private/repository',
+                                         'GIT_CONFIG_COUNT': '1', 'GIT_TRACE': '/private/log',
+                                         'SSH_AUTH_SOCK': '/private/agent',
+                                         'GIT_OBJECT_DIRECTORY': '/private/objects'}):
+            result = protected_output.isolated_environment(Path('/fixture/home'))
+        self.assertEqual(result['HOME'], '/fixture/home')
+        self.assertEqual(result['GIT_CONFIG_GLOBAL'], '/dev/null')
+        self.assertEqual(result['GIT_CONFIG_NOSYSTEM'], '1')
+        self.assertEqual(result['GIT_TERMINAL_PROMPT'], '0')
+        self.assertFalse(set(result) & {'GIT_DIR', 'GIT_CONFIG_COUNT', 'GIT_TRACE',
+                                        'SSH_AUTH_SOCK', 'GIT_OBJECT_DIRECTORY'})
+
+    def test_object_scan_requires_reachable_commit_tree_and_exact_projection(self):
+        projection, secret = b'public projection\n', b'PRIVATE_VALUE'
+        ids = {'commit': '1' * 40, 'tree': '2' * 40, 'blob': '3' * 40}
+        bodies = {'commit': b'commit data', 'tree': b'tree data', 'blob': projection}
+
+        def git(*arguments):
+            if arguments[0] == 'ls-tree':
+                return b'projection.json\n'
+            if arguments[0] == 'rev-list':
+                return ('\n'.join(ids.values()) + '\n').encode()
+            if arguments[:2] == ('cat-file', '--batch-all-objects'):
+                return ''.join(identifier + ' ' + kind + ' ' + str(len(bodies[kind])) + '\n'
+                               for kind, identifier in ids.items()).encode()
+            if arguments[0] == 'cat-file':
+                return bodies[arguments[1]]
+            if arguments[0] in ('remote', 'status'):
+                return b''
+            self.fail(arguments)
+
+        self.assertEqual(protected_output.git_objects(git, projection, [secret]),
+                         {'commit': 1, 'tree': 1, 'blob': 1})
+        for kind in ('commit', 'tree', 'blob'):
+            previous = bodies[kind]
+            bodies[kind] += secret
+            with self.assertRaisesRegex(protected_output.Refused, 'protected_output_leak'):
+                protected_output.git_objects(git, projection, [secret])
+            bodies[kind] = previous
+
+        def unreachable(*arguments):
+            if arguments[0] == 'rev-list':
+                return (ids['commit'] + '\n').encode()
+            return git(*arguments)
+        with self.assertRaisesRegex(protected_output.Refused, 'protected_git_reachability'):
+            protected_output.git_objects(unreachable, projection, [secret])
+
+    def test_real_fixed_children_confine_failure_timeout_and_output(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                result = protected_output.command_faults(
+                    directory, b'PRIVATE_TEST_SENTINEL',
+                    protected_output.isolated_environment(directory), python=sys.executable)
+            self.assertEqual(set(result), {'failure', 'output-bound', 'timeout'})
+            self.assertTrue(all(row['sentinel_absent'] for row in result.values()))
+            self.assertNotIn('PRIVATE_TEST_SENTINEL', json.dumps(result))
+            self.assertEqual(stdout.getvalue(), '')
+            self.assertEqual(stderr.getvalue(), '')
+            self.assertEqual(len(list(directory.iterdir())), 3)
+
+    def test_failure_without_emission_receipt_is_not_a_pass(self):
+        with tempfile.TemporaryDirectory() as temporary, mock.patch.object(
+                protected_output, 'command', side_effect=protected_output.Refused('fixed_tool_failed')):
+            with self.assertRaises(FileNotFoundError):
+                protected_output.command_faults(Path(temporary), b'SENTINEL', {})
 
 
 class DockerVariantPrimitiveTests(unittest.TestCase):
