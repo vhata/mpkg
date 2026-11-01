@@ -41,12 +41,6 @@ changes, or implementation of the complete replacement.
 
 ### Unprioritized
 
-- [DESIGN] `prove-first-release-execution-boundaries` — **Prove the selected storage and native execution mechanisms in a disposable fixture.** The concrete design is a proposal whose failure and concurrency boundaries need real evidence before broader product implementation.
-  - Source: [focused mechanism proofs](docs/specs/2026-10-31-first-release-storage-and-execution.md#focused-proofs-before-product-implementation), storage/execution design, 2026-10-31.
-  - Test durable action boundaries and worker/daemon recovery, exact libalpm transaction revalidation, protected input replay, Compose no-op/recreation behavior, exclusive-writer XML edits, and bounded retirement. Preserve every acceptance criterion; these proofs do not replace A1–A12.
-  - The focused proofs are authorized in the acquired disposable fixture; no production server lifecycle or package change is in scope.
-  - Depends on: `assemble-first-release-disposable-fixture`
-
 ## Waiting
 
 ### P0 Critical
@@ -70,10 +64,3 @@ changes, or implementation of the complete replacement.
 ### P3 Low
 
 ### Unprioritized
-
-- [TOOLING] `assemble-first-release-disposable-fixture` — **Acquire, build and verify the isolated guest baseline from the bound fixture design.** Source metadata and a scenario design are not an assembled or accepted system.
-  - Source: [fixture assembly and execution evidence](docs/specs/2026-10-31-first-release-fixture.md#assembly-and-execution-evidence), first-release design, 2026-10-31; assembly authorized by the user, 2026-11-01.
-  - Verify signatures and complete image layers, build the pinned AUR chain and Python 3.12, record actual runner/guest/input/identity checks, and create bootstrap restore points with the declared missing dependencies. Preserve exact CLI requests and all A1–A12 scenarios; no stub result can replace real-tool evidence.
-  - Bootstrap does not require the unimplemented product. Prototype/product revision, injection controls and applied restore points are bound later by their actual runs; setup must not fabricate successful product attempts or preinstall prerequisites in the A4 restore point.
-  - Starting point: [scenario matrix](docs/specs/2026-10-31-first-release-acceptance.md) and [frozen source inventory](docs/fixtures/2026-10-31-arch-native-inputs.json).
-  - Related: `prove-first-release-execution-boundaries`
