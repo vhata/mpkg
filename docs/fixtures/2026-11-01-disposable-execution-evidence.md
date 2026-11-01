@@ -18,7 +18,7 @@ establish any A1–A12 product acceptance result.
 | Native transaction | Frozen prepare-only checks and conflict refusal passed; no package transaction commit inferred |
 | Ordinary Docker fixture | Assembly and repeat check passed; separate restore/reboot check pending |
 | Compose mechanism experiment | All ten asserted checks passed, with the lifecycle limits below |
-| Volume, network and image-policy variants | Both volume variants and shared-network retention passed; exclusive-network and two image-policy branches remain pending |
+| Volume, network and image-policy variants | All four resource variants passed through retirement; two image-policy branches remain pending |
 | Replacement manager and A1–A12 | Not implemented or executed by this work |
 
 ## Acquired inputs
@@ -678,6 +678,33 @@ was saved as offline snapshot ID `31`, with no memory state and firmware
 variables SHA-256
 `4ba5f05f3fe1214089e691d3c9887bf67e4ebacb9e92ef0743ac6271d16beddd`.
 
+The separate `network-exclusive-delete` branch passed setup and its
+identical repeat check with Sonarr as the sole bridge consumer. Image,
+process/namespace/listener attribution, configuration/access and the
+credential-free published route passed. Radarr was deliberately absent;
+no Radarr discovery result is claimed for this branch. After orderly
+shutdown, `network-exclusive-delete` was saved as offline baseline ID
+`33`, with no memory state and firmware variables SHA-256
+`850fb33fbf7a3376a3f9acb5df8471c3906ed7b4ace6d9e02b889e99ff078f89`.
+
+Its check-only reboot passed with the same bridge and sole consumer,
+image/configuration bindings and data checks. Fresh process, namespace,
+listener, access and published-route checks passed. Independent review
+verified the saved baseline and complete reboot interval; Radarr remained
+absent as declared.
+Its port experiment passed, recreating Sonarr for `18990` while retaining
+the bridge with only the replacement consumer. Image/configuration,
+data/access and published-route checks passed, with the original assembly
+history unchanged. Independent review verified the result.
+Exclusive-network retirement passed after the final consumer check.
+The exact Sonarr container and bridge were removed; actual absence,
+default-network inventory and closed published routes were verified.
+Shared native data, retained source/configuration and earlier history
+remained valid. After orderly shutdown,
+`network-exclusive-delete-mechanism` was saved as offline snapshot ID
+`34`, with no memory state and firmware variables SHA-256
+`4ba5f05f3fe1214089e691d3c9887bf67e4ebacb9e92ef0743ac6271d16beddd`.
+
 The supplemental runtime gates currently stand as follows:
 
 | Variant | Assembly | Reboot check | Experiment | Retirement |
@@ -685,7 +712,7 @@ The supplemental runtime gates currently stand as follows:
 | Volume keep | Setup and check passed; baseline ID 24 saved | Passed | Port change passed | Passed; final ID 25 saved |
 | Volume delete | Setup and check passed; baseline ID 27 saved | Passed | Port change passed | Passed; final ID 28 saved |
 | Shared network | Setup and check passed; baseline ID 30 saved | Passed | Published-port remapping passed | Passed; final ID 31 saved |
-| Exclusive network deletion | Pending | Pending | Pending | Pending |
+| Exclusive network deletion | Setup and check passed; baseline ID 33 saved | Passed | Published-port remapping passed | Passed; final ID 34 saved |
 | Allowed-tag image update | Pending | Pending | Pending | Not required |
 | Exact-digest candidate refusal | Pending | Pending | Pending | Not required |
 
