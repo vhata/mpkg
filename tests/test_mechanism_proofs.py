@@ -491,6 +491,13 @@ class NativeServiceTests(unittest.TestCase):
         self.assertEqual(result['allowusers']['trailing_whitespace'], [True])
         self.assertFalse(result['hostkey']['strip_match'])
         self.assertNotIn('PRIVATE_SENTINEL', json.dumps(result))
+        mixed = namespace['effective_summary'](b'AllowUsers fixture-native \nHostKey PRIVATE_SENTINEL\n',
+                                               {'allowusers': 'fixture-native', 'hostkey': '/expected'})
+        self.assertEqual(mixed['allowusers']['occurrences'], 0)
+        self.assertEqual(mixed['allowusers']['casefold_key_occurrences'], 1)
+        self.assertTrue(mixed['allowusers']['casefold_key_strip_match'])
+        self.assertFalse(mixed['allowusers']['casefold_key_exact_value_match'])
+        self.assertNotIn('PRIVATE_SENTINEL', json.dumps(mixed))
         duplicate = namespace['effective_summary'](b'allowusers fixture-native\nallowusers fixture-native\n',
                                                    {'allowusers': 'fixture-native'})
         self.assertEqual(duplicate['allowusers']['occurrences'], 2)

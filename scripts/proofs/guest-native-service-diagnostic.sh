@@ -40,6 +40,7 @@ def metadata(path):
 def effective_summary(raw, expected):
     observed = {}
     normalized = {}
+    folded = {}
     for line in raw.decode().splitlines():
         key, separator, value = line.partition(' ')
         if separator and key in expected:
@@ -47,10 +48,15 @@ def effective_summary(raw, expected):
         pieces = line.split(None, 1)
         if len(pieces) == 2 and pieces[0] in expected:
             normalized.setdefault(pieces[0], []).append(pieces[1])
+        if len(pieces) == 2 and pieces[0].lower() in expected:
+            folded.setdefault(pieces[0].lower(), []).append(pieces[1])
     return {key: {'occurrences': len(observed.get(key, [])),
                   'exact_match': observed.get(key) == [value],
                   'strip_match': [item.strip() for item in observed.get(key, [])] == [value],
                   'normalized_separator_match': [item.strip() for item in normalized.get(key, [])] == [value],
+                  'casefold_key_occurrences': len(folded.get(key, [])),
+                  'casefold_key_exact_value_match': folded.get(key) == [value],
+                  'casefold_key_strip_match': [item.strip() for item in folded.get(key, [])] == [value],
                   'value_lengths': [len(item) for item in observed.get(key, [])],
                   'leading_whitespace': [item != item.lstrip() for item in observed.get(key, [])],
                   'trailing_whitespace': [item != item.rstrip() for item in observed.get(key, [])]}
