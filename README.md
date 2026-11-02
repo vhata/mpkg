@@ -21,8 +21,22 @@ The replacement Python libraries provide these foundations:
 - Read-only [native](docs/manager-observations.md) and
   [Compose](docs/manager-compose-observations.md) observations with
   explicit identity, scope, time and unavailable evidence.
+- Positive [package request satisfaction](docs/manager-package-satisfaction.md)
+  through native dependency testing. Unmet requests and provider
+  provenance remain unknown.
+- [File metadata](docs/manager-file-observation.md) observations for
+  bounded path targets, without reading contents or checking access.
+- Positive [local account properties](docs/manager-account-observation.md)
+  cross-checked against effective name resolution. Missing identities,
+  supplementary memberships and safe account creation remain unknown.
+- [Endpoint transport](docs/manager-endpoint-observations.md) and
+  [recorded check collection](docs/manager-endpoint-checks.md) with
+  bounded loopback requests and retained original predicates. Route
+  agreement leaves listener and application identity unverified.
 - [Immutable comparisons](docs/manager-planning.md) of desired state,
-  retained authority, consumer requirements and current evidence.
+  retained authority, consumer requirements and current evidence,
+  including [recorded endpoint results](docs/manager-endpoint-reporting.md)
+  kept separate from functional verification.
 - A pure [Sonarr Port transformation](docs/manager-sonarr-xml.md) of
   protected XML bytes that preserves unrelated content.
 
@@ -32,7 +46,9 @@ non-executable, and transformed candidate bytes carry no apply authority.
 [Authenticated protected bindings](docs/manager-protected-bindings.md)
 connect exact declaration snapshots to captures through a trusted recorder.
 Generic legacy captures retain decision/name comparisons; full nonsecret
-and Compose input closure remains separate work.
+and Compose input closure remains separate work. Current recorded
+protected-input freshness can be reported independently of resource
+properties; matching properties do not imply unchanged inputs.
 
 This repository currently contains an Arch Linux metapackage helper and
 five `vhata-*` package groups. `mpkg` is a Python executable; its
@@ -98,4 +114,6 @@ Python packages are downloaded; the current tests use only the standard
 library. The tests stub package and service tools and Docker responses,
 use private temporary stores, and run Git in temporary repositories.
 Integration tests exercise real declaration, storage, observation-parser
-and comparison code together; they never invoke live host tools.
+and comparison code together, including private captures, metadata reads
+and owned ephemeral HTTP listeners. They never invoke live package,
+service or Docker tools and do not establish production acceptance.
