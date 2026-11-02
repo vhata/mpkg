@@ -48,8 +48,10 @@ Identity fields are validated against the declaration kind's schema
 before constructing physical keys. Accepted engine identities are
 rebound through the supplied trusted aliases and must agree with their
 stored keys; missing historical alias bindings cannot grant authority.
-Package, service and Compose facts must identify their corresponding
-implemented observer source. Other kinds cannot claim known observations
+Package, service, Compose and path metadata facts must identify their
+corresponding implemented observer source. File, directory and symlink
+facts use the [native metadata observer](manager-file-observation.md);
+metadata does not prove content or consumer access. Other kinds cannot claim known observations
 through an arbitrary or mismatched source name. Missing properties,
 unsupported sources, stale evidence
 and future timestamps remain unknown. `now` accepts an aware datetime
