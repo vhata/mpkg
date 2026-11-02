@@ -60,11 +60,13 @@ class ObservationPipelineTests(unittest.TestCase):
         self.recorder = ProtectedRecorder(self.store, self.policy)
         self.requests = []
         requests = self.requests
+        self.response_status = [200]
+        response_status = self.response_status
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
                 requests.append(self.path)
-                self.send_response(200)
+                self.send_response(response_status[0])
                 self.send_header("X-Private", PRIVATE)
                 self.send_header("Content-Length", "0")
                 self.end_headers()
@@ -164,7 +166,8 @@ timeout_seconds=2
              patch.object(HostStore, "current", side_effect=AssertionError("Report store")):
             return build_report(self.declaration if declaration is None else declaration,
                 current, facts.as_dict(), host_id=HOST, now=NOW,
-                input_observations=inputs, selected_components=selected_components).as_dict()
+                input_observations=inputs, endpoint_observations=endpoints,
+                selected_components=selected_components).as_dict()
 
     def assert_private(self, report, endpoints):
         public = json.dumps(report) + json.dumps(endpoints.as_dict())
@@ -173,9 +176,15 @@ timeout_seconds=2
             self.assertNotIn(value, public)
         self.assertFalse(report["executable"])
         self.assertIn("application_not_implemented", report["blockers"])
-        self.assertIn("input_freshness_unverified", report["blockers"])
+        self.assertEqual(report["protected_inputs"]["full_input_closure"], "unverified")
         self.assertTrue(all(row["functional_result"] == "unverified"
                             for row in endpoints.as_dict()["checks"]))
+        self.assertEqual(report["endpoint_checks"]["functional_result"], "unverified")
+        for resource in (*report["resources"], *report["retained_resources"],
+                         *report["unselected_resources"]):
+            for check in resource["checks"]:
+                self.assertEqual(check["result"], "unknown")
+                self.assertEqual(check["functional_result"], "unverified")
 
     def test_real_capture_metadata_and_http_worker_preserve_independent_evidence(self):
         before = self.files()
@@ -186,7 +195,11 @@ timeout_seconds=2
         self.assertTrue(all(prop["comparison"] == "agreement"
                             for row in report["resources"] for prop in row["properties"]))
         self.assertEqual(report["protected_inputs"]["entries"][0]["state"], "same")
+        self.assertIn("input_freshness_unverified", report["blockers"])
         self.assertEqual([row["route_result"] for row in collected[3].as_dict()["checks"]], ["match", "match"])
+        self.assertEqual(report["endpoint_checks"]["coverage"], "complete")
+        daemon = next(row for row in report["resources"] if row["resource_id"] == "daemon")
+        self.assertEqual([row["route_result"] for row in daemon["checks"]], ["match", "match"])
         self.assert_private(report, collected[3])
 
     def test_changed_protected_bytes_do_not_change_metadata_or_route_agreement(self):
@@ -200,6 +213,7 @@ timeout_seconds=2
         self.assertTrue(all(prop["comparison"] == "agreement"
                             for row in report["resources"] for prop in row["properties"]))
         self.assertTrue(all(row["route_result"] == "match" for row in collected[3].as_dict()["checks"]))
+        self.assertTrue(all(row["route_result"] == "match" for row in report["endpoint_checks"]["entries"]))
         self.assert_private(report, collected[3])
 
     def test_recorded_rename_keeps_original_route_predicate_without_automatic_probe(self):
@@ -217,6 +231,9 @@ timeout_seconds=2
         self.assertEqual([(row["role"], row["resource_id"], row["route_result"]) for row in rows],
                          [("accepted", "daemon", "match"), ("current", "renamed", "mismatch")])
         self.assertEqual(len(self.requests), 2)
+        renamed = next(row for row in report["resources"] if row["resource_id"] == "renamed")
+        self.assertEqual([(row["role"], row["route_result"]) for row in renamed["checks"]],
+                         [("accepted", "match"), ("current", "mismatch")])
         self.assertEqual(report["protected_inputs"]["entries"][0]["state"], "same")
         self.assert_private(report, collected[3])
 
@@ -226,8 +243,34 @@ timeout_seconds=2
         self.assertEqual(changed.sha256, self.declaration.sha256)
         report = self.report(collected, declaration=changed)
         self.assertEqual(report["protected_inputs"]["reason"], "intent_not_recorded")
+        self.assertEqual(report["endpoint_checks"]["reason"], "intent_not_recorded")
+        self.assertTrue(all(row["route_result"] == "unavailable" for row in report["endpoint_checks"]["entries"]))
         self.assertTrue(all(prop["comparison"] == "agreement"
                             for row in report["resources"] for prop in row["properties"]))
+        self.assert_private(report, collected[3])
+
+    def test_route_mismatch_does_not_invalidate_matching_inputs_or_metadata(self):
+        self.response_status[0] = 503
+        before = self.files()
+        collected = self.collect()
+        report = self.report(collected)
+        self.assertEqual(self.files(), before)
+        self.assertEqual(report["protected_inputs"]["entries"][0]["state"], "same")
+        self.assertTrue(all(prop["comparison"] == "agreement"
+                            for row in report["resources"] for prop in row["properties"]))
+        self.assertTrue(all(row["route_result"] == "mismatch" for row in report["endpoint_checks"]["entries"]))
+        self.assertIn("required_check_unverified", report["blockers"])
+        self.assert_private(report, collected[3])
+
+    def test_empty_component_selection_keeps_complete_input_and_endpoint_evidence(self):
+        collected = self.collect()
+        report = self.report(collected, selected_components=[])
+        self.assertEqual(report["resources"], [])
+        self.assertEqual(len(report["unselected_resources"]), 2)
+        self.assertEqual(report["protected_inputs"]["entries"][0]["state"], "same")
+        self.assertEqual(report["endpoint_checks"]["coverage"], "complete")
+        self.assertEqual(report["endpoint_checks"]["required_checks"], 2)
+        self.assertTrue(all(row["route_result"] == "match" for row in report["endpoint_checks"]["entries"]))
         self.assert_private(report, collected[3])
 
 
