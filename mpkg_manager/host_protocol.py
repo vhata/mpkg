@@ -33,6 +33,8 @@ class HostRequest:
     expected_revision: int | None = None
     source: bytes | None = field(default=None, repr=False)
     resource_ids: tuple = field(default=(), repr=False)
+    selected_components: tuple | None = field(default=None, repr=False)
+    probe_endpoints: bool = False
 
 
 def _object(pairs):
@@ -48,8 +50,8 @@ def _reject_number(value):
     raise RequestError("invalid_request")
 
 
-def _selection(value, *, stable=False):
-    if (type(value) is not list or not 1 <= len(value) <= MAX_SELECTION
+def _selection(value, *, stable=False, empty=False):
+    if (type(value) is not list or not (0 if empty else 1) <= len(value) <= MAX_SELECTION
             or any(type(item) is not str for item in value) or len(set(value)) != len(value)):
         raise RequestError("invalid_request")
     for item in value:
@@ -62,6 +64,36 @@ def _selection(value, *, stable=False):
         elif not _IDENTIFIER.fullmatch(item):
             raise RequestError("invalid_request")
     return tuple(value)
+
+
+def _status(arguments):
+    if arguments.get("operation") != "status":
+        raise RequestError("operation_unsupported")
+    if set(arguments) != {"operation", "expected_revision", "source", "source_is_nonsecret",
+                          "selected_components", "probe_endpoints"}:
+        raise RequestError("invalid_request")
+    revision = arguments["expected_revision"]
+    if revision is not None and (type(revision) is not int or not 0 <= revision < 2**63 - 1):
+        raise RequestError("invalid_request")
+    if type(arguments["probe_endpoints"]) is not bool:
+        raise RequestError("invalid_request")
+    selection = arguments["selected_components"]
+    selection = None if selection is None else _selection(selection, empty=True)
+    source = arguments["source"]
+    if source is None:
+        if arguments["source_is_nonsecret"] is not False:
+            raise RequestError("invalid_request")
+    else:
+        if type(source) is not str or arguments["source_is_nonsecret"] is not True:
+            raise RequestError("invalid_request")
+        source = source.encode("utf-8")
+        if len(source) > MAX_DECLARATION_BYTES:
+            raise RequestError("request_size_limit")
+        declaration = load_declaration(source)
+        if selection is not None and not set(selection) <= {item["id"] for item in declaration.model["components"]}:
+            raise RequestError("invalid_status_selection")
+    return HostRequest("observe", "status", revision, source,
+                       selected_components=selection, probe_endpoints=arguments["probe_endpoints"])
 
 
 def parse_request(raw):
@@ -78,6 +110,8 @@ def parse_request(raw):
         verb, arguments = value["verb"], value["arguments"]
         if type(verb) is not str or verb not in _VERBS or type(arguments) is not dict:
             raise RequestError("invalid_request")
+        if verb == "observe":
+            return _status(arguments)
         if verb not in {"record", "export"}:
             raise RequestError("operation_unsupported")
         operation = arguments.get("operation")

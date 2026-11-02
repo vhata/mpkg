@@ -1,4 +1,4 @@
-"""Installed recording/export dispatch with trusted paths and fixed outcomes.
+"""Installed recording, observation and export with trusted fixed paths.
 
 Only the fixed launcher is a privileged entrypoint. Python construction with
 alternate fixture paths or an owner is trusted embedding, never wire input.
@@ -17,6 +17,8 @@ from .host_policy import POLICY_PATH, PolicyError, _DirectoryChain, load_host_po
 from .host_protocol import (MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, PROTOCOL_VERSION,
                             HostRequest, RequestError, parse_request)
 from .store import HostStore, StoreError
+from .status_collection import StatusCollectionError, collect_status
+from .status_wire import validate_status
 
 
 STORE_DIRECTORY = Path("/var/lib/mpkg")
@@ -30,7 +32,8 @@ _ERROR_CODES = frozenset({
     "store_exists", "store_busy", "store_recovery_required", "store_corrupt", "store_unavailable",
     "store_creation_failed", "store_permissions", "store_identity_changed", "revision_conflict",
     "commit_outcome_unknown", "store_write_failed", "store_read_failed", "record_rejected",
-    "record_outcome_unknown", "internal_error",
+    "record_outcome_unknown", "internal_error", "invalid_status_selection",
+    "status_no_recorded_snapshot", "status_unavailable", "status_context_changed", "status_scope_limit",
 })
 _STORE_ERRORS = _ERROR_CODES & frozenset({
     "store_missing", "store_exists", "store_busy", "store_recovery_required", "store_corrupt",
@@ -132,6 +135,34 @@ class HostBoundary:
             raise BoundaryError("host_owner_required")
         with load_host_policy(path=self._policy_path, owner_uid=self._owner_uid) as policy:
             accepted_policy = policy.policy
+            if request.verb == "observe" and request.operation == "status":
+                with HostStore.open_readonly(self._store_directory, accepted_policy.host_id,
+                                             owner_uid=self._owner_uid) as store:
+                    self._bound(store, accepted_policy)
+                    current = store.current()
+                    if request.expected_revision is not None and current["revision"] != request.expected_revision:
+                        raise BoundaryError("revision_conflict")
+                    if request.source is None:
+                        if current["snapshot_id"] is None:
+                            raise BoundaryError("status_no_recorded_snapshot")
+                        declaration = store.snapshot(current["snapshot_id"])
+                    else:
+                        declaration = load_declaration(request.source)
+                    if request.selected_components is not None and not set(request.selected_components) <= {
+                            item["id"] for item in declaration.model["components"]}:
+                        raise BoundaryError("invalid_status_selection")
+                    try:
+                        result = collect_status(declaration, store, policy,
+                            selected_components=request.selected_components,
+                            probe_endpoints=request.probe_endpoints, complete_inputs=True,
+                            expected_revision=current["revision"], budget_seconds=45).as_dict()
+                    except StatusCollectionError as error:
+                        code = {"status_revision_conflict": "revision_conflict",
+                                "status_context_changed": "status_context_changed",
+                                "status_scope_limit": "status_scope_limit"}.get(error.code, "status_unavailable")
+                        raise BoundaryError(code) from None
+                    validate_status(result, request)
+                    return result
             if request.verb == "export":
                 with HostStore.open_readonly(self._store_directory, accepted_policy.host_id,
                                              owner_uid=self._owner_uid) as store:

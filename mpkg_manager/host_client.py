@@ -1,4 +1,4 @@
-"""Unprivileged, fixed transport to the installed recording helper.
+"""Unprivileged, fixed transport to the installed host helper.
 
 There are no caller-selected programs, paths, environments or root imports.
 Tests replace the private sender; that seam is never a command-line option.
@@ -15,6 +15,7 @@ import time
 import uuid
 
 from .host_protocol import MAX_RESPONSE_BYTES, PROTOCOL_VERSION, parse_request
+from .status_wire import validate_status
 
 
 _ENVIRONMENT = {"PATH": "/usr/bin", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"}
@@ -30,7 +31,8 @@ _ERROR_CODES = frozenset({
     "store_exists", "store_busy", "store_recovery_required", "store_corrupt", "store_unavailable",
     "store_creation_failed", "store_permissions", "store_identity_changed", "revision_conflict",
     "commit_outcome_unknown", "store_write_failed", "store_read_failed", "record_rejected",
-    "record_outcome_unknown", "internal_error", "installed_helper_unavailable",
+    "record_outcome_unknown", "internal_error", "installed_helper_unavailable", "invalid_status_selection",
+    "status_no_recorded_snapshot", "status_unavailable", "status_context_changed", "status_scope_limit",
 })
 _UNCERTAIN_CODES = {"commit_outcome_unknown", "record_outcome_unknown", "response_size_limit",
                     "internal_error", "installed_helper_unavailable"}
@@ -266,7 +268,9 @@ def _current(value):
 
 
 def _result(value, request):
-    if request.operation == "initialize":
+    if request.verb == "observe":
+        validate_status(value, request)
+    elif request.operation == "initialize":
         _keys(value, {"host_id", "revision", "initialized"})
         _uuid(value["host_id"])
         _integer(value["revision"])

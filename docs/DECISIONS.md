@@ -12,7 +12,7 @@ Final review and landing remain with the user; this does not authorize
 production package, service or Docker operations.
 
 Keep the existing `mpkg` helper usable while the replacement is developed
-in the `mpkg_manager` Python 3.12 namespace. The implemented command
+in the `mpkg_manager` Python 3.12 namespace. The validation command
 validates a closed TOML model and produces an immutable nonsecret snapshot.
 Separate libraries provide [durable recording](manager-store.md),
 [verified host policy and bounded capture](manager-capture.md),
@@ -34,12 +34,23 @@ read. Legacy decision/name captures remain compatible but do not become
 bound merely because a declaration supplies a UUID. Complete input closure
 and application remain separate gates.
 
+The [recording client](manager-recording-cli.md) and
+[status command](manager-status-cli.md) now use the staged installed
+helper through a fixed bounded protocol. Status opens the store read-only,
+pins its chosen revision and compares current and retained declared inputs
+against independent history manifests. Endpoint probing requires an
+explicit flag and exact recorded intent. Working-tree declarations remain
+valid status targets without being recorded or granting apply authority.
+Legacy missing input captures remain unavailable; complete input recording
+and protected capture preparation are still trusted library APIs.
+
 Combined library checks use private temporary stores and synthetic query
 responses, including unavailable evidence, retained data, relinquishment
 and changed check declarations. This evidence is separate from disposable
-mechanism experiments and A1–A12 acceptance. An installed privileged
-recorder, worker, apply protocol, attempt history and real native/Docker
-acceptance remain future implementation and validation work. The
+mechanism experiments and A1–A12 acceptance. Real installed-helper and
+sudo acceptance, an application worker, apply protocol, attempt history
+and real native/Docker acceptance remain separate implementation and
+validation work. The
 [declaration guide](manager-declarations.md) owns the schema; the original
 first-release contract and acceptance evidence requirements remain in
 force.

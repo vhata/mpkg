@@ -13,7 +13,7 @@ define requirements beyond the implemented foundations below.
 The [storage and execution design](docs/specs/2026-10-31-first-release-storage-and-execution.md)
 selects encoding, persistence and native operation boundaries. Recording
 and comparison primitives implement part of that design. A bounded
-recording client and staged privileged helper implement the initial
+recording/status client and staged privileged helper implement the initial
 request boundary; installation acceptance and application remain
 separate work.
 The [disposable fixture design](docs/specs/2026-10-31-first-release-fixture.md)
@@ -27,18 +27,20 @@ checks and product acceptance.
 - `mpkg_manager.declarations` owns the Python 3.12 replacement's typed
   nonsecret model, contextual consumer constraints and exact snapshots.
   `mpkg_manager.cli` exposes local declaration validation plus explicit
-  recording and history commands through `host_client`; see the
+  recording, history and status commands through `host_client`; see the
   [declaration guide](docs/manager-declarations.md) and
-  [recording CLI guide](docs/manager-recording-cli.md).
+  [recording CLI guide](docs/manager-recording-cli.md) and
+  [status guide](docs/manager-status-cli.md). `status_wire` validates the
+  closed public status schema at both ends of the transport.
 - `mpkg_manager.store` owns private SQLite intent/adoption records,
   retained consumers, protected captures and historical accepted check
   predicates. It validates durable history before projecting authority.
   Its [store guide](docs/manager-store.md) defines recording and ownership
   boundaries. `host_protocol` and `host_helper` provide closed recording
-  requests, verified paths, serialization and sanitized exports. The
+  and status requests, verified paths, serialization and sanitized output. The
   [host-helper guide](docs/manager-host-helper.md) describes the staged
   installed launcher and its unverified real-host acceptance; protected
-  recording, observation dispatch and application remain separate work.
+  recording through requests and application remain separate work.
 - `mpkg_manager.host_policy` loads and verifies host identity, engine
   aliases and allowed input roots. `mpkg_manager.protected_capture` reads
   bounded regular files beneath a verified policy handle. The
@@ -68,6 +70,18 @@ checks and product acceptance.
   symlink metadata using Linux descriptors without reading contents.
   Its [metadata guide](docs/manager-file-observation.md) defines path
   race checks, name-resolution limits and unsupported content/access.
+- `mpkg_manager.file_accountability` enumerates explicit filesystem roots,
+  exclusions and budgets, with conservative configuration/runtime
+  attribution and visible gaps. Its
+  [accountability guide](docs/manager-file-accountability.md) distinguishes
+  metadata classification from package baselines and consumer access.
+- `mpkg_manager.recorded_inputs` collects current and retained declared
+  files against authenticated private baselines. The
+  [evidence guide](docs/manager-recorded-input-evidence.md) describes
+  separate original dependency and consumer-content obligations;
+  [report binding](docs/manager-recorded-input-reporting.md) checks them
+  against independent `HostStore.current_with_inputs()` history manifests.
+  This is declared-file coverage, not complete effective Compose closure.
 - `mpkg_manager.observe_endpoint` uses a fixed isolated Python worker
   for bounded loopback HTTP status evidence. `endpoint_checks` collects
   required current and retained accepted predicates from actual host
@@ -84,6 +98,13 @@ checks and product acceptance.
   every route result remains functionally unverified.
   Reports are always non-executable; attempts, native preparation and
   application are not supplied.
+- `mpkg_manager.status_collection` coordinates fixed read-only adapters
+  with live policy/history checks, bounded query scheduling and explicit
+  gaps. The [collection guide](docs/manager-status-collection.md) defines
+  retained scope, legacy and complete input modes, exact recorded endpoint
+  targets and the lack of a hard filesystem/history latency deadline.
+  The installed helper opts into complete input mode and pins the chosen
+  revision before queries; no observation records or repairs intent.
 - `mpkg_manager.sonarr_xml` transforms only the existing Port value in
   protected XML bytes, preserving unrelated bytes. Its
   [adapter guide](docs/manager-sonarr-xml.md) defines the supported subset
@@ -151,12 +172,14 @@ store-issued preparations and durable authentication of capture origins,
 exact snapshots and declared input scope. The trusted recorder compares
 bound inputs under current policy and preserves original history. Generic
 legacy captures still use decision/name comparisons and do not authenticate
-declaration UUIDs. Neither path establishes complete nonsecret/Compose
+declaration UUIDs. Neither path establishes complete effective Compose
 input closure, replay authorization or application readiness.
 `input_evidence` binds fresh protected comparisons to the exact current
 recorded snapshot and complete protected slot coverage. Public reports
-redact input paths, references and content digests; historical input
-coverage and full bundle closure remain explicitly unavailable.
+redact input paths, references and content digests. This legacy subset
+leaves historical coverage unavailable; the separate `recorded_inputs`
+mode covers current and retained declared files without claiming full
+bundle closure.
 
 ## Worktree isolation
 

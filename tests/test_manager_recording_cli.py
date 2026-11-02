@@ -202,7 +202,7 @@ files=[{{path="secret.env",classification="protected",reference="{HOST}"}}]
         self.assertEqual(self.sent, [])
 
     def test_no_privileged_configuration_or_unimplemented_verbs_are_exposed(self):
-        for command in ("observe", "status", "plan", "apply", "prepare", "recover"):
+        for command in ("observe", "plan", "apply", "prepare", "recover"):
             self.assertEqual(self.json(command)[0], 2)
         for flag in ("helper", "helper-path", "store", "policy", "uid", "env", "program", "sender"):
             self.assertEqual(self.json("init", "--" + flag, SENTINEL)[0], 2)

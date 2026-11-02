@@ -52,7 +52,7 @@ def _revision(value):
 
 
 def _parser():
-    parser = _Arguments(prog="mpkg-manager", description="Validate and record server-environment intent.")
+    parser = _Arguments(prog="mpkg-manager", description="Validate, record and inspect server-environment intent.")
     commands = parser.add_subparsers(dest="command", required=True, parser_class=_Arguments)
     validate = commands.add_parser("validate", help="validate TOML without recording or applying it")
     validate.add_argument("source", metavar="PATH")
@@ -64,6 +64,7 @@ def _parser():
         "relinquish": "relinquish selected stable resource UUIDs without removing anything",
         "current": "show recorded revision and responsibility, without live observation",
         "history": "show recorded decisions without declaration contents",
+        "status": "inspect recorded or working-tree intent without changing host state",
     }
     for name, help_text in descriptions.items():
         command = commands.add_parser(name, help=help_text, description=help_text)
@@ -79,12 +80,36 @@ def _parser():
             command.add_argument("--resource", action="append", required=True,
                                  metavar="ID" if name == "adopt" else "UUID",
                                  help="select one resource; repeat to select more")
+        if name == "status":
+            command.add_argument("source", nargs="?", metavar="PATH",
+                                 help="working-tree declaration; omit to inspect recorded intent")
+            command.add_argument("--source-is-nonsecret", action="store_true",
+                                 help="explicitly classify supplied TOML source as nonsecret")
+            command.add_argument("--expected-revision", type=_revision, metavar="N",
+                                 help="refuse inspection if recorded history changed")
+            command.add_argument("--component", action="append", metavar="ID",
+                                 help="select a component; retained obligations remain visible")
+            command.add_argument("--probe-endpoints", action="store_true",
+                                 help="explicitly probe recorded loopback routes; not a health claim")
     return parser
 
 
 def _request(options):
     command = options.command
     arguments = {"operation": {"init": "initialize", "record": "intent"}.get(command, command)}
+    if command == "status":
+        if (options.source is not None) != options.source_is_nonsecret:
+            raise RequestError("invalid_request")
+        source = None
+        if options.source is not None:
+            raw = _source(options.source)
+            load_declaration(raw)
+            source = raw.decode("utf-8")
+        arguments.update(source=source, source_is_nonsecret=options.source_is_nonsecret,
+                         expected_revision=options.expected_revision,
+                         selected_components=options.component, probe_endpoints=options.probe_endpoints)
+        return json.dumps({"version": PROTOCOL_VERSION, "verb": "observe", "arguments": arguments},
+                          ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     if command in {"record", "adopt", "relinquish"}:
         arguments["expected_revision"] = options.expected_revision
     if command in {"record", "adopt"}:
@@ -116,12 +141,39 @@ def _human_result(command, result):
                   f"{resource['management']}; declaration {resource['declaration_state']}; "
                   f"pending disposition {'yes' if resource['pending_disposition'] else 'no'}.")
         print(f"{len(result['resources'])} recorded resources. Live state has not been observed.")
+    elif command == "status":
+        report, collection = result["report"], result["collection"]
+        label = "recorded" if report["target"]["recorded"] else "working-tree (unrecorded)"
+        print(f"Host {report['host_id']}: {label} status at revision {collection['revision']}.")
+        for resource in report["resources"]:
+            states = ", ".join(f"{row['property']}={row['comparison']}" for row in resource["properties"])
+            print(f"{resource['resource_id']}: {states or 'no desired properties'}.")
+            _human_checks(resource["checks"])
+        for name in ("retained_resources", "unselected_resources"):
+            for resource in report[name]:
+                print(f"{resource['logical_id']} ({resource['stable_id']}): "
+                      f"{name.removesuffix('_resources')}; {resource['management']}.")
+                _human_checks(resource["checks"])
+        print(f"Recorded inputs: {report['recorded_inputs']['reason']}. "
+              f"Endpoint checks: {report['endpoint_checks']['reason']}.")
+        for scope in report["recorded_inputs"]["scopes"]:
+            for entry in scope["entries"]:
+                owner = scope["stable_id"] if scope["role"] == "accepted" else "current"
+                print(f"Input {entry['input_id']}[{entry['file_index']}] ({owner}): {entry['state']}.")
+        print("Blockers: " + ", ".join(report["blockers"]) + ".")
+        print("Status is time-bounded evidence. Application and attempt history remain unavailable.")
     else:
         print(f"Host {result['host_id']}: {len(result['decisions'])} recorded decisions.")
         for decision in result["decisions"]:
             print(f"Revision {decision['revision']}: {decision['kind']} at {decision['created_at']}.")
     if command in {"init", "record", "adopt", "relinquish"}:
         print("Recording does not observe, apply or verify host state.")
+
+
+def _human_checks(checks):
+    for check in checks:
+        route = f"; route {check['route_result']}" if "route_result" in check else ""
+        print(f"  {check['role']} check {check['id']}: {check['result']}{route}.")
 
 
 def _host_failure(options, code, category, *, path=None):

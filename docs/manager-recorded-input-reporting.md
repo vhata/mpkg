@@ -5,6 +5,8 @@ The pure planner can compare typed
 separate expected-coverage manifest from actual host history. This covers
 current declared files and retained accepted input obligations, while
 keeping complete Compose input closure and application unverified.
+The [installed status command](manager-status-cli.md) assembles the
+trusted manifest and evidence for exact recorded targets.
 
 ## Independent history projection
 

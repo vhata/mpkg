@@ -3,8 +3,9 @@
 `mpkg_manager.store` implements recording primitives for the replacement
 manager. Recording never installs software, applies configuration,
 changes accounts, starts services or changes package reasons. It is a
-library for the future bounded recorder, not an installed privileged
-helper or a complete authorization boundary.
+library behind the [staged host helper](manager-host-helper.md), with
+explicit recording and read-only [status](manager-status-cli.md) requests.
+The library alone is not an installed privilege or authorization boundary.
 
 ## Ownership and lifecycle
 
@@ -20,10 +21,12 @@ files owned by that UID with mode `0600`. Symlink traversal, unsafe
 ancestors, replacement file identities and inappropriate modes are
 refused. Tests explicitly pass their temporary fixture owner's UID to
 the library; declarations and CLI inputs cannot select that override.
-The installed recorder must bind `/var/lib/mpkg` and host identity using
-the separate root-owned host policy described in the
+The staged installed recorder binds `/var/lib/mpkg` and host identity
+using the separate root-owned host policy described in the
 [execution design](specs/2026-10-31-first-release-storage-and-execution.md).
-That installed recorder and policy dispatcher are not provided here.
+Its fixed launcher, policy dispatcher and inert installation payload are
+implemented separately from this library. Real installation and sudo
+acceptance remain unverified; no fixture owner override is a wire field.
 
 SQLite 3.37 or newer is required for the strict schema. The store checks
 its exact schema, application/version identifiers, host identity and

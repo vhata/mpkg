@@ -14,8 +14,11 @@ host, record adoption or apply changes. Separate
 accepted host history or inspect current/history summaries through the
 [staged host helper](docs/manager-host-helper.md). They require the
 explicitly installed helper and administrator-provided host policy;
-recording does not change running software. The existing `mpkg` helper
-below remains available.
+recording does not change running software. The separate
+[`status` command](docs/manager-status-cli.md) compares recorded or
+working-tree intent with read-only observations. Endpoint probes are
+explicit and matching properties never authorize application. The existing
+`mpkg` helper below remains available.
 
 The replacement Python libraries provide these foundations:
 
@@ -31,6 +34,12 @@ The replacement Python libraries provide these foundations:
   provenance remain unknown.
 - [File metadata](docs/manager-file-observation.md) observations for
   bounded path targets, without reading contents or checking access.
+- [Bounded file accountability](docs/manager-file-accountability.md)
+  enumerates explicit scope with configuration/runtime attribution and
+  visible gaps. Package baselines and consumer access remain unavailable.
+- [Recorded input evidence](docs/manager-recorded-input-evidence.md) and
+  [report binding](docs/manager-recorded-input-reporting.md) keep current
+  and retained declared-file baselines separate across classifications.
 - Positive [local account properties](docs/manager-account-observation.md)
   cross-checked against effective name resolution. Missing identities,
   supplementary memberships and safe account creation remain unknown.
@@ -45,18 +54,22 @@ The replacement Python libraries provide these foundations:
 - A pure [Sonarr Port transformation](docs/manager-sonarr-xml.md) of
   protected XML bytes that preserves unrelated content.
 
-Observation and comparison remain library interfaces. The recording
-client uses a fixed privileged request boundary with a staged install
-payload; real installation and sudo acceptance remain separate checks.
+The [status collector](docs/manager-status-collection.md) connects these
+observers and comparisons through live trusted read-only handles. The
+status and recording clients use a fixed privileged request boundary with
+a staged install payload; real installation and sudo acceptance remain
+separate checks.
 There is no application worker or apply command. Comparison reports
 remain non-executable, and transformed candidate bytes carry no apply
 authority.
 [Authenticated protected bindings](docs/manager-protected-bindings.md)
 connect exact declaration snapshots to captures through a trusted recorder.
-Generic legacy captures retain decision/name comparisons; full nonsecret
-and Compose input closure remains separate work. Current recorded
-protected-input freshness can be reported independently of resource
-properties; matching properties do not imply unchanged inputs.
+Generic legacy captures retain decision/name comparisons. Complete declared
+input recording remains a trusted library API; legacy missing baselines
+stay unavailable. Status reports current and retained declared-file
+freshness independently of resource properties. Full effective Compose
+input closure remains unverified; matching properties do not imply
+unchanged inputs.
 
 This repository currently contains an Arch Linux metapackage helper and
 five `vhata-*` package groups. `mpkg` is a Python executable; its
