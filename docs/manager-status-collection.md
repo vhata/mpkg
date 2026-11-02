@@ -136,11 +136,24 @@ request can inspect retained accepted routes after a recorded removal.
 Route matches remain functionally unverified and do not establish the
 listener or application's identity.
 
+Explicit `attribute_endpoints` and `check_consumer_access` modes add
+[separate runtime evidence](manager-runtime-check-reporting.md). They load
+independent original-role manifests, require exact recorded intent before
+querying, and recheck coverage and live context after collection. The
+existing route-only `probe_endpoints` mode is independent; attribution
+already performs its own HTTP status observation.
+
 ## Scheduling and latency
 
 Defaults are a 60-second scheduling budget, 1024 native queries, 64 MiB of
 reserved query-output capacity, 256 scheduled resource targets, and 64
-endpoint probes. Callers may lower these limits. Maximum accepted values
+route-only endpoint probes. Runtime/access collection has a separate
+64-attempt default and 256-attempt maximum. It receives the remaining
+shared query count, output reservation and scheduling time. An exhausted
+allowance skips it with explicit unknown scope. Its reservation totals
+are included in the collection totals, not added to them. Runtime queries
+reserve 64 KiB each and account queries reserve 16 KiB. Callers may lower
+these limits. Maximum accepted values
 are respectively 300 seconds, 4096 queries, 128 MiB, 1024 resources and
 256 endpoint probes. Unscheduled targets retain explicit unknown facts
 and coverage; query-limit reasons appear in the collection summary.

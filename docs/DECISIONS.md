@@ -46,10 +46,11 @@ An explicit `--check-file-content` option adds
 for current and retained desired/consumer roles, distinct from source
 freshness. Target reads require exact recorded intent and policy-approved
 roots; neither matches nor differences authorize overwrite.
-Library-only [Compose preflight](manager-compose-input-bundles.md),
-[runtime attribution](manager-runtime-endpoint-attribution.md) and
-[declared-user access](manager-consumer-access.md) remain outside installed
-status collection. Legacy missing input captures remain unavailable. Recording commands can
+Library-only [Compose preflight](manager-compose-input-bundles.md) remains
+a separate boundary. Explicit [runtime/access status options](manager-runtime-check-reporting.md)
+collect original current and retained predicates without equating socket
+ownership or a local-user operation with application functionality.
+Legacy missing input captures remain unavailable. Recording commands can
 [explicitly capture declared nonsecret files](manager-recording-capture.md);
 protected capture preparation remains a trusted library API.
 

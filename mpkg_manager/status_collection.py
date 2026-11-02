@@ -6,6 +6,7 @@ import json
 import time
 
 from . import observe_accounts, observe_compose, observe_files, observe_native, observe_packages
+from . import runtime_checks, runtime_endpoint, consumer_access
 from .declarations import Declaration, DeclarationError, canonical_json, load_declaration, physical_key
 from .endpoint_checks import EndpointCollectionError, collect_endpoint_checks
 from .file_content import FileContentError, file_content_manifest, collect_file_content
@@ -224,6 +225,40 @@ class _Budget:
             return result
         return query
 
+    def runtime_runner(self, kind, runner):
+        """Reserve every runtime query inside the same status-wide allowance."""
+        def query(argv, *, timeout, max_output=None):
+            cap = runtime_endpoint.MAX_OUTPUT if kind == "endpoint" else consumer_access.MAX_QUERY_BYTES
+            reason = self.reason()
+            if reason is None and self.query_count >= self.max_queries:
+                reason = "status_query_limit"
+            if reason is None and self.reserved_bytes + cap > self.max_bytes:
+                reason = "status_query_byte_limit"
+            if reason:
+                self.reasons.add(reason)
+                return QueryResult("timeout")
+            seconds = min(timeout, self.remaining())
+            self.query_count += 1
+            self.reserved_bytes += cap
+            deadline = time.monotonic() + seconds
+            try:
+                if kind == "endpoint":
+                    result = (runtime_endpoint.run_readonly if runner is None else runner)(
+                        argv, timeout=seconds, max_output=cap)
+                else:
+                    result = (consumer_access.run_readonly if runner is None else runner)(argv, timeout=seconds)
+            except Exception:
+                self.reasons.add("status_query_failed")
+                return QueryResult("io_error")
+            if self.reason() or time.monotonic() >= deadline:
+                self.reasons.add(self.reason() or "status_query_timeout")
+                return QueryResult("timeout")
+            if type(result) is not QueryResult or type(result.output) is not bytes or len(result.output) > cap:
+                self.reasons.add("status_query_result_invalid")
+                return QueryResult("io_error")
+            return result
+        return query
+
 
 def _package_facts(resources, host_id, when, budget):
     direct = observe_native.observe_resources(resources, host_id=host_id, observed_at=when,
@@ -247,7 +282,10 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
                    max_endpoint_probes=64, max_age_seconds=60,
                    native_runner=None, package_runner=None, account_runner=None,
                    compose_runner=None, endpoint_runner=None, identities=None,
-                   complete_inputs=False, expected_revision=None, check_file_content=False):
+                   complete_inputs=False, expected_revision=None, check_file_content=False,
+                   attribute_endpoints=False, check_consumer_access=False, max_runtime_checks=64,
+                   runtime_query_runner=None, runtime_proc_reader=None, runtime_probe_runner=None,
+                   access_query_runner=None, access_worker_runner=None):
     """Collect and compare through live trusted read-only handles.
 
     Runners and name resolvers are trusted embedding/test seams, never request
@@ -263,6 +301,7 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
             or type(probe_endpoints) is not bool
             or type(complete_inputs) is not bool
             or type(check_file_content) is not bool
+            or type(attribute_endpoints) is not bool or type(check_consumer_access) is not bool
             or (expected_revision is not None and (type(expected_revision) is not int
                 or not 0 <= expected_revision < 2**63 - 1))
             or type(budget_seconds) is not int or not 1 <= budget_seconds <= 300
@@ -270,9 +309,12 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
             or type(max_query_bytes) is not int or not 1 <= max_query_bytes <= 128 * 1024 * 1024
             or type(max_resources) is not int or not 1 <= max_resources <= 1024
             or type(max_endpoint_probes) is not int or not 1 <= max_endpoint_probes <= 256
+            or type(max_runtime_checks) is not int or not 1 <= max_runtime_checks <= 256
             or type(max_age_seconds) is not int or not 1 <= max_age_seconds <= 3600
             or any(runner is not None and not callable(runner)
-                   for runner in (*runners.values(), endpoint_runner))):
+                   for runner in (*runners.values(), endpoint_runner, runtime_query_runner,
+                                  runtime_probe_runner, access_query_runner, access_worker_runner))
+            or (runtime_proc_reader is not None and not callable(getattr(runtime_proc_reader, "capture", None)))):
         raise StatusCollectionError("invalid_status_collection_request")
     try:
         if load_declaration(declaration.source_bytes) != declaration:
@@ -309,11 +351,26 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
             raise StatusCollectionError("status_file_content_unavailable") from None
     content_arguments = ({"file_content_manifest": content_manifest, "file_content_requested": True}
                          if check_file_content else {})
+    runtime_requested = attribute_endpoints or check_consumer_access
+    runtime_manifest = None
+    # An edited declaration may have unrelated component names. Preserve all
+    # recorded roles without interpreting that selection against old intent.
+    runtime_selection = selected_components if recorded == declaration else None
+    if runtime_requested and recorded is not None:
+        try:
+            runtime_manifest = runtime_checks.runtime_check_manifest(store, loaded_policy,
+                revision=current["revision"], snapshot_id=current["snapshot_id"],
+                selected_components=runtime_selection)
+        except runtime_checks.RuntimeCheckError:
+            raise StatusCollectionError("status_runtime_checks_unavailable") from None
+    runtime_arguments = ({"runtime_check_manifest": runtime_manifest,
+                          "attribute_endpoints": attribute_endpoints,
+                          "check_consumer_access": check_consumer_access} if runtime_requested else {})
     # Validate report inputs before any host query or probe.
     try:
         build_report(declaration, current, None, host_id=host_id, engine_aliases=aliases,
                      selected_components=selected_components, max_age_seconds=max_age_seconds,
-                     **content_arguments)
+                     **content_arguments, **runtime_arguments)
     except PlanningError:
         raise StatusCollectionError("invalid_status_report_context") from None
     facts, rows, packages = [], [], []
@@ -409,6 +466,34 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
                     endpoint_reason = None
                 except EndpointCollectionError:
                     endpoint_reason = "status_endpoint_collection_unavailable"
+    runtime, runtime_reason = None, "status_target_not_recorded"
+    if runtime_requested and recorded == declaration:
+        remaining = int(budget.remaining())
+        remaining_queries = budget.max_queries - budget.query_count
+        remaining_bytes = budget.max_bytes - budget.reserved_bytes
+        runtime_reason = "status_collection_budget_exhausted"
+        if remaining > 0 and (remaining_queries <= 0 or remaining_bytes <= 0):
+            runtime_reason = "status_query_limit" if remaining_queries <= 0 else "status_query_byte_limit"
+            budget.reasons.add(runtime_reason)
+        elif remaining > 0:
+            try:
+                runtime = runtime_checks.collect_runtime_checks(store, loaded_policy,
+                    revision=current["revision"], snapshot_id=current["snapshot_id"],
+                    selected_components=runtime_selection, probe_endpoints=attribute_endpoints,
+                    check_access=check_consumer_access, budget_seconds=remaining,
+                    max_checks=max_runtime_checks, max_queries=remaining_queries, max_query_bytes=remaining_bytes,
+                    runtime_query_runner=budget.runtime_runner("endpoint", runtime_query_runner),
+                    proc_reader=runtime_proc_reader, probe_runner=runtime_probe_runner,
+                    access_query_runner=budget.runtime_runner("access", access_query_runner),
+                    access_worker_runner=access_worker_runner)
+                for reason in runtime.query_limits:
+                    if reason in ("collection_query_limit", "collection_query_byte_limit"):
+                        budget.reasons.add(reason.replace("collection_", "status_", 1))
+                runtime_reason = budget.reason()
+                if runtime_reason:
+                    runtime = None
+            except runtime_checks.RuntimeCheckError:
+                runtime_reason = "status_runtime_checks_unavailable"
     # Even empty scopes and failed adapters must cross the final live checks.
     final_policy, final_current, final_aliases = _context(store, loaded_policy, complete_inputs=complete_inputs)
     if policy != final_policy or aliases != final_aliases or current != final_current:
@@ -420,17 +505,24 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
             if check_file_content and file_content_manifest(store, revision=current["revision"],
                     snapshot_id=current["snapshot_id"]) != content_manifest:
                 raise StatusCollectionError("status_context_changed")
+            if runtime_requested and runtime_checks.runtime_check_manifest(store, loaded_policy,
+                    revision=current["revision"], snapshot_id=current["snapshot_id"],
+                    selected_components=runtime_selection) != runtime_manifest:
+                raise StatusCollectionError("status_context_changed")
         except StoreError:
             raise StatusCollectionError("status_store_unavailable") from None
         except FileContentError:
             raise StatusCollectionError("status_file_content_unavailable") from None
+        except runtime_checks.RuntimeCheckError:
+            raise StatusCollectionError("status_runtime_checks_unavailable") from None
     try:
         input_arguments = {"recorded_input_observations" if complete_inputs else "input_observations": inputs}
         report = build_report(declaration, current, batch.as_dict(), host_id=host_id, engine_aliases=aliases,
             selected_components=selected_components, now=datetime.now(timezone.utc),
             max_age_seconds=max_age_seconds, endpoint_observations=endpoints,
             **input_arguments, **(content_arguments | {"file_content_observations": content}
-                                 if check_file_content else {}))
+                                 if check_file_content else {}),
+            **(runtime_arguments | {"runtime_check_observations": runtime} if runtime_requested else {}))
     except PlanningError:
         raise StatusCollectionError("invalid_status_report_context") from None
     collection = {
@@ -443,4 +535,6 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
         collection["recorded_input_reason"] = collection.pop("protected_input_reason")
     if check_file_content:
         collection["file_content_reason"] = content_reason
+    if runtime_requested:
+        collection["runtime_check_reason"] = runtime_reason
     return StatusResult(canonical_json({"report": report.as_dict(), "collection": collection}))

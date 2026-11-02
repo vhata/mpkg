@@ -142,8 +142,11 @@ resolution or application capability is granted.
 
 Required checks stay separate from property agreement. Only the closed
 package and service property predicates can be evaluated from current
-facts. Endpoint and consumer-access checks remain unverified; service
-running state is not functional health. Accepted check IDs are retained
+facts. Optional [runtime/access evidence](manager-runtime-check-reporting.md)
+can separately evaluate exact declared local-user access predicates after
+complete original-role validation. Endpoint attribution remains separate
+from functional verification; service running state is not functional
+health. Accepted check IDs are retained
 with their original normalized predicates and adoption revision/snapshot
 binding, even when removed from the working declaration. Each result has
 an `accepted` or `current` role; the same ID can therefore pass one

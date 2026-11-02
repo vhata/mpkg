@@ -3,8 +3,8 @@
 `mpkg_manager.runtime_checks` collects required endpoint and access checks
 from an actual read-only `HostStore` and verified `LoadedHostPolicy`.
 It supplies an independent coverage manifest and a separate typed batch
-for future status/planner integration. It changes neither the installed
-helper nor the current route-only endpoint collector or planner.
+for explicit [status/report integration](manager-runtime-check-reporting.md).
+The existing route-only endpoint collector remains separate.
 
 An endpoint result combines the existing
 [runtime ownership and HTTP status observer](manager-runtime-endpoint-attribution.md).

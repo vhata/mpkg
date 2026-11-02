@@ -65,7 +65,7 @@ The supported operations are:
 | `record` | `relinquish` | `expected_revision`, `resource_ids` |
 | `export` | `current` | None |
 | `export` | `history` | None |
-| `observe` | `status` | `expected_revision`, `source`, `source_is_nonsecret`, `selected_components`, `probe_endpoints`, optional `check_file_content` |
+| `observe` | `status` | `expected_revision`, `source`, `source_is_nonsecret`, `selected_components`, `probe_endpoints`, optional `check_file_content`, `attribute_endpoints`, `check_consumer_access` |
 
 `initialize` creates the private store using the existing policy's host
 and engine bindings. It refuses an existing destination. Ordinary reads
@@ -105,7 +105,10 @@ list of distinct IDs, and `probe_endpoints` is an explicit boolean.
 The optional `check_file_content` boolean defaults to false; malformed
 types are refused before dispatch. It opts into separately redacted
 [recorded target comparisons](manager-file-content-reporting.md), never
-arbitrary supplied paths or new baselines.
+arbitrary supplied paths or new baselines. Optional `attribute_endpoints`
+and `check_consumer_access` booleans separately enable
+[runtime ownership/status and local-user access](manager-runtime-check-reporting.md).
+Both default false and accept no query/path/user overrides.
 An empty component selection retains accepted obligations while selecting
 no current components. Missing recorded intent is an explicit error.
 See the [status guide](manager-status-cli.md) for evidence and latency

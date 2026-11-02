@@ -159,6 +159,8 @@ class HostBoundary:
                             selected_components=request.selected_components,
                             probe_endpoints=request.probe_endpoints, complete_inputs=True,
                             check_file_content=request.check_file_content,
+                            **{name: True for name in ("attribute_endpoints", "check_consumer_access")
+                               if getattr(request, name)},
                             expected_revision=current["revision"], budget_seconds=45).as_dict()
                     except StatusCollectionError as error:
                         code = {"status_revision_conflict": "revision_conflict",

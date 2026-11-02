@@ -46,10 +46,12 @@ The replacement Python libraries provide these foundations:
   [status report](docs/manager-file-content-reporting.md) compare exact
   current and retained desired/consumer bytes separately from source
   freshness, metadata and overwrite authority.
-- Library-only [Compose input preflight](docs/manager-compose-input-bundles.md),
-  [runtime endpoint attribution](docs/manager-runtime-endpoint-attribution.md)
-  and [declared-user access](docs/manager-consumer-access.md) provide
-  separate bounded evidence; installed status does not collect them.
+- Library-only [Compose input preflight](docs/manager-compose-input-bundles.md)
+  validates a conservative closed subset.
+- [Runtime endpoint attribution](docs/manager-runtime-endpoint-attribution.md)
+  and [declared-user access](docs/manager-consumer-access.md) have explicit
+  [status options](docs/manager-runtime-check-reporting.md). Socket ownership
+  and local-user read/list results remain separate from application health.
 - Positive [local account properties](docs/manager-account-observation.md)
   cross-checked against effective name resolution. Missing identities,
   supplementary memberships and safe account creation remain unknown.
