@@ -35,12 +35,13 @@ _ERROR_CODES = frozenset({
     "commit_outcome_unknown", "store_write_failed", "store_read_failed", "record_rejected",
     "record_outcome_unknown", "internal_error", "invalid_status_selection",
     "status_no_recorded_snapshot", "status_unavailable", "status_context_changed", "status_scope_limit",
-    "input_capture_rejected",
+    "input_capture_rejected", "store_migration_required",
 })
 _STORE_ERRORS = _ERROR_CODES & frozenset({
     "store_missing", "store_exists", "store_busy", "store_recovery_required", "store_corrupt",
     "store_unavailable", "store_creation_failed", "store_permissions", "store_identity_changed",
     "revision_conflict", "commit_outcome_unknown", "store_write_failed", "store_read_failed",
+    "store_migration_required",
 })
 
 
