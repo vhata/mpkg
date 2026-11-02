@@ -305,6 +305,56 @@ class BoundedQueryTests(unittest.TestCase):
         result = self.child("import os; os.write(1,b'x'*700); os.write(2,b'y'*700)", max_output=1024)
         self.assertEqual(result.code, "output_limit")
 
+    def test_nonzero_exit_stops_descendant_after_output_pipes_close(self):
+        real_popen = subprocess.Popen
+        processes = []
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "must-not-appear"
+            code = f"""
+import os, time
+ready_read, ready_write = os.pipe()
+child = os.fork()
+if child:
+    os.close(ready_write)
+    assert os.read(ready_read, 1) == b'x'
+    os._exit(7)
+os.close(ready_read)
+os.close(1)
+os.close(2)
+os.write(ready_write, b'x')
+os.close(ready_write)
+time.sleep(1)
+open({str(marker)!r}, 'w').write('effect')
+os._exit(0)
+"""
+
+            def launch(argv, **kwargs):
+                process = real_popen([sys.executable, "-c", code], **kwargs)
+                processes.append(process)
+                return process
+
+            try:
+                started = time.monotonic()
+                with patch("mpkg_manager.query_process.subprocess.Popen", side_effect=launch):
+                    result = run_readonly(PACKAGE_VERSIONS, timeout=2)
+                self.assertEqual(result.code, "command_failed")
+                self.assertEqual(result.returncode, 7)
+                self.assertEqual(result.output, b"")
+                self.assertLess(time.monotonic() - started, 1)
+                self.assertTrue(processes[0].stdout.closed)
+                self.assertTrue(processes[0].stderr.closed)
+                time.sleep(1.05)
+                self.assertFalse(marker.exists())
+            finally:
+                # Also contain the fixture when this regression fails against
+                # an implementation which leaves the child alive.
+                for process in processes:
+                    try:
+                        os.killpg(process.pid, 9)
+                    except ProcessLookupError:
+                        pass
+                    process.wait(timeout=1)
+
     def test_deadline_kills_inherited_pipe_descendants(self):
         with tempfile.TemporaryDirectory() as directory:
             marker = Path(directory) / "must-not-appear"
