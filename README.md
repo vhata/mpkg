@@ -1,7 +1,7 @@
 # mpkg
 
 The replacement server environment manager is in staged implementation.
-Its current CLI validates an explicit TOML declaration:
+Its CLI validates an explicit TOML declaration locally:
 
 ```sh
 .venv/bin/python -m mpkg_manager validate environment.toml --json
@@ -9,8 +9,13 @@ Its current CLI validates an explicit TOML declaration:
 
 See [manager declarations](docs/manager-declarations.md) for setup, schema
 and examples. This command does not read referenced inputs, inspect the
-host, record adoption or apply changes. The existing `mpkg` helper below
-remains available.
+host, record adoption or apply changes. Separate
+[recording commands](docs/manager-recording-cli.md) initialize and update
+accepted host history or inspect current/history summaries through the
+[staged host helper](docs/manager-host-helper.md). They require the
+explicitly installed helper and administrator-provided host policy;
+recording does not change running software. The existing `mpkg` helper
+below remains available.
 
 The replacement Python libraries provide these foundations:
 
@@ -40,9 +45,12 @@ The replacement Python libraries provide these foundations:
 - A pure [Sonarr Port transformation](docs/manager-sonarr-xml.md) of
   protected XML bytes that preserves unrelated content.
 
-These are library interfaces. There is no installed privileged helper,
-application worker or apply command; comparison reports remain
-non-executable, and transformed candidate bytes carry no apply authority.
+Observation and comparison remain library interfaces. The recording
+client uses a fixed privileged request boundary with a staged install
+payload; real installation and sudo acceptance remain separate checks.
+There is no application worker or apply command. Comparison reports
+remain non-executable, and transformed candidate bytes carry no apply
+authority.
 [Authenticated protected bindings](docs/manager-protected-bindings.md)
 connect exact declaration snapshots to captures through a trusted recorder.
 Generic legacy captures retain decision/name comparisons; full nonsecret
