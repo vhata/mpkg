@@ -56,10 +56,11 @@ and locking. See [SQLite URI parameters](https://www.sqlite.org/uri.html).
 Any leftover rollback journal, WAL or shared-memory sidecar causes an
 explicit recovery-required error before SQLite opens. Recovery and
 restoration require separate maintenance. The
-[explicit migration library](manager-store-migration.md) upgrades a
-verified version-1 store to version 2 only after a private verified
-backup. Ordinary opens never upgrade: version 1 remains readable, while
-recording fails with `store_migration_required`. An interrupted
+[explicit migration library](manager-store-migration.md) provides separate
+verified-backup transitions from version 1 to 2 and from version 2 to 3.
+Ordinary opens never upgrade: versions 1 and 2 remain readable, while
+recording requires version 3 and otherwise fails with
+`store_migration_required`. An interrupted
 creation can leave an incomplete private directory, which is retained
 and refused rather than silently repaired.
 
@@ -168,5 +169,7 @@ adoptions, exact source snapshots, semantic corruption and secret-free
 public projections.
 They do not establish power-loss durability, encrypted backup, restored
 authority recovery, an installed privilege boundary or A1–A12 product
-acceptance. Attempts, action execution and plan storage are separate
-future work.
+acceptance. The [immutable proposal library](manager-effect-proposals.md)
+adds private, typed Sonarr Port candidates bound to actual history;
+every proposal remains blocked. Attempts and action execution remain
+separate future work.

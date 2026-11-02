@@ -23,7 +23,7 @@ from .declarations import (Declaration, DeclarationError, canonical_json,
                            load_declaration, physical_key, validate_model)
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 APPLICATION_ID = 0x4D504B47
 MAX_INPUT_BYTES = 16 * 1024 * 1024
 _BOUND_TOKEN_PREFIX = b"MPKGBND\x00\x01"
@@ -64,6 +64,17 @@ _TABLES["schema_migrations"] = """CREATE TABLE schema_migrations(
         from_version INTEGER NOT NULL, to_version INTEGER NOT NULL UNIQUE,
         revision INTEGER NOT NULL, created_at TEXT NOT NULL,
         backup BLOB, seal BLOB NOT NULL) STRICT"""
+_V2_TABLES = dict(_TABLES)
+_TABLES["sonarr_port_proposals"] = """CREATE TABLE sonarr_port_proposals(
+        id TEXT PRIMARY KEY, revision INTEGER NOT NULL REFERENCES decisions(revision),
+        snapshot_id TEXT NOT NULL REFERENCES snapshots(id), stable_id TEXT NOT NULL,
+        adoption_revision INTEGER NOT NULL,
+        protected_id TEXT NOT NULL REFERENCES protected_inputs(id),
+        created_at TEXT NOT NULL,
+        adapter TEXT NOT NULL CHECK(adapter='sonarr_xml_port_v1'),
+        state TEXT NOT NULL CHECK(state='blocked'),
+        context BLOB NOT NULL, candidate BLOB NOT NULL, seal BLOB NOT NULL,
+        FOREIGN KEY(stable_id,adoption_revision) REFERENCES resources(stable_id,revision)) STRICT"""
 _TRIGGERS = {
     f"{table}_{operation.lower()}": (
         f"CREATE TRIGGER {table}_{operation.lower()} BEFORE {operation} ON {table} "
@@ -71,8 +82,12 @@ _TRIGGERS = {
     for table in _TABLES for operation in ("UPDATE", "DELETE")
 }
 _LEGACY_TRIGGERS = {name: sql for name, sql in _TRIGGERS.items()
-                    if not name.startswith("schema_migrations_")}
-_SCHEMAS = {1: _LEGACY_TABLES | _LEGACY_TRIGGERS, 2: _TABLES | _TRIGGERS}
+                    if any(name == f"{table}_{operation}" for table in _LEGACY_TABLES
+                           for operation in ("update", "delete"))}
+_V2_TRIGGERS = {name: sql for name, sql in _TRIGGERS.items()
+                if not name.startswith("sonarr_port_proposals_")}
+_SCHEMAS = {1: _LEGACY_TABLES | _LEGACY_TRIGGERS,
+            2: _V2_TABLES | _V2_TRIGGERS, 3: _TABLES | _TRIGGERS}
 _MIGRATION_DOMAIN = b"MPKGMIGRATION\x00\x01"
 
 
@@ -127,10 +142,13 @@ def _framed_mac(key, domain, context, raw):
     return result.digest()
 
 
-def _migration_receipt(key, host_id, identity, kind, before, after, revision, created_at, backup):
+def _migration_receipt(key, host_id, identity, kind, before, after, revision, created_at, backup,
+                       previous=None):
     context = {"host_id": host_id, "id": identity, "kind": kind,
                "from_version": before, "to_version": after, "revision": revision,
                "created_at": created_at, "backup": backup}
+    if after >= 3:
+        context["previous_seal"] = None if previous is None else previous.hex()
     return _framed_mac(key, _MIGRATION_DOMAIN, context, b"")
 
 
@@ -449,6 +467,9 @@ class HostStore:
             self._verify_records()
             if version >= 2:
                 self._verify_schema_receipts(version)
+            if version >= 3:
+                from .effect_plans import _verify_proposals
+                _verify_proposals(self)
             self._schema_version = version
         except (StoreError, DeclarationError, TypeError, ValueError, KeyError,
                 OverflowError, RecursionError):
@@ -458,8 +479,9 @@ class HostStore:
         identity = str(uuid.uuid4())
         created_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
         key = self._db.execute("SELECT private_key FROM host").fetchone()[0]
+        previous = self._db.execute("SELECT seal FROM schema_migrations ORDER BY to_version DESC LIMIT 1").fetchone()
         seal = _migration_receipt(key, self.host_id, identity, kind, before, after,
-                                  revision, created_at, backup)
+                                  revision, created_at, backup, None if previous is None else previous[0])
         self._db.execute("INSERT INTO schema_migrations VALUES(?,?,?,?,?,?,?,?)",
                          (identity, kind, before, after, revision, created_at,
                           None if backup is None else _json(backup), seal))
@@ -467,30 +489,37 @@ class HostStore:
 
     def _verify_schema_receipts(self, version):
         rows = self._db.execute("SELECT * FROM schema_migrations ORDER BY to_version").fetchall()
-        if len(rows) != 1:
+        if not 1 <= len(rows) <= version - 1:
             _fail("store_corrupt")
         key = self._db.execute("SELECT private_key FROM host").fetchone()[0]
+        previous, previous_version, previous_revision, previous_time = None, None, 0, None
         for identity, kind, before, after, revision, created_at, raw, seal in rows:
             _host_id(identity)
             timestamp = datetime.fromisoformat(created_at)
             if (timestamp.tzinfo != timezone.utc or timestamp.isoformat(timespec="microseconds") != created_at
-                    or type(revision) is not int or not 0 <= revision <= self._revision()
-                    or type(before) is not int or type(after) is not int or after != version):
+                    or type(revision) is not int or not previous_revision <= revision <= self._revision()
+                    or type(before) is not int or type(after) is not int or after > version
+                    or (previous_time is not None and timestamp < previous_time)):
                 _fail("store_corrupt")
             backup = None if raw is None else _decode(raw)
             if kind == "created":
-                if before != 0 or after != 2 or revision != 0 or backup is not None:
+                if previous is not None or before != 0 or after not in (2, 3) or revision != 0 or backup is not None:
                     _fail("store_corrupt")
             elif kind == "migrated":
-                if (before, after) != (1, 2):
+                if ((before, after) not in ((1, 2), (2, 3))
+                        or (previous is None and before != 1)
+                        or (previous is not None and before != previous_version)):
                     _fail("store_corrupt")
                 _backup_metadata(backup, self.host_id, before, revision)
             else:
                 _fail("store_corrupt")
             expected = _migration_receipt(key, self.host_id, identity, kind, before, after,
-                                          revision, created_at, backup)
+                                          revision, created_at, backup, previous)
             if type(seal) is not bytes or not hmac.compare_digest(seal, expected):
                 _fail("store_corrupt")
+            previous, previous_version, previous_revision, previous_time = seal, after, revision, timestamp
+        if previous_version != version:
+            _fail("store_corrupt")
 
     def _verify_records(self):
         """Replay immutable facts; structural SQLite integrity is insufficient."""
