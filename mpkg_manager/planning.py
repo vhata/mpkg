@@ -16,7 +16,7 @@ _HASH = re.compile(r"[0-9a-f]{64}\Z")
 _KINDS = {"package", "compose", "volume", "network", "service", "user", "group",
           "file", "directory", "symlink", "sonarr_xml"}
 _SOURCES = {"pacman_installed_inventory", "systemd_unit_properties",
-            "docker_selected_project_inventory", "unsupported_adapter"}
+            "docker_selected_project_inventory", "filesystem_metadata", "unsupported_adapter"}
 
 
 class PlanningError(ValueError):
@@ -382,9 +382,14 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
                 or _key(fact, host_id, aliases) != target_key):
             return None, "observation_identity_mismatch"
         source = {"package": "pacman_installed_inventory", "service": "systemd_unit_properties",
-                  "compose": "docker_selected_project_inventory"}.get(resource["kind"])
+                  "compose": "docker_selected_project_inventory", "file": "filesystem_metadata",
+                  "directory": "filesystem_metadata", "symlink": "filesystem_metadata"}.get(resource["kind"])
         if source is None or fact["evidence_source"] != source:
             return fact, "observation_source_unsupported"
+        if (source == "filesystem_metadata"
+                and prop not in ({"present", "mode", "owner", "group"}
+                                 | ({"target"} if resource["kind"] == "symlink" else set()))):
+            return fact, "observation_property_unsupported"
         if fact["state"] != "known":
             return fact, "observation_" + fact["state"]
         return fact, None
