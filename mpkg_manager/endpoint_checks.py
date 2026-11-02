@@ -98,6 +98,10 @@ class EndpointCheckResult:
                         engine_aliases=None, stable_id=None, adoption_revision=None):
         """Compare original role, adoption and complete physical predicate context."""
         try:
+            if role == "accepted":
+                _require(type(adoption_revision) is int and 0 < adoption_revision < 2**63)
+            else:
+                _require(role == "current" and adoption_revision is None)
             scope = _decode_scope(self._scope)
             context = _context(check, resource, host_id, {} if engine_aliases is None else engine_aliases)
             return (context["target"] is not None

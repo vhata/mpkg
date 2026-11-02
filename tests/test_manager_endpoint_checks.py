@@ -445,3 +445,23 @@ expected={running=true}
                                                        budget_seconds=1, runner=self.runner)
         self.assertEqual(self.calls, [])
         self.assertEqual(batch.checks[0].as_dict()["reason"], "collection_budget_exhausted")
+
+    def test_role_context_requires_exact_adoption_revision_type(self):
+        original = declaration()
+        decision = self.store.adopt(original, 0, ["daemon"])
+        batch = self.collect()
+        record = self.store.current()["resources"][0]
+        check, resource = original.model["checks"][0], original.model["resources"][0]
+        context = dict(host_id=HOST, snapshot_id=decision["snapshot_id"], role="accepted",
+                       stable_id=record["stable_id"], adoption_revision=1)
+        self.assertTrue(batch.checks[0].matches_context(check, resource, **context))
+        for value in (True, 1.0, 0, -1, 2**63, None, "1"):
+            with self.subTest(adoption_revision=value):
+                self.assertFalse(batch.checks[0].matches_context(check, resource,
+                                                                **(context | {"adoption_revision": value})))
+        context.update(role="current", stable_id=None, adoption_revision=None)
+        self.assertTrue(batch.checks[1].matches_context(check, resource, **context))
+        for value in (False, 0, 0.0, 1):
+            with self.subTest(current_adoption_revision=value):
+                self.assertFalse(batch.checks[1].matches_context(check, resource,
+                                                                **(context | {"adoption_revision": value})))
