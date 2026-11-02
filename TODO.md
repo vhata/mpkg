@@ -73,15 +73,16 @@ measured against the first-release contract and acceptance scenarios.
 
 ### Unprioritized
 
+- [NATIVE] `reject-late-query-completion` — **Reject bounded query completion observed after its absolute deadline.** Late processing of final EOF or child completion can currently return successful output after the declared timeout.
+  - Source: [bounded query runner](mpkg_manager/query_process.py), endpoint supervisor investigation and independent private-process/clock reproductions, 2026-11-02.
+  - Reproduction: advance monotonic time beyond a one-second deadline after a real child finishes; run_bounded still returns ok because the final wait has no completion-time recheck. A delayed EOF probe demonstrates the analogous race in the endpoint prototype.
+  - Recheck the absolute deadline after completion, discard late output and preserve bounded process-group cleanup and original cancellation. Add meaningful completion-boundary regressions without production processes or wall-clock flakiness.
+
 - [NATIVE] `reject-endpoint-url-controls` — **Reject literal ASCII control characters in declared endpoint URLs.** The closed URL validator currently accepts non-whitespace controls that the bounded transport cannot safely send.
   - Source: [endpoint URL validation](mpkg_manager/declarations.py), [closed check schema](docs/manager-declarations.md#checks), endpoint transport investigation and independent model reproduction, 2026-11-02.
   - Reproduction: validate_model accepts a minimal service endpoint with a URL path containing literal U+0001. No network access is needed to demonstrate the discrepancy.
   - Reject literal C0 controls and DEL consistently through TOML/model validation with fixed diagnostics. Preserve ordinary and percent-encoded URL paths, existing loopback/port constraints and private error output; add focused before/after regressions.
 
-- [NATIVE] `stop-query-descendants-on-nonzero-exit` — **Terminate a failed query's surviving descendants before returning.** A nonzero leader can close its pipes while a child continues running, violating the documented failure cleanup contract.
-  - Source: [bounded query runner](mpkg_manager/query_process.py), [observer failure contract](docs/manager-observations.md), independent temporary-process reproduction, 2026-11-02.
-  - Reproduction: a Python fixture forks, the leader exits 7, and the child closes both output pipes then writes a marker after 0.4 seconds. The runner returns command_failed in about 0.01 seconds, but the marker appears after return.
-  - Preserve fixed diagnostics, hidden output, bounded cleanup and cancellation semantics. Add a real private-process regression proving the surviving child is terminated; avoid touching production processes or changing successful-query behavior.
 
 - [NATIVE] `report-protected-input-freshness` — **Expose protected-input freshness in comparison reports.** The recorder can compare authenticated captures, while reports still lack input evidence and always retain the full-input freshness blocker.
   - Source: [protected comparison requirements](docs/specs/2026-10-31-first-release-contract.md#6-compose-inputs-and-privileges), [comparison implementation](mpkg_manager/planning.py), PR #15 and follow-up investigation, 2026-11-01.

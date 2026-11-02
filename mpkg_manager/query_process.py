@@ -97,6 +97,8 @@ def run_bounded(argv, *, environment, timeout=10, max_output=1024 * 1024):
                         failure = "timeout"
         except OSError:
             failure = "io_error"
+        if not failure and process.returncode != 0:
+            failure = "command_failed"
         if failure:
             _terminate_query(process)
     except BaseException:
@@ -112,6 +114,4 @@ def run_bounded(argv, *, environment, timeout=10, max_output=1024 * 1024):
         process.stderr.close()
     if failure:
         return QueryResult(failure, returncode=process.returncode)
-    if process.returncode != 0:
-        return QueryResult("command_failed", returncode=process.returncode)
     return QueryResult("ok", b"".join(chunks), process.returncode)
