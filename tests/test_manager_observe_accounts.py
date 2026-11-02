@@ -1,13 +1,20 @@
 """Exact local/NSS protocol stubs and owned Python children only."""
 from dataclasses import FrozenInstanceError
+from datetime import datetime, timedelta, timezone
 import json
+import os
+from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import patch
 
 from mpkg_manager.observe_accounts import (COLLECTION_SECONDS, ENVIRONMENT, MAX_OUTPUT,
     MAX_RESOURCES, QUERY_SECONDS, observe_accounts, run_readonly)
 from mpkg_manager.query_process import QueryResult, run_bounded
+from mpkg_manager.declarations import load_declaration
+from mpkg_manager.planning import build_report
+from mpkg_manager.store import HostStore
 
 
 HOST = "12345678-1234-4234-8234-123456789abc"
@@ -267,6 +274,150 @@ class AccountObservationTests(unittest.TestCase):
                                       timeout=0.1 if expected == "timeout" else 1)
             self.assertEqual(result.code, expected)
             self.assertEqual(result.output, b"")
+
+
+class AccountReportTests(unittest.TestCase):
+    def setUp(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.root = Path(directory.name)
+        self.store = HostStore.create(self.root / "store", HOST, owner_uid=os.geteuid())
+        self.addCleanup(self.store.close)
+        self.declaration = load_declaration(b'''schema=1
+components=[]
+[[resources]]
+id="worker"
+kind="user"
+identity={name="worker"}
+manage=["present","home","shell","primary_group","groups"]
+desired={present=true,home="/srv/worker",shell="/usr/bin/false",primary_group="workers",groups=["workers"]}
+consumers=["external:backup"]
+[[resources]]
+id="workers"
+kind="group"
+identity={name="workers"}
+manage=["present","members"]
+desired={present=true,members=["worker"]}
+''')
+        self.store.adopt(self.declaration, 0, ["worker", "workers"])
+        self.batch = observe_accounts(self.declaration.model["resources"], host_id=HOST,
+                                      observed_at=WHEN, runner=Queries())
+        self.now = datetime(2026, 11, 2, 12, tzinfo=timezone.utc)
+
+    def report(self, *, declaration=None, wire=None, now=None):
+        return build_report(self.declaration if declaration is None else declaration,
+            self.store.current(), self.batch.as_dict() if wire is None else wire,
+            host_id=HOST, now=self.now if now is None else now)
+
+    def properties(self, report, resource_id="worker"):
+        row = next(row for row in report.as_dict()["resources"] if row["resource_id"] == resource_id)
+        return {item["property"]: item for item in row["properties"]}
+
+    def test_adapter_store_report_preserves_mixed_results_privacy_and_store_bytes(self):
+        before = {path.name: path.read_bytes() for path in (self.root / "store").iterdir()}
+        with patch("subprocess.Popen", side_effect=AssertionError("Report cannot query")):
+            report = self.report()
+        self.assertEqual(before, {path.name: path.read_bytes() for path in (self.root / "store").iterdir()})
+        properties = self.properties(report)
+        for name in ("present", "home", "primary_group"):
+            self.assertEqual(properties[name]["comparison"], "agreement")
+            self.assertTrue(properties[name]["authority"])
+            self.assertEqual(properties[name]["evidence_source"], "local_account_properties")
+        self.assertEqual(properties["shell"]["comparison"], "difference")
+        self.assertEqual(properties["groups"]["comparison"], "unknown")
+        self.assertEqual(self.properties(report, "workers")["present"]["comparison"], "agreement")
+        self.assertEqual(self.properties(report, "workers")["members"]["comparison"], "unknown")
+        self.assertFalse({"uid", "gid"} & properties.keys())
+        for private in (SECRET, "/srv/worker", "/usr/bin/nologin", "/usr/bin/false", "1201", "1202"):
+            self.assertNotIn(private.encode(), report.canonical_bytes)
+        self.assertFalse(report.as_dict()["executable"])
+        self.assertIn("application_not_implemented", report.as_dict()["blockers"])
+
+    def test_false_and_nonboolean_presence_never_authorize_absence_or_user_scalar_claims(self):
+        absent = load_declaration(self.declaration.source_bytes.replace(b"present=true", b"present=false"))
+        for value in (False, 0, 1, "true", None):
+            wire = self.batch.as_dict()
+            for fact in wire["facts"]:
+                if fact["property"] == "present":
+                    fact["value"] = value
+            report = self.report(declaration=absent, wire=wire)
+            for resource_id in ("worker", "workers"):
+                self.assertEqual(self.properties(report, resource_id)["present"]["comparison"], "unknown")
+            self.assertEqual(self.properties(report)["home"]["comparison"], "unknown")
+            self.assertIn("local_account_presence_unverified", report.as_dict()["blockers"])
+
+    def test_membership_claims_stay_unknown_even_under_the_real_source_name(self):
+        wire = self.batch.as_dict()
+        for fact in wire["facts"]:
+            if fact["property"] in ("groups", "members"):
+                fact.update(state="known", value="workers", limitations=[])
+        report = self.report(wire=wire)
+        self.assertEqual(self.properties(report)["groups"]["comparison"], "unknown")
+        self.assertEqual(self.properties(report, "workers")["members"]["comparison"], "unknown")
+        self.assertIn("observation_property_unsupported", report.as_dict()["blockers"])
+
+    def test_user_scalars_require_positive_matching_presence(self):
+        for mutation in ("missing", "unknown", "foreign"):
+            wire = self.batch.as_dict()
+            if mutation == "missing":
+                wire["facts"] = [fact for fact in wire["facts"] if fact["property"] != "present"]
+            else:
+                for fact in wire["facts"]:
+                    if fact["property"] == "present":
+                        if mutation == "unknown":
+                            fact.update(state="unknown", value=None, limitations=["not_found"])
+                        else:
+                            fact["identity"] = {"name": "other"}
+            self.assertEqual(self.properties(self.report(wire=wire))["home"]["comparison"], "unknown")
+
+    def test_host_kind_source_identity_coverage_and_time_bind_all_user_properties(self):
+        variants = []
+        for key, value in (("identity", {"name": "other"}), ("kind", "group"),
+                           ("evidence_source", "systemd_unit_properties")):
+            wire = self.batch.as_dict()
+            for fact in wire["facts"]:
+                if fact["resource_id"] == "worker":
+                    fact[key] = value
+            variants.append(wire)
+        foreign = self.batch.as_dict()
+        foreign["host_id"] = "22345678-1234-4234-8234-123456789abc"
+        for fact in foreign["facts"]:
+            fact["host_id"] = foreign["host_id"]
+        variants.append(foreign)
+        missing = self.batch.as_dict()
+        missing["coverage"] = ["workers"]
+        missing["facts"] = [fact for fact in missing["facts"] if fact["resource_id"] != "worker"]
+        variants.append(missing)
+        for wire in variants:
+            self.assertEqual(self.properties(self.report(wire=wire))["home"]["comparison"], "unknown")
+        for now in (self.now + timedelta(seconds=61), self.now - timedelta(seconds=1)):
+            self.assertEqual(self.properties(self.report(now=now))["home"]["comparison"], "unknown")
+
+    def test_logical_rename_retains_grants_and_declaration_removal_keeps_external_records(self):
+        renamed = load_declaration(self.declaration.source_bytes.replace(b'id="worker"', b'id="renamed"'))
+        wire = observe_accounts(renamed.model["resources"], host_id=HOST, observed_at=WHEN,
+                                runner=Queries()).as_dict()
+        report = self.report(declaration=renamed, wire=wire)
+        self.assertTrue(self.properties(report, "renamed")["home"]["authority"])
+        row = next(row for row in report.as_dict()["resources"] if row["resource_id"] == "renamed")
+        self.assertIn("external:backup", row["known_consumers"])
+        empty = load_declaration(b"schema=1\ncomponents=[]\nresources=[]\n")
+        removed = self.report(declaration=empty).as_dict()
+        self.assertEqual(len(removed["retained_resources"]), 2)
+        self.assertIn("retained_resource_disposition_required", removed["blockers"])
+        row = next(row for row in self.store.current()["resources"] if row["logical_id"] == "worker")
+        self.assertIn("external:backup", row["definition"]["consumers"])
+
+    def test_relinquished_account_remains_external_and_matching_facts_do_not_restore_grants(self):
+        record = next(row for row in self.store.current()["resources"] if row["logical_id"] == "worker")
+        self.store.relinquish([record["stable_id"]], 1)
+        report = self.report()
+        properties = self.properties(report)
+        self.assertEqual(properties["home"]["comparison"], "agreement")
+        self.assertFalse(properties["home"]["authority"])
+        row = next(row for row in report.as_dict()["resources"] if row["resource_id"] == "worker")
+        self.assertEqual(row["management"], "relinquished")
+        self.assertIn("external:backup", row["known_consumers"])
 
 
 if __name__ == "__main__":

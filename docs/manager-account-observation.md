@@ -94,9 +94,25 @@ Tests use exact response stubs and owned Python children for process
 failure, overflow and timeout checks. They never query production passwd,
 group, NSS or getent, and never create/change host accounts. This library
 evidence does not establish real Arch deployment or first-release
-acceptance. Planner integration remains a separate coordinated change;
-until its source/property gate is added, these facts remain unsupported
-by the public comparison report.
+acceptance.
+
+## Pure comparison reports
+
+The [planner](manager-planning.md) accepts this source only for user
+`present`, `home`, `shell` and `primary_group`, and group `present`.
+Presence evidence must be the boolean `true`: false, numeric or other
+values cannot establish absence, even when the desired value is false.
+User scalar comparisons also require current positive presence with the
+same source, host, resource kind, physical identity and observation scope.
+Missing, mismatched, incomplete, stale or future evidence remains unknown.
+
+Membership facts remain unsupported even if a supplied projection claims
+they are known. Numeric UID/GID facts supply internal context only; they
+do not add management properties. Public reports redact scalar values and
+preserve existing authority through logical renames. Declaration removal
+retains host records for disposition, and relinquishment keeps external
+consumers without restoring grants when observations match. Comparison
+writes no store files and retains application and attempt-history blockers.
 
 ## Native interface sources
 

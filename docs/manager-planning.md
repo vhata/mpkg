@@ -56,8 +56,10 @@ scope leave comparisons unknown. Malformed context has the fixed
 `invalid_observation_projection` diagnostic. The
 [Compose observation guide](manager-compose-observations.md#scalar-facts-and-unknowns)
 defines the immutable bounded context; reports never echo it.
-Package, service, Compose and path metadata facts must identify their
-corresponding implemented observer source. File, directory and symlink
+
+Package, service, Compose, local account and path metadata facts must
+identify their corresponding implemented observer source. File, directory
+and symlink
 facts use the [native metadata observer](manager-file-observation.md);
 metadata does not prove content or consumer access. Other kinds cannot claim known observations
 through an arbitrary or mismatched source name. Missing properties,
@@ -68,6 +70,12 @@ for deterministic callers and tests; its default is current UTC time.
 the exact age limit remain usable.
 
 ## Property and check results
+
+[Local account evidence](manager-account-observation.md#pure-comparison-reports)
+supports positive boolean presence, user home/shell/primary-group scalars,
+and group presence. User scalars require matching positive presence.
+False or nonboolean presence, memberships and numeric-ID management stay
+unknown. Account observation cannot authorize creation from a lookup miss.
 
 Each selected resource has separate property results, required checks,
 known consumers and blocker codes. Property results are `agreement`,
