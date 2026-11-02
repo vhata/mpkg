@@ -114,8 +114,9 @@ Every object and projection permanently reports functional verification
 as `unverified`, with `listener_attribution_unavailable` and
 `application_identity_unverified`. A matching route status cannot pass
 an accepted or current functional check. `executable` is always false.
-Attributed listener/application evidence and planner integration remain
-separate capabilities.
+Attributed listener/application evidence remains a separate capability.
+The [pure planner](manager-endpoint-reporting.md) can consume a supplied
+batch without initiating collection or functional verification.
 
 The focused suite uses private real SQLite stores, trusted synthetic
 runners and an owned ephemeral loopback HTTP listener. It checks retained
