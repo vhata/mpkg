@@ -48,6 +48,14 @@ Identity fields are validated against the declaration kind's schema
 before constructing physical keys. Accepted engine identities are
 rebound through the supplied trusted aliases and must agree with their
 stored keys; missing historical alias bindings cannot grant authority.
+Compose facts additionally require their collected actual engine ID to
+match that bound target. Derived running facts require the exact nonempty
+service set used during collection, independent of service ordering.
+Missing legacy context, changed engine bindings and changed service
+scope leave comparisons unknown. Malformed context has the fixed
+`invalid_observation_projection` diagnostic. The
+[Compose observation guide](manager-compose-observations.md#scalar-facts-and-unknowns)
+defines the immutable bounded context; reports never echo it.
 Package, service, Compose and path metadata facts must identify their
 corresponding implemented observer source. File, directory and symlink
 facts use the [native metadata observer](manager-file-observation.md);
