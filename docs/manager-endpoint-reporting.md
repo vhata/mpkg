@@ -93,3 +93,12 @@ response content and private binding bytes. Existing report target and
 accepted-check snapshot metadata retain their documented nonsecret
 meaning; this integration adds no predicate digest or secret-bearing
 output. Every report projection is a fresh copy of immutable bytes.
+
+Focused validation composes real private stores and synthetic endpoint
+results with the pure planner. It forbids filesystem, SQLite, socket,
+transport and process calls during report construction; checks complete
+role coverage and exact snapshot/predicate/physical bindings; and exercises
+renames, removals, relinquishment, selection, age boundaries and redaction.
+The adjacent protected-input, file-metadata and integration suites remain
+part of the relevant checks. These tests establish no production endpoint
+health, listener attribution or application acceptance.
