@@ -18,13 +18,15 @@ from .input_evidence import ProtectedInputEvidence, InputEvidenceError, collecti
 from .protected_capture import CaptureError, capture_protected
 from .store import (HostStore, ProtectedInput, StoreError, MAX_INPUT_BYTES,
                     _PREPARATION_DOMAIN, _bound_name, _captures, _declaration,
-                    _declared_protected, _decode, _framed_mac, _json)
+                    _declared_nonsecret, _declared_protected, _decode,
+                    _framed_mac, _json, _nonsecret_name)
 
 
 MAX_PROTECTED_ENTRIES = 64
 MAX_PROTECTED_BYTES = 64 * 1024 * 1024
 _MAX_PREPARATION_METADATA = 128 * 1024
 _PURPOSE = "Declared protected input"
+_NONSECRET_PURPOSE = "Declared nonsecret input"
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 
 
@@ -97,8 +99,10 @@ class ProtectedRecorder:
         root = max(roots, key=lambda item: len(item.split("/")))
         relative = posixpath.relpath(source, root)
         try:
+            nonsecret = entry["classification"] == "nonsecret"
             return capture_protected(self._policy, root=root, relative_path=relative,
-                                     name=_bound_name(entry["input_id"], entry["path"]), purpose=_PURPOSE,
+                                     name=(_nonsecret_name if nonsecret else _bound_name)(entry["input_id"], entry["path"]),
+                                     purpose=_NONSECRET_PURPOSE if nonsecret else _PURPOSE,
                                      max_bytes=MAX_INPUT_BYTES if max_bytes is None else max_bytes)
         except CaptureError as error:
             if max_bytes is not None and error.code == "input_too_large":
@@ -180,12 +184,30 @@ class ProtectedRecorder:
     def adopt(self, declaration, expected_revision, resource_ids, *, prepared_inputs=()):
         return self._record("adopt", declaration, expected_revision, prepared_inputs, resource_ids)
 
-    def _record(self, kind, declaration, expected_revision, prepared_inputs, resource_ids):
+    def record_all_inputs(self, declaration, expected_revision, *, prepared_inputs=()):
+        """Record protected bindings and fresh classified nonsecret file bytes."""
+        return self._record("intent", declaration, expected_revision, prepared_inputs, None,
+                            include_nonsecret=True)
+
+    def adopt_all_inputs(self, declaration, expected_revision, resource_ids, *, prepared_inputs=()):
+        """Adopt resources with complete declared-file captures, not Compose closure."""
+        return self._record("adopt", declaration, expected_revision, prepared_inputs, resource_ids,
+                            include_nonsecret=True)
+
+    def observe_recorded_inputs(self, *, revision, snapshot_id, observed_at=None):
+        """Compare current and retained adopted input slots under current policy."""
+        from .recorded_inputs import collect_recorded_inputs
+        return collect_recorded_inputs(self, revision=revision, snapshot_id=snapshot_id,
+                                       observed_at=observed_at)
+
+    def _record(self, kind, declaration, expected_revision, prepared_inputs, resource_ids,
+                *, include_nonsecret=False):
         declaration = _declaration(declaration)
         self._store._check_bound_identities(declaration)
         selected = self._store._adoption_selection(declaration, resource_ids) if kind == "adopt" else None
         entries = _declared_protected(declaration)
-        if (type(prepared_inputs) not in (list, tuple) or len(entries) > MAX_PROTECTED_ENTRIES
+        nonsecret = _declared_nonsecret(declaration) if include_nonsecret else []
+        if (type(prepared_inputs) not in (list, tuple) or len(entries) + len(nonsecret) > MAX_PROTECTED_ENTRIES
                 or len(prepared_inputs) > MAX_PROTECTED_ENTRIES):
             raise BindingError("protected_input_limit")
         if len({entry["reference"] for entry in entries}) != len(entries):
@@ -233,6 +255,11 @@ class ProtectedRecorder:
                 raw, identity = reused[reference][:2]
             if not self._same_capture(fresh, raw, identity):
                 raise BindingError("protected_input_changed")
+        nonsecret_captures = []
+        for entry in nonsecret:
+            fresh = self._capture(entry, max_bytes=min(MAX_INPUT_BYTES, MAX_PROTECTED_BYTES - total))
+            total += len(fresh.raw)
+            nonsecret_captures.append(fresh)
         if self._policy_context() != policy_context:
             raise BindingError("policy_unavailable")
         with self._store._write(expected_revision):
@@ -247,8 +274,11 @@ class ProtectedRecorder:
             for reference, previous in reused.items():
                 if self._store._bound_capture(reference, snapshot_id, expected_revision) != previous:
                     raise BindingError("binding_unavailable")
+            captures.extend(_captures(nonsecret_captures))
+            nonsecret_references = {capture.name: str(uuid.uuid4()) for capture in nonsecret_captures}
             result = self._store._decision(kind, declaration, expected_revision + 1, captures,
-                                           binding_references=references)
+                                           binding_references=references,
+                                           nonsecret_references=nonsecret_references)
             if selected is not None:
                 self._store._save_adoptions(*selected, resource_ids, result["revision"])
         self._budget_revision = result["revision"]
