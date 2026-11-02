@@ -45,6 +45,17 @@ checks and product acceptance.
   scope and limitations. `observations` supplies immutable scalar facts;
   Compose keeps nested inventory separate. `query_process` supplies
   bounded process capture shared by these adapters.
+- `mpkg_manager.observe_files` collects bounded file, directory and
+  symlink metadata using Linux descriptors without reading contents.
+  Its [metadata guide](docs/manager-file-observation.md) defines path
+  race checks, name-resolution limits and unsupported content/access.
+- `mpkg_manager.observe_endpoint` uses a fixed isolated Python worker
+  for bounded loopback HTTP status evidence. `endpoint_checks` collects
+  required current and retained accepted predicates from actual host
+  history. Their [transport](docs/manager-endpoint-observations.md) and
+  [collection](docs/manager-endpoint-checks.md) guides distinguish route
+  agreement from listener attribution and application health. Recording
+  intent or removing a resource never initiates a probe.
 - `mpkg_manager.planning` compares validated intent, trusted store
   projections and current facts without reads or effects. The
   [comparison guide](docs/manager-planning.md) owns source/identity
@@ -78,6 +89,12 @@ checks and product acceptance.
   evidence without turning a pure transformation into observation or
   application authority. Temporary loaded policies and actual XML reads
   exercise capture-to-store freshness and stale candidate refusal.
+- `tests/test_manager_observation_pipeline.py` combines authenticated
+  captures, real metadata descriptors, synthetic service queries and an
+  owned HTTP listener through the fixed endpoint worker. It checks that
+  changed inputs, property agreement and original accepted predicates
+  stay distinct while durable history remains unchanged. This explicit
+  test assembly is not a production observation coordinator.
 - `scripts/fixture/` owns private runner acquisition, disposable guest
   assembly, supervised builds and bounded input/artifact transport.
   `scripts/proofs/` contains guarded mechanism experiments. These tools
@@ -114,6 +131,10 @@ bound inputs under current policy and preserves original history. Generic
 legacy captures still use decision/name comparisons and do not authenticate
 declaration UUIDs. Neither path establishes complete nonsecret/Compose
 input closure, replay authorization or application readiness.
+`input_evidence` binds fresh protected comparisons to the exact current
+recorded snapshot and complete protected slot coverage. Public reports
+redact input paths, references and content digests; historical input
+coverage and full bundle closure remain explicitly unavailable.
 
 ## Worktree isolation
 
