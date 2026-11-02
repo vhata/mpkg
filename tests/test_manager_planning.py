@@ -499,7 +499,7 @@ components=[]
 id="app"
 kind="compose"
 identity={engine="local",project="example"}
-desired={running=true}
+desired={running=true,services=["app"]}
 ''')
         aliases = {"local": "accepted-engine"}
         record = current(declaration, aliases=aliases)
@@ -507,6 +507,7 @@ desired={running=true}
                        "unsupported_adapter", "unknown-private-source"):
             observation = fact(resource(declaration), "running", True)
             observation["evidence_source"] = source
+            observation["compose_context"] = {"engine_id": "accepted-engine", "services": ["app"]}
             result = self.report(declaration, record, batch(declaration, [observation]),
                                  engine_aliases=aliases)
             found = properties(result)["running"]

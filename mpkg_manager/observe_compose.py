@@ -7,7 +7,8 @@ import re
 import time
 
 from .declarations import canonical_json
-from .observations import Observation, ObservationBatch, utc_now, validate_context
+from .observations import (ComposeContext, MAX_COMPOSE_SERVICES, Observation, ObservationBatch,
+                           utc_now, validate_context)
 from .query_process import QueryResult, run_bounded
 
 
@@ -26,7 +27,7 @@ PLATFORM_PART = re.compile(r"[a-z0-9][a-z0-9_.-]{0,63}\Z")
 TIMESTAMP = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?Z\Z")
 MAX_OUTPUT = 256 * 1024
 MAX_TOTAL_OUTPUT = 8 * 1024 * 1024
-MAX_CONTAINERS = 64
+MAX_CONTAINERS = MAX_COMPOSE_SERVICES
 COLLECTION_TIMEOUT = 60
 
 
@@ -322,7 +323,9 @@ def observe_compose(resource, *, host_id, accepted_engine_id, runner=None, obser
             or set(resource["identity"]) != {"engine", "project"}
             or any(not _matches(value, NAME) for value in resource["identity"].values())):
         raise ValueError("invalid_observation_resource")
-    project = resource["identity"]["project"]
+    identity = dict(resource["identity"])
+    resource_id = resource["id"]
+    project = identity["project"]
     desired = resource.get("desired", {})
     if type(desired) is not dict:
         raise ValueError("invalid_observation_resource")
@@ -330,6 +333,9 @@ def observe_compose(resource, *, host_id, accepted_engine_id, runner=None, obser
     if (type(services) is not list or any(not _matches(service, NAME) for service in services)
             or len(set(services)) != len(services)):
         raise ValueError("invalid_observation_resource")
+    # Keep the aggregation and its evidence bound to the same immutable input.
+    # An oversized declaration cannot match the bounded container inventory.
+    services = tuple(sorted(services)) if len(services) <= MAX_COMPOSE_SERVICES else None
     error = None
     snapshot = None
     try:
@@ -350,9 +356,10 @@ def observe_compose(resource, *, host_id, accepted_engine_id, runner=None, obser
     facts = []
 
     def add(prop, value=None, reason=None):
-        facts.append(Observation(host_id, resource["id"], "compose", resource["identity"], prop,
+        context = ComposeContext(accepted_engine_id, services if prop == "running" else None)
+        facts.append(Observation(host_id, resource_id, "compose", identity, prop,
                                  "unknown" if reason else "known", value, when,
-                                 "docker_selected_project_inventory", (reason,) if reason else ()))
+                                 "docker_selected_project_inventory", (reason,) if reason else (), context))
 
     if error:
         for prop in ("present", "container_count", "running"):
@@ -377,7 +384,7 @@ def observe_compose(resource, *, host_id, accepted_engine_id, runner=None, obser
                          ("images", "image_intent_resolution_not_observed"),
                          ("health", "application_health_not_observed")):
         add(prop, reason=reason)
-    batch = ObservationBatch(host_id, when, tuple(facts), (resource["id"],), LIMITATIONS)
+    batch = ObservationBatch(host_id, when, tuple(facts), (resource_id,), LIMITATIONS)
     inventory = {"accepted_engine_id": accepted_engine_id, "project": project,
                  "state": "unknown" if error else "known", "reason": error,
                  "consumer_scope": "project_labelled_containers_including_stopped",

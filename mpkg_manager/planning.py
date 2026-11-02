@@ -8,6 +8,7 @@ import uuid
 
 from .declarations import (Declaration, DeclarationError, canonical_json, load_declaration,
                            physical_key, validate_model)
+from .observations import ComposeContext
 from .input_evidence import input_evidence
 from .endpoint_checks import (EndpointCheckBatch, EndpointCollectionError, MAX_CHECKS,
                               LIMITATIONS as ENDPOINT_LIMITATIONS, _scopes as _endpoint_scopes)
@@ -169,7 +170,8 @@ def _observation(value):
     seen = set()
     for fact in result["facts"]:
         _table(fact, ("host_id", "resource_id", "kind", "identity", "property", "state", "value",
-                      "observed_at", "evidence_source", "limitations"))
+                      "observed_at", "evidence_source", "limitations")
+               + (("compose_context",) if "compose_context" in fact else ()))
         _require(fact["host_id"] == result["host_id"] and fact["observed_at"] == result["observed_at"])
         _require(type(fact["resource_id"]) is str and fact["resource_id"] in result["coverage"])
         _require(type(fact["kind"]) is str and type(fact["property"]) is str)
@@ -181,6 +183,9 @@ def _observation(value):
         _require(fact["state"] == "known" or fact["value"] is None)
         _require(type(fact["evidence_source"]) is str)
         _strings(fact["limitations"])
+        if "compose_context" in fact:
+            context = ComposeContext.from_dict(fact["compose_context"]).for_fact(fact["kind"], fact["property"])
+            fact["compose_context"] = context.as_dict()
         _require(fact["state"] != "unknown" or fact["limitations"])
         key = (fact["resource_id"], fact["property"])
         _require(key not in seen)
@@ -494,6 +499,16 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
             source = "pacman_dependency_satisfaction"
         if source is None or fact["evidence_source"] != source:
             return fact, "observation_source_unsupported"
+        if source == "docker_selected_project_inventory":
+            context = fact.get("compose_context")
+            if context is None:
+                return fact, "compose_observation_context_missing"
+            if context["engine_id"] != target_key[2]:
+                return fact, "compose_observed_engine_mismatch"
+            if prop == "running":
+                services = resource["desired"].get("services", [])
+                if not services or context.get("services") != sorted(services):
+                    return fact, "compose_observed_service_scope_mismatch"
         if source == "pacman_dependency_satisfaction" and prop != "present":
             return fact, "observation_property_unsupported"
         if (source == "pacman_installed_inventory"
