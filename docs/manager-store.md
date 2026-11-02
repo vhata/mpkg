@@ -162,13 +162,24 @@ already be durable. The handle becomes unusable. Write cancellation
 preserves the original interrupt even when cleanup also fails. Pre-commit failures
 remain distinct and do not acquire a commit-uncertainty classification.
 
-Write-failure and explicit-close cleanup resolve the SQLite transaction
-before releasing the store lock,
+Read transactions retain the original operation failure while attempting
+their final rollback. A rollback or transaction-inspection failure poisons
+the handle and performs bounded database cleanup under the read lock.
+Cancellation keeps its original identity; ordinary SQLite or filesystem
+read failures remain `store_read_failed`, never commit uncertainty.
+A successful read body does not return its result when final rollback
+fails. A clean rollback after an operation failure leaves the handle
+usable, without changing durable history.
+
+Write-failure, failed read rollback and explicit-close cleanup resolve the
+SQLite transaction before releasing the store lock,
 including a bounded rollback/close attempt after an initial close error.
 If repeated cleanup failures leave a live or uninspectable transaction,
 the poisoned handle retains the lock descriptor until a later explicit
 `close()` succeeds or the process exits. Other safe cleanup is attempted.
-No operation may reuse that handle, and competing opens remain blocked.
+No operation may reuse that handle. Its held lock continues to exclude
+incompatible opens: a retained shared read lock blocks writers while
+allowing other read-only inspection.
 Descriptor numbers are detached before closing so an error after release
 cannot make a repeated close affect an unrelated reused descriptor.
 

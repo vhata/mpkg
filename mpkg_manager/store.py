@@ -814,19 +814,37 @@ class HostStore:
     def _read(self):
         try:
             with self._locked():
-                self._db.execute("BEGIN")
+                failure = None
                 try:
+                    self._db.execute("BEGIN")
                     self._verify_schema()
                     yield
-                finally:
+                except BaseException as error:
+                    failure = error
+                try:
                     if self._db.in_transaction:
                         self._db.execute("ROLLBACK")
-        except StoreError:
-            raise
-        except (OSError, sqlite3.Error):
-            raise StoreError("store_read_failed") from None
-        except (TypeError, ValueError, KeyError, OverflowError, RecursionError):
-            raise StoreError("invalid_store_record") from None
+                except BaseException as cleanup:
+                    failure = _cleanup_failure(failure, cleanup)
+                    self._closed = True
+                    try:
+                        self._close_database()
+                    except BaseException as cleanup:
+                        failure = _cleanup_failure(failure, cleanup)
+                if failure is not None:
+                    raise failure
+        except BaseException as error:
+            if self._closed:
+                error = self._close_preserving(error)
+            if not isinstance(error, Exception):
+                raise error
+            if isinstance(error, StoreError):
+                raise error
+            if isinstance(error, (OSError, sqlite3.Error)):
+                raise StoreError("store_read_failed") from None
+            if isinstance(error, (TypeError, ValueError, KeyError, OverflowError, RecursionError)):
+                raise StoreError("invalid_store_record") from None
+            raise error
 
     def _snapshot_id(self, declaration):
         envelope = _json({"source": hashlib.sha256(declaration.source_bytes).hexdigest(),

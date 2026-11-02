@@ -72,9 +72,3 @@ measured against the first-release contract and acceptance scenarios.
 ### P3 Low
 
 ### Unprioritized
-
-- [NATIVE] `preserve-read-rollback-cleanup-boundary` — **Preserve read cancellation and transaction cleanup through rollback failure.** A failed read rollback must not mask the original interruption, release a live transaction outside the manager lock or leave a reusable handle.
-  - Source: independent cleanup-boundary review on `todo/preserve-store-commit-cleanup-uncertainty`, 2026-11-02; [store read boundary](mpkg_manager/store.py).
-  - Reproduction: an actual private SQLite read transaction receives `KeyboardInterrupt` during schema verification and an injected `OperationalError` from `ROLLBACK`; `_read` reports `store_read_failed`, unlocks with `in_transaction=True` and leaves the handle reusable. The read implementation is unchanged from the preexisting source.
-  - Preserve the primary cancellation/error, attempt bounded transaction cleanup under the manager lock, poison unusable handles and retain the lock if live transaction state cannot be resolved. Reuse the verified cleanup machinery without reporting read errors as commit uncertainty.
-  - Verify cancellation and ordinary failures, rollback/close failures, actual transaction state at unlock, eventual explicit cleanup, unchanged durable history, fixed diagnostics and read-only helper behavior using private fixtures.
