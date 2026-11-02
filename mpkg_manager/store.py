@@ -27,6 +27,7 @@ SCHEMA_VERSION = 1
 APPLICATION_ID = 0x4D504B47
 MAX_INPUT_BYTES = 16 * 1024 * 1024
 _BOUND_TOKEN_PREFIX = b"MPKGBND\x00\x01"
+_NONSECRET_TOKEN_PREFIX = b"MPKGNSC\x00\x01"
 _PREPARATION_DOMAIN = b"MPKGPREP\x00\x01"
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
 _SIDEFILES = ("state.sqlite3-journal", "state.sqlite3-wal", "state.sqlite3-shm")
@@ -124,6 +125,16 @@ def _declared_protected(declaration):
     return [{"input_id": bundle["id"], "base_directory": bundle["base_directory"], **entry}
             for bundle in declaration.model["inputs"] for entry in bundle["files"]
             if entry["classification"] == "protected"]
+
+
+def _nonsecret_name(input_id, path):
+    return "nonsecret-v1:" + hashlib.sha256(_json([input_id, path])).hexdigest()
+
+
+def _declared_nonsecret(declaration):
+    return [{"input_id": bundle["id"], "base_directory": bundle["base_directory"], **entry}
+            for bundle in declaration.model["inputs"] for entry in bundle["files"]
+            if entry["classification"] == "nonsecret"]
 
 
 def _binding_entries(declaration):
@@ -511,11 +522,45 @@ class HostStore:
                        *, snapshot_id=None, entries=None):
         if len(token) == 32:
             return hmac.digest(key, identity + b"\0" + raw, "sha256")
+        if len(token) == len(_NONSECRET_TOKEN_PREFIX) + 32 and token.startswith(_NONSECRET_TOKEN_PREFIX):
+            context = self._nonsecret_context(reference, revision, name, purpose, identity,
+                                               snapshot_id=snapshot_id)
+            return _NONSECRET_TOKEN_PREFIX + _framed_mac(key, _NONSECRET_TOKEN_PREFIX, context, raw)
         if len(token) != len(_BOUND_TOKEN_PREFIX) + 32 or not token.startswith(_BOUND_TOKEN_PREFIX):
             _fail("store_corrupt")
         context = self._bound_context(reference, revision, name, purpose, identity,
                                       snapshot_id=snapshot_id, entries=entries)
         return _BOUND_TOKEN_PREFIX + _framed_mac(key, _BOUND_TOKEN_PREFIX, context, raw)
+
+    def _nonsecret_context(self, reference, revision, name, purpose, identity, *, snapshot_id=None):
+        if snapshot_id is None:
+            row = self._db.execute("SELECT snapshot_id FROM decisions WHERE revision=?", (revision,)).fetchone()
+            if row is None:
+                _fail("store_corrupt")
+            snapshot_id = row[0]
+        matching = [entry for entry in _declared_nonsecret(self._load_snapshot(snapshot_id))
+                    if _nonsecret_name(entry["input_id"], entry["path"]) == name]
+        if len(matching) != 1:
+            _fail("store_corrupt")
+        entry, source = matching[0], _decode(identity)
+        if source["path"] != posixpath.join(entry["base_directory"], entry["path"]):
+            _fail("store_corrupt")
+        return {"host_id": self.host_id, "origin_revision": revision,
+                "snapshot_id": snapshot_id, "reference": reference, "name": name,
+                "purpose": purpose, "source_identity": source, **entry}
+
+    def _nonsecret_capture(self, revision, snapshot_id, input_id, path):
+        """Private exact-decision lookup; caller holds a verified transaction."""
+        row = self._db.execute("""SELECT p.raw,p.source_identity,p.purpose,p.token,
+            i.revision,i.name,d.snapshot_id FROM protected_inputs p
+            JOIN decision_inputs i ON i.protected_id=p.id
+            JOIN decisions d ON d.revision=i.revision WHERE i.revision=? AND i.name=?""",
+            (revision, _nonsecret_name(input_id, path))).fetchone()
+        if (row is None or row[6] != snapshot_id
+                or len(row[3]) != len(_NONSECRET_TOKEN_PREFIX) + 32
+                or not row[3].startswith(_NONSECRET_TOKEN_PREFIX)):
+            return None
+        return row
 
     def _bound_capture(self, reference, snapshot_id, target_revision):
         """Private lookup; callers already hold a verified transaction."""
@@ -665,7 +710,8 @@ class HostStore:
             _fail("invalid_store_record")
         return declaration
 
-    def _decision(self, kind, declaration, revision, captures, *, binding_references=None):
+    def _decision(self, kind, declaration, revision, captures, *, binding_references=None,
+                  nonsecret_references=None):
         snapshot_id = self._save_snapshot(declaration)
         self._db.execute("INSERT INTO decisions VALUES(?,?,?,?,?)",
                          (revision, revision - 1 if revision > 1 else None, kind,
@@ -673,10 +719,16 @@ class HostStore:
         key = self._db.execute("SELECT private_key FROM host").fetchone()[0]
         entries = _binding_entries(declaration) if binding_references is not None else None
         for name, raw, identity, purpose in captures:
-            reference = str(uuid.uuid4()) if binding_references is None else binding_references[name]
-            if binding_references is None:
+            if nonsecret_references is not None and name in nonsecret_references:
+                reference = nonsecret_references[name]
+                context = self._nonsecret_context(reference, revision, name, purpose, identity,
+                                                   snapshot_id=snapshot_id)
+                token = _NONSECRET_TOKEN_PREFIX + _framed_mac(key, _NONSECRET_TOKEN_PREFIX, context, raw)
+            elif binding_references is None:
+                reference = str(uuid.uuid4())
                 token = hmac.digest(key, identity + b"\0" + raw, "sha256")
             else:
+                reference = binding_references[name]
                 context = self._bound_context(reference, revision, name, purpose, identity,
                                               snapshot_id=snapshot_id, entries=entries)
                 token = _BOUND_TOKEN_PREFIX + _framed_mac(key, _BOUND_TOKEN_PREFIX, context, raw)
@@ -929,9 +981,12 @@ class HostStore:
             if len(row[3]) == 32:
                 token = hmac.digest(row[4], identity + b"\0" + raw, "sha256")
             else:
-                context = self._bound_context(row[0], revision, name, row[2], row[1])
+                nonsecret = row[3].startswith(_NONSECRET_TOKEN_PREFIX)
+                context = (self._nonsecret_context if nonsecret else self._bound_context)(
+                    row[0], revision, name, row[2], row[1])
                 context["source_identity"] = _decode(identity)
-                token = _BOUND_TOKEN_PREFIX + _framed_mac(row[4], _BOUND_TOKEN_PREFIX, context, raw)
+                domain = _NONSECRET_TOKEN_PREFIX if nonsecret else _BOUND_TOKEN_PREFIX
+                token = domain + _framed_mac(row[4], domain, context, raw)
             return "same" if hmac.compare_digest(row[3], token) else "changed"
 
     def close(self):
