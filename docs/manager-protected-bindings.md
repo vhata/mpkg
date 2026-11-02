@@ -23,7 +23,9 @@ accepted = recorder.adopt(declaration, 1, ["application"])
 ```
 
 `prepare` captures under the longest accepted policy root containing the
-base directory, using path components rather than string prefixes. It
+complete declared file path, using components rather than string prefixes.
+A public bundle directory can therefore contain a narrower authorized
+private subtree without broadening the policy to the whole bundle. It
 issues a random reference sealed with the store's private key, expected
 revision, declared slot, source identity/content, policy fingerprint and
 recorder nonce. The preparation retains the actual policy handle; closing

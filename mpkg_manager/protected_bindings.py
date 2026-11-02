@@ -87,14 +87,13 @@ class ProtectedRecorder:
 
     def _capture(self, entry):
         context = self._policy_context()
-        base = entry["base_directory"]
+        source = posixpath.join(entry["base_directory"], entry["path"])
         roots = [root for root in context["allowed_input_roots"]
-                 if posixpath.commonpath((root, base)) == root]
+                 if posixpath.commonpath((root, source)) == root]
         if not roots:
             raise BindingError("input_unavailable")
         root = max(roots, key=lambda item: len(item.split("/")))
-        relative_base = posixpath.relpath(base, root)
-        relative = entry["path"] if relative_base == "." else posixpath.join(relative_base, entry["path"])
+        relative = posixpath.relpath(source, root)
         try:
             return capture_protected(self._policy, root=root, relative_path=relative,
                                      name=_bound_name(entry["input_id"], entry["path"]), purpose=_PURPOSE)
