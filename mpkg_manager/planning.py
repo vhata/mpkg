@@ -19,7 +19,8 @@ _HASH = re.compile(r"[0-9a-f]{64}\Z")
 _KINDS = {"package", "compose", "volume", "network", "service", "user", "group",
           "file", "directory", "symlink", "sonarr_xml"}
 _SOURCES = {"pacman_installed_inventory", "pacman_dependency_satisfaction", "systemd_unit_properties",
-            "docker_selected_project_inventory", "filesystem_metadata", "unsupported_adapter"}
+            "docker_selected_project_inventory", "filesystem_metadata", "local_account_properties",
+            "unsupported_adapter"}
 
 
 class PlanningError(ValueError):
@@ -494,7 +495,8 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
             return None, "observation_identity_mismatch"
         source = {"package": "pacman_installed_inventory", "service": "systemd_unit_properties",
                   "compose": "docker_selected_project_inventory", "file": "filesystem_metadata",
-                  "directory": "filesystem_metadata", "symlink": "filesystem_metadata"}.get(resource["kind"])
+                  "directory": "filesystem_metadata", "symlink": "filesystem_metadata",
+                  "user": "local_account_properties", "group": "local_account_properties"}.get(resource["kind"])
         if resource["kind"] == "package" and fact["evidence_source"] == "pacman_dependency_satisfaction":
             source = "pacman_dependency_satisfaction"
         if source is None or fact["evidence_source"] != source:
@@ -520,10 +522,16 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
                 and prop not in ({"present", "mode", "owner", "group"}
                                  | ({"target"} if resource["kind"] == "symlink" else set()))):
             return fact, "observation_property_unsupported"
+        if (source == "local_account_properties"
+                and prop not in ({"present", "home", "shell", "primary_group"}
+                                 if resource["kind"] == "user" else {"present"})):
+            return fact, "observation_property_unsupported"
         if fact["state"] != "known":
             return fact, "observation_" + fact["state"]
         if source == "pacman_dependency_satisfaction" and fact["value"] is not True:
             return fact, "package_request_resolution_unknown"
+        if source == "local_account_properties" and prop == "present" and fact["value"] is not True:
+            return fact, "local_account_presence_unverified"
         return fact, None
 
     def compare(resource, prop, expected, *, expected_key=None):
@@ -532,6 +540,10 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
                   else "provided_observation")
         if reason:
             return "unknown", [reason], source
+        if resource["kind"] == "user" and prop != "present":
+            present, present_reason = fact_for(resource, "present", expected_key=expected_key)
+            if present_reason or present["value"] is not True:
+                return "unknown", ["local_account_presence_unverified"], source
         if resource["kind"] == "package" and prop == "present" and fact["value"] is False:
             return "unknown", ["package_request_resolution_unknown"], source
         if resource["kind"] == "package" and prop in ("version", "install_reason"):
