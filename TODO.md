@@ -72,3 +72,8 @@ measured against the first-release contract and acceptance scenarios.
 ### P3 Low
 
 ### Unprioritized
+
+- [DOCKER] `bind-compose-running-evidence-to-service-scope` — **Bind derived Compose running facts to their collected service scope.** Physical project identity alone does not establish that a previously observed running value applies to changed declared services.
+  - Source: [Compose running observation](mpkg_manager/observe_compose.py), [planner fact binding](mpkg_manager/planning.py), independent real-store/parser reproduction during combined observation review, 2026-11-02.
+  - Reproduction: collect one running app container for declared services=[app], then record services=[worker] for the same project. Reusing the original wire batch reports running agreement; collecting the identical Docker inventory against the new declaration correctly reports unknown because the declared service scope is unresolved. Reports remain non-executable.
+  - Carry immutable bounded service-scope context through the observation/report boundary and require an exact applicable scope before comparing derived running facts. Missing legacy context and changed scopes must remain unknown. Preserve ordinary host/engine/project, freshness, privacy and unsupported-replica/one-off safeguards; no real Docker operations are needed for regression coverage.
