@@ -192,6 +192,13 @@ coverage, bounds, retained/renamed resources, diagnostics and privacy.
 
 ## Protected input freshness
 
+This section describes the legacy `input_observations` mode. For current
+and retained accepted files in both classifications, use the separate
+[recorded-input reporting mode](manager-recorded-input-reporting.md):
+`HostStore.current_with_inputs()` supplies independent expected coverage
+and `recorded_input_observations` supplies typed collected evidence.
+Supplying both input modes is rejected rather than selecting one.
+
 The optional `input_observations` argument accepts immutable evidence from
 [`ProtectedRecorder.observe_inputs`](manager-protected-bindings.md#protected-input-status-evidence)
 or its wire dictionary. It never initiates captures itself. The closed

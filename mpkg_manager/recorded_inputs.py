@@ -12,10 +12,11 @@ import uuid
 from .declarations import canonical_json
 from .input_evidence import collection_time
 from .protected_bindings import BindingError, ProtectedRecorder
-from .store import StoreError, MAX_INPUT_BYTES, _decode, _json
+from .store import HostStore, StoreError, MAX_INPUT_BYTES, _decode, _json
 
 
 SOURCE = "recorded_input_comparison"
+MANIFEST_SOURCE = "recorded_input_history"
 SCOPE = "current_and_retained_declared_files"
 MAX_SCOPE_COUNT = 256
 MAX_SLOT_COUNT = 4096
@@ -51,23 +52,33 @@ def _snapshot(value):
         _require(type(value[name]) is int and value[name] == 1)
 
 
+def _snapshot_identity(value):
+    envelope = canonical_json({"source": value["source_sha256"], "canonical": value["canonical_sha256"],
+        "schema": value["schema_version"], "normalization": value["normalization_version"]})
+    _require(hashlib.sha256(envelope).hexdigest() == value["id"])
+
+
 def _uuid(value):
     return type(value) is str and str(uuid.UUID(value)) == value
 
 
-def _validate(value):
-    _require(type(value) is dict and set(value) == {
-        "schema_version", "host_id", "revision", "snapshot", "observed_at", "source", "scope",
-        "state", "reason", "scopes", "full_input_closure"})
+def _validate(value, *, manifest=False):
+    fields = {"schema_version", "host_id", "revision", "snapshot", "source", "scope", "scopes"}
+    if not manifest:
+        fields |= {"observed_at", "state", "reason", "full_input_closure"}
+    _require(type(value) is dict and set(value) == fields)
     _require(type(value["schema_version"]) is int and value["schema_version"] == 1)
     _require(_uuid(value["host_id"]) and _revision(value["revision"]))
     _snapshot(value["snapshot"])
-    _require(type(value["observed_at"]) is str)
-    collection_time(value["observed_at"])
-    _require(value["source"] == SOURCE and value["scope"] == SCOPE)
-    _require(value["full_input_closure"] == "unverified")
-    _require(value["state"] in ("complete", "unavailable") and value["reason"] in _REASONS)
-    _require((value["state"] == "complete") == (value["reason"] == "collected"))
+    if manifest:
+        _snapshot_identity(value["snapshot"])
+    _require(value["source"] == (MANIFEST_SOURCE if manifest else SOURCE) and value["scope"] == SCOPE)
+    if not manifest:
+        _require(type(value["observed_at"]) is str)
+        collection_time(value["observed_at"])
+        _require(value["full_input_closure"] == "unverified")
+        _require(value["state"] in ("complete", "unavailable") and value["reason"] in _REASONS)
+        _require((value["state"] == "complete") == (value["reason"] == "collected"))
     scopes = value["scopes"]
     _require(type(scopes) is list and 1 <= len(scopes) <= MAX_SCOPE_COUNT)
     current_count, total, seen, contexts = 0, 0, set(), {}
@@ -76,6 +87,8 @@ def _validate(value):
             "role", "stable_id", "resource_id", "adoption_revision", "recorded_revision",
             "management", "snapshot", "entries"})
         _snapshot(scope["snapshot"])
+        if manifest:
+            _snapshot_identity(scope["snapshot"])
         _require(_revision(scope["recorded_revision"]) and scope["recorded_revision"] <= value["revision"])
         if scope["role"] == "current":
             current_count += 1
@@ -94,12 +107,14 @@ def _validate(value):
         _require(type(scope["entries"]) is list)
         slots = set()
         for entry in scope["entries"]:
-            _require(type(entry) is dict and set(entry) == {"input_id", "file_index", "classification", "state"})
+            fields = {"input_id", "file_index", "classification"} | (set() if manifest else {"state"})
+            _require(type(entry) is dict and set(entry) == fields)
             _require(type(entry["input_id"]) is str and _ID.fullmatch(entry["input_id"]))
             _require(type(entry["file_index"]) is int and 0 <= entry["file_index"] < 2**63)
             _require(entry["classification"] in ("nonsecret", "protected"))
-            _require(entry["state"] in ("same", "changed", "unavailable"))
-            _require(value["state"] == "complete" or entry["state"] == "unavailable")
+            if not manifest:
+                _require(entry["state"] in ("same", "changed", "unavailable"))
+                _require(value["state"] == "complete" or entry["state"] == "unavailable")
             slot = (entry["input_id"], entry["file_index"])
             _require(slot not in slots)
             slots.add(slot)
@@ -125,6 +140,24 @@ class RecordedInputEvidence:
             _validate(value)
         except (ValueError, TypeError, KeyError, AttributeError, OverflowError, RecursionError):
             raise RecordedInputError() from None
+
+    def as_dict(self):
+        return json.loads(self.canonical_bytes)
+
+
+@dataclass(frozen=True)
+class RecordedInputManifest:
+    """Expected slots from trusted history, independent of observation results."""
+    canonical_bytes: bytes = field(repr=False)
+
+    def __post_init__(self):
+        try:
+            _require(type(self.canonical_bytes) is bytes and len(self.canonical_bytes) <= MAX_EVIDENCE_BYTES)
+            value = json.loads(self.canonical_bytes)
+            _require(canonical_json(value) == self.canonical_bytes)
+            _validate(value, manifest=True)
+        except (RecordedInputError, ValueError, TypeError, KeyError, AttributeError, OverflowError, RecursionError):
+            raise RecordedInputError("invalid_recorded_input_manifest") from None
 
     def as_dict(self):
         return json.loads(self.canonical_bytes)
@@ -220,6 +253,23 @@ def _manifest(store, revision, snapshot_id):
             append(store._load_snapshot(adopted[1]), adopted[0], resource=_decode(adopted[2]),
                    requirements=_decode(adopted[3]), stable_id=current["stable_id"], active=current["active"])
     return scopes, bindings
+
+
+def recorded_input_manifest(store, *, revision, snapshot_id):
+    """Project exact expected current/accepted slots without reading input files."""
+    if (type(store) is not HostStore or not _revision(revision)
+            or type(snapshot_id) is not str or not _HASH.fullmatch(snapshot_id)):
+        raise RecordedInputError("invalid_recorded_input_manifest_request")
+    try:
+        scopes, _ = _manifest(store, revision, snapshot_id)
+    except StoreError:
+        raise RecordedInputError("recorded_input_store_unavailable") from None
+    for scope in scopes:
+        for entry in scope["entries"]:
+            del entry["state"]
+    return RecordedInputManifest(_json({"schema_version": 1, "host_id": store.host_id,
+        "revision": revision, "snapshot": scopes[0]["snapshot"], "source": MANIFEST_SOURCE,
+        "scope": SCOPE, "scopes": scopes}))
 
 
 def collect_recorded_inputs(recorder, *, revision, snapshot_id, observed_at=None):

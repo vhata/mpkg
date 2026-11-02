@@ -944,6 +944,23 @@ class HostStore:
             checks.append(check)
         return {"adoption_revision": revision, "snapshot_id": snapshot_id, "definitions": checks}
 
+    def current_with_inputs(self):
+        """Add bounded redacted input coverage from actual accepted snapshots.
+
+        This is a trusted history projection, not input observation. A changed
+        revision between the two read transactions refuses the whole result.
+        """
+        from .recorded_inputs import RecordedInputError, recorded_input_manifest
+        current = self.current()
+        manifest = None
+        if current["revision"]:
+            try:
+                manifest = recorded_input_manifest(self, revision=current["revision"],
+                    snapshot_id=current["snapshot_id"]).as_dict()
+            except RecordedInputError:
+                raise StoreError("input_manifest_unavailable") from None
+        return current | {"input_manifest": manifest}
+
     def history(self):
         """Sanitized decision history excludes protected references and content."""
         with self._read():
