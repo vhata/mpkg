@@ -77,6 +77,23 @@ the first decision). These identify explicitly nonsecret declaration
 content, so a planner can bind exact input without exposing the source.
 Protected input digests and tokens are never included.
 
+Each resource also has `accepted_checks`, containing `adoption_revision`,
+`snapshot_id` and `definitions`. The definitions are the normalized
+required predicates from that stable resource's last explicit adoption
+decision. They are recovered from its immutable historical snapshot;
+there is no schema change or lookup of replacement current predicates.
+Intent recording, logical renaming, declaration removal and
+relinquishment preserve this binding. An explicit new adoption records
+a new check baseline. Missing or inconsistent historical linkage fails
+closed instead of fabricating an empty check list.
+
+The predicate schema contains only declared nonsecret fields. Generated
+protected references, capture bytes and tokens remain private. Every
+projection is a fresh value; changing a returned check cannot modify
+accepted history. The planner consumes these predicates through the
+trusted host boundary and emits separate accepted/current result
+summaries without predicate values.
+
 Each write compares the expected revision inside the transaction. A
 stale request publishes neither a new decision nor its snapshot or
 protected inputs. Physical identity is bound to the host UUID and

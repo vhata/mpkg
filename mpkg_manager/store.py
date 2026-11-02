@@ -770,12 +770,34 @@ class HostStore:
                 resources.append({"stable_id": item["stable_id"], "logical_id": item["logical_id"],
                                   "physical_key": item["physical_key"], "definition": definition,
                                   "requirements": item["requirements"],
+                                  "accepted_checks": self._accepted_checks(item["stable_id"]),
                                   "management": "accepted" if item["active"] else "relinquished",
                                   "declaration_state": state,
                                   "pending_disposition": item["active"] and state == "absent",
                                   "observation": {"state": "unknown", "reason": "not_observed"}})
             return {"host_id": self.host_id, "revision": revision,
                     "snapshot_id": snapshot_id, "snapshot": snapshot, "resources": resources}
+
+    def _accepted_checks(self, stable_id):
+        # Intent and relinquishment decisions preserve the last explicitly
+        # adopted predicates, even if current declarations reuse their IDs.
+        row = self._db.execute("""SELECT r.revision,d.snapshot_id,r.logical_id,r.definition
+            FROM resources r JOIN decisions d ON d.revision=r.revision
+            WHERE r.stable_id=? AND d.kind='adopt' ORDER BY r.revision DESC LIMIT 1""",
+                               (stable_id,)).fetchone()
+        if row is None:
+            _fail("store_corrupt")
+        revision, snapshot_id, logical_id, raw = row
+        definition = _decode(raw)
+        declarations = self._load_snapshot(snapshot_id).model["checks"]
+        by_id = {check["id"]: check for check in declarations}
+        checks = []
+        for identity in definition["checks"]:
+            check = by_id.get(identity)
+            if check is None or check["resource"] != logical_id:
+                _fail("store_corrupt")
+            checks.append(check)
+        return {"adoption_revision": revision, "snapshot_id": snapshot_id, "definitions": checks}
 
     def history(self):
         """Sanitized decision history excludes protected references and content."""

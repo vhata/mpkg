@@ -111,11 +111,29 @@ Required checks stay separate from property agreement. Only the closed
 package and service property predicates can be evaluated from current
 facts. Endpoint and consumer-access checks remain unverified; service
 running state is not functional health. Accepted check IDs are retained
-even when removed from the working declaration. The current store
-projection does not contain their original predicate definitions, so
-`accepted_check_definition_unavailable` blocks full verification even
-when current same-ID predicates pass. A replacement predicate cannot
-silently weaken an accepted requirement.
+with their original normalized predicates and adoption revision/snapshot
+binding, even when removed from the working declaration. Each result has
+an `accepted` or `current` role; the same ID can therefore pass one
+predicate and fail the other. Accepted results also identify their
+`adoption_revision` and `snapshot_id`, without exposing predicate values.
+An explicit new adoption changes the accepted baseline. Ordinary intent
+recording, relinquishment or same-ID replacement cannot silently weaken
+it.
+
+Accepted predicates follow the stable physical resource through logical
+renames, using its current observation label when that resource remains
+declared. Retained and unselected resource summaries also include their
+accepted check results. Fresh evidence must still match host, kind,
+physical identity and observer source; missing or mismatched evidence
+leaves checks unknown. Removing a declaration never hides its original
+checks or requests new probes. Relinquished records retain constraints
+while conferring no management authority.
+
+Older projections without `accepted_checks` remain blocked by
+`accepted_check_definition_unavailable`. Malformed definitions or
+impossible revision/snapshot bindings fail projection validation. The
+store validates historical linkage before projecting it; arbitrary JSON
+cannot authenticate an adoption snapshot merely by having valid fields.
 
 ## Output and limits
 
@@ -130,8 +148,8 @@ Every report has `executable: false` and explicit
 `application_not_implemented` and `attempt_history_unavailable` blockers.
 It includes no commands, effects, action graph or apply authorization.
 Current observations are time-bounded evidence, not an atomic host
-snapshot. Attempt history, protected input replay, historical check
-definitions, native solving and functional verification require separate
+snapshot. Attempt history, protected input replay, native solving and
+functional verification require separate
 implementations before a complete application proposal is possible.
 
 The tests cover mixed results, exact source binding, typed comparison,
