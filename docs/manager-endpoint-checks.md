@@ -116,3 +116,10 @@ as `unverified`, with `listener_attribution_unavailable` and
 an accepted or current functional check. `executable` is always false.
 Attributed listener/application evidence and planner integration remain
 separate capabilities.
+
+The focused suite uses private real SQLite stores, trusted synthetic
+runners and an owned ephemeral loopback HTTP listener. It checks retained
+roles, exact source snapshots, physical aliases, coverage and time/count
+limits, revision races, cancellation, immutable projections and store
+file preservation. It never probes production endpoints or supplies
+listener attribution, real application acceptance or apply authority.

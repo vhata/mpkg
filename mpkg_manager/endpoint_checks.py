@@ -172,11 +172,19 @@ class EndpointCheckBatch:
         return (type(revision) is int and self.host_id == host_id and self.revision == revision
                 and self._snapshot_id == snapshot_id)
 
+    @property
+    def functional_result(self):
+        return "unverified"
+
+    @property
+    def limitations(self):
+        return (*LIMITATIONS, "time_bounded_observation_not_atomic_host_snapshot")
+
     def as_dict(self):
         return {"host_id": self.host_id, "revision": self.revision, "observed_at": self.observed_at,
                 "checks": [row.as_dict() for row in self.checks], "probe_count": self.probe_count,
-                "coverage_complete": True, "functional_result": "unverified", "executable": False,
-                "limitations": [*LIMITATIONS, "time_bounded_observation_not_atomic_host_snapshot"]}
+                "coverage_complete": True, "functional_result": self.functional_result, "executable": False,
+                "limitations": list(self.limitations)}
 
 
 def _current(store, revision, snapshot_id):
