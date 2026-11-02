@@ -16,6 +16,7 @@ from mpkg_manager.host_policy import load_host_policy
 from mpkg_manager.observations import ObservationBatch
 from mpkg_manager.observe_files import observe_files
 from mpkg_manager.observe_native import SERVICE_QUERY, observe_resources
+from mpkg_manager.observe_packages import QUERY as PACKAGE_TEST_QUERY, observe_package_requests
 from mpkg_manager.planning import build_report
 from mpkg_manager.protected_bindings import ProtectedRecorder
 from mpkg_manager.query_process import QueryResult
@@ -58,6 +59,8 @@ class ObservationPipelineTests(unittest.TestCase):
         self.store = HostStore.create(self.store_path, HOST, owner_uid=os.geteuid())
         self.addCleanup(self.store.close)
         self.recorder = ProtectedRecorder(self.store, self.policy)
+        self.package_result = QueryResult("ok", b"", 0)
+        self.package_calls = []
         self.requests = []
         requests = self.requests
         self.response_status = [200]
@@ -84,7 +87,7 @@ class ObservationPipelineTests(unittest.TestCase):
                                          base_directory=str(self.inputs), path=self.config.name)
         self.reference = prepared.reference
         self.declaration = self.make_declaration()
-        self.recorder.adopt(self.declaration, 0, ["daemon", "config"], prepared_inputs=[prepared])
+        self.recorder.adopt(self.declaration, 0, ["daemon", "config", "package"], prepared_inputs=[prepared])
 
     def stop_server(self):
         self.server.shutdown()
@@ -96,7 +99,13 @@ class ObservationPipelineTests(unittest.TestCase):
 [[components]]
 id="app"
 purpose="combined evidence fixture"
-resources=["{logical}","config"]
+resources=["{logical}","config","package"]
+[[resources]]
+id="package"
+kind="package"
+identity={{name="virtual-fixture"}}
+manage=["present"]
+desired={{present=true}}
 [[resources]]
 id="{logical}"
 kind="service"
@@ -132,6 +141,11 @@ timeout_seconds=2
                   "ActiveEnterTimestampMonotonic": "100000"}
         return QueryResult("ok", "".join(f"{key}={value}\n" for key, value in values.items()).encode())
 
+    def package_query(self, argv):
+        self.assertEqual(argv, PACKAGE_TEST_QUERY + ("virtual-fixture",))
+        self.package_calls.append(argv)
+        return self.package_result
+
     def files(self):
         return {path.name: (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_mode,
                             path.stat().st_uid, path.stat().st_gid)
@@ -147,12 +161,14 @@ timeout_seconds=2
                 host_id=HOST, observed_at=WHEN, runner=self.native_query)
             metadata = observe_files([r for r in resources if r["kind"] == "file"],
                 host_id=HOST, observed_at=WHEN, identities=FixtureIdentities())
+            packages = observe_package_requests([r for r in resources if r["kind"] == "package"],
+                host_id=HOST, observed_at=WHEN, runner=self.package_query)
             inputs = self.recorder.observe_inputs(**target, observed_at=WHEN)
         # Disjoint source ownership is explicit test assembly, not a production
         # observation coordinator or automatic collector invoked by recording.
-        facts = ObservationBatch(HOST, WHEN, native.facts + metadata.facts,
-            native.coverage + metadata.coverage,
-            tuple(dict.fromkeys(native.limitations + metadata.limitations)))
+        facts = ObservationBatch(HOST, WHEN, native.facts + metadata.facts + packages.facts,
+            native.coverage + metadata.coverage + packages.coverage,
+            tuple(dict.fromkeys(native.limitations + metadata.limitations + packages.limitations)))
         with patch.object(endpoint_checks, "utc_now", return_value=WHEN):
             endpoints = endpoint_checks.collect_endpoint_checks(self.store, **target)
         return current, facts, inputs, endpoints
@@ -192,6 +208,10 @@ timeout_seconds=2
         report = self.report(collected)
         self.assertEqual(self.files(), before)
         self.assertEqual(self.requests, ["/" + PRIVATE])
+        self.assertEqual(len(self.package_calls), 2)
+        package = next(row for row in report["resources"] if row["resource_id"] == "package")
+        self.assertEqual(package["properties"][0]["evidence_source"], "pacman_dependency_satisfaction")
+        self.assertIn("native_resolution_not_performed", report["blockers"])
         self.assertTrue(all(prop["comparison"] == "agreement"
                             for row in report["resources"] for prop in row["properties"]))
         self.assertEqual(report["protected_inputs"]["entries"][0]["state"], "same")
@@ -266,10 +286,23 @@ timeout_seconds=2
         collected = self.collect()
         report = self.report(collected, selected_components=[])
         self.assertEqual(report["resources"], [])
-        self.assertEqual(len(report["unselected_resources"]), 2)
+        self.assertEqual(len(report["unselected_resources"]), 3)
         self.assertEqual(report["protected_inputs"]["entries"][0]["state"], "same")
         self.assertEqual(report["endpoint_checks"]["coverage"], "complete")
         self.assertEqual(report["endpoint_checks"]["required_checks"], 2)
+        self.assertTrue(all(row["route_result"] == "match" for row in report["endpoint_checks"]["entries"]))
+        self.assert_private(report, collected[3])
+
+    def test_unmet_package_request_stays_unknown_without_discarding_other_evidence(self):
+        self.package_result = QueryResult("ok", b"virtual-fixture\n", 127)
+        before = self.files()
+        collected = self.collect()
+        report = self.report(collected)
+        self.assertEqual(self.files(), before)
+        self.assertEqual(report["protected_inputs"]["entries"][0]["state"], "same")
+        for row in report["resources"]:
+            self.assertTrue(all(prop["comparison"] == ("unknown" if row["kind"] == "package" else "agreement")
+                                for prop in row["properties"]))
         self.assertTrue(all(row["route_result"] == "match" for row in report["endpoint_checks"]["entries"]))
         self.assert_private(report, collected[3])
 
