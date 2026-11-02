@@ -14,7 +14,7 @@ import uuid
 
 from mpkg_manager.declarations import canonical_json, load_declaration
 from mpkg_manager.host_policy import load_host_policy
-from mpkg_manager.protected_bindings import (BindingError, ProtectedRecorder,
+from mpkg_manager.protected_bindings import (BindingError, PreparedProtectedInput, ProtectedRecorder,
                                             MAX_PROTECTED_BYTES, MAX_PROTECTED_ENTRIES)
 from mpkg_manager.protected_capture import capture_protected
 from mpkg_manager.store import HostStore, StoreError
@@ -268,6 +268,18 @@ files=[{{path={json.dumps(path)},classification="protected",reference="{referenc
         other = ProtectedRecorder(self.store, self.policy)
         self.assert_error(BindingError, "invalid_preparation", lambda: other.record_intent(
             declaration, 0, prepared_inputs=[prepared]))
+        self.assertEqual(self.store.history(), [])
+
+    def test_incomplete_exact_type_preparation_reports_only_fixed_error(self):
+        incomplete = object.__new__(PreparedProtectedInput)
+        self.assert_error(BindingError, "invalid_preparation", lambda: incomplete.reference)
+        declaration = self.declaration(str(uuid.uuid4()))
+        self.assert_error(BindingError, "invalid_preparation", lambda: self.recorder.record_intent(
+            declaration, 0, prepared_inputs=[incomplete]))
+        # Even a partly populated instance cannot escape fixed diagnostics.
+        object.__setattr__(incomplete, "_policy", self.policy)
+        self.assert_error(BindingError, "invalid_preparation", lambda: self.recorder.record_intent(
+            declaration, 0, prepared_inputs=[incomplete]))
         self.assertEqual(self.store.history(), [])
 
     def test_scope_swap_duplicate_unused_and_missing_preparations_publish_nothing(self):

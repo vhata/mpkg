@@ -46,7 +46,7 @@ class PreparedProtectedInput:
     def reference(self):
         try:
             return json.loads(self._metadata)["reference"]
-        except (ValueError, TypeError, KeyError, UnicodeError, RecursionError):
+        except (AttributeError, ValueError, TypeError, KeyError, UnicodeError, RecursionError):
             raise BindingError("invalid_preparation") from None
 
 
@@ -162,7 +162,7 @@ class ProtectedRecorder:
                                      metadata["source_identity"], metadata["purpose"])
             _captures([capture])
             return metadata, capture
-        except (StoreError, ValueError, TypeError, KeyError, OverflowError, RecursionError):
+        except (StoreError, AttributeError, ValueError, TypeError, KeyError, OverflowError, RecursionError):
             raise BindingError("invalid_preparation") from None
 
     @staticmethod
