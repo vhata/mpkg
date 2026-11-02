@@ -26,6 +26,9 @@ The replacement Python libraries provide these foundations:
   provenance remain unknown.
 - [File metadata](docs/manager-file-observation.md) observations for
   bounded path targets, without reading contents or checking access.
+- Positive [local account properties](docs/manager-account-observation.md)
+  cross-checked against effective name resolution. Missing identities,
+  supplementary memberships and safe account creation remain unknown.
 - [Endpoint transport](docs/manager-endpoint-observations.md) and
   [recorded check collection](docs/manager-endpoint-checks.md) with
   bounded loopback requests and retained original predicates. Route

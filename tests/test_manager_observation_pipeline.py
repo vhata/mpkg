@@ -14,6 +14,7 @@ from mpkg_manager import endpoint_checks
 from mpkg_manager.declarations import load_declaration
 from mpkg_manager.host_policy import load_host_policy
 from mpkg_manager.observations import ObservationBatch
+from mpkg_manager.observe_accounts import observe_accounts
 from mpkg_manager.observe_files import observe_files
 from mpkg_manager.observe_native import SERVICE_QUERY, observe_resources
 from mpkg_manager.observe_packages import QUERY as PACKAGE_TEST_QUERY, observe_package_requests
@@ -61,6 +62,8 @@ class ObservationPipelineTests(unittest.TestCase):
         self.recorder = ProtectedRecorder(self.store, self.policy)
         self.package_result = QueryResult("ok", b"", 0)
         self.package_calls = []
+        self.account_calls = []
+        self.account_conflict = False
         self.requests = []
         requests = self.requests
         self.response_status = [200]
@@ -87,7 +90,8 @@ class ObservationPipelineTests(unittest.TestCase):
                                          base_directory=str(self.inputs), path=self.config.name)
         self.reference = prepared.reference
         self.declaration = self.make_declaration()
-        self.recorder.adopt(self.declaration, 0, ["daemon", "config", "package"], prepared_inputs=[prepared])
+        self.recorder.adopt(self.declaration, 0, ["daemon", "config", "package", "account"],
+                            prepared_inputs=[prepared])
 
     def stop_server(self):
         self.server.shutdown()
@@ -99,7 +103,13 @@ class ObservationPipelineTests(unittest.TestCase):
 [[components]]
 id="app"
 purpose="combined evidence fixture"
-resources=["{logical}","config","package"]
+resources=["{logical}","config","package","account"]
+[[resources]]
+id="account"
+kind="user"
+identity={{name="fixture-user"}}
+manage=["present","home","shell","primary_group"]
+desired={{present=true,home={json.dumps(str(self.inputs / 'home'))},shell="/usr/bin/nologin",primary_group="fixture-group"}}
 [[resources]]
 id="package"
 kind="package"
@@ -146,6 +156,22 @@ timeout_seconds=2
         self.package_calls.append(argv)
         return self.package_result
 
+    def account_query(self, argv, *, timeout):
+        self.assertGreater(timeout, 0)
+        self.assertLessEqual(timeout, 2)
+        self.assertIn(argv[:-2], (("/usr/bin/getent", "--service=files", "--"),
+                                 ("/usr/bin/getent", "--")))
+        self.account_calls.append(argv)
+        database, key = argv[-2:]
+        if database == "passwd" and key in ("fixture-user", str(os.geteuid())):
+            uid = os.geteuid() + (1 if self.account_conflict and "--service=files" not in argv else 0)
+            raw = f"fixture-user:{PRIVATE}:{uid}:{os.getegid()}:{PRIVATE}:{self.inputs / 'home'}:/usr/bin/nologin\n"
+        elif database == "group" and key in ("fixture-group", str(os.getegid())):
+            raw = f"fixture-group:{PRIVATE}:{os.getegid()}:unobserved-member\n"
+        else:
+            self.fail("Unexpected account fixture query")
+        return QueryResult("ok", raw.encode(), 0)
+
     def files(self):
         return {path.name: (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_mode,
                             path.stat().st_uid, path.stat().st_gid)
@@ -163,12 +189,14 @@ timeout_seconds=2
                 host_id=HOST, observed_at=WHEN, identities=FixtureIdentities())
             packages = observe_package_requests([r for r in resources if r["kind"] == "package"],
                 host_id=HOST, observed_at=WHEN, runner=self.package_query)
+            accounts = observe_accounts([r for r in resources if r["kind"] == "user"],
+                host_id=HOST, observed_at=WHEN, runner=self.account_query)
             inputs = self.recorder.observe_inputs(**target, observed_at=WHEN)
         # Disjoint source ownership is explicit test assembly, not a production
         # observation coordinator or automatic collector invoked by recording.
-        facts = ObservationBatch(HOST, WHEN, native.facts + metadata.facts + packages.facts,
-            native.coverage + metadata.coverage + packages.coverage,
-            tuple(dict.fromkeys(native.limitations + metadata.limitations + packages.limitations)))
+        facts = ObservationBatch(HOST, WHEN, native.facts + metadata.facts + packages.facts + accounts.facts,
+            native.coverage + metadata.coverage + packages.coverage + accounts.coverage,
+            tuple(dict.fromkeys(native.limitations + metadata.limitations + packages.limitations + accounts.limitations)))
         with patch.object(endpoint_checks, "utc_now", return_value=WHEN):
             endpoints = endpoint_checks.collect_endpoint_checks(self.store, **target)
         return current, facts, inputs, endpoints
@@ -187,7 +215,8 @@ timeout_seconds=2
 
     def assert_private(self, report, endpoints):
         public = json.dumps(report) + json.dumps(endpoints.as_dict())
-        for value in (PRIVATE, str(self.config), self.reference,
+        for value in (PRIVATE, str(self.inputs), self.reference, "virtual-fixture",
+                      "fixture-user", "fixture-group", "unobserved-member",
                       hashlib.sha256(self.config.read_bytes()).hexdigest()):
             self.assertNotIn(value, public)
         self.assertFalse(report["executable"])
@@ -209,6 +238,7 @@ timeout_seconds=2
         self.assertEqual(self.files(), before)
         self.assertEqual(self.requests, ["/" + PRIVATE])
         self.assertEqual(len(self.package_calls), 2)
+        self.assertEqual(len(self.account_calls), 16)
         package = next(row for row in report["resources"] if row["resource_id"] == "package")
         self.assertEqual(package["properties"][0]["evidence_source"], "pacman_dependency_satisfaction")
         self.assertIn("native_resolution_not_performed", report["blockers"])
@@ -286,7 +316,7 @@ timeout_seconds=2
         collected = self.collect()
         report = self.report(collected, selected_components=[])
         self.assertEqual(report["resources"], [])
-        self.assertEqual(len(report["unselected_resources"]), 3)
+        self.assertEqual(len(report["unselected_resources"]), 4)
         self.assertEqual(report["protected_inputs"]["entries"][0]["state"], "same")
         self.assertEqual(report["endpoint_checks"]["coverage"], "complete")
         self.assertEqual(report["endpoint_checks"]["required_checks"], 2)
@@ -303,6 +333,19 @@ timeout_seconds=2
         for row in report["resources"]:
             self.assertTrue(all(prop["comparison"] == ("unknown" if row["kind"] == "package" else "agreement")
                                 for prop in row["properties"]))
+        self.assertTrue(all(row["route_result"] == "match" for row in report["endpoint_checks"]["entries"]))
+        self.assert_private(report, collected[3])
+
+    def test_conflicting_account_resolution_keeps_only_account_properties_unknown(self):
+        self.account_conflict = True
+        before = self.files()
+        collected = self.collect()
+        report = self.report(collected)
+        self.assertEqual(self.files(), before)
+        for row in report["resources"]:
+            self.assertTrue(all(prop["comparison"] == ("unknown" if row["kind"] == "user" else "agreement")
+                                for prop in row["properties"]))
+        self.assertEqual(report["protected_inputs"]["entries"][0]["state"], "same")
         self.assertTrue(all(row["route_result"] == "match" for row in report["endpoint_checks"]["entries"]))
         self.assert_private(report, collected[3])
 

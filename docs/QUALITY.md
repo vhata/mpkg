@@ -52,7 +52,7 @@ claim to run them.
 
 Manager observation tests also use owned temporary policy/store/input
 paths, real Linux metadata descriptors and ephemeral loopback HTTP/TLS
-listeners. Native package, systemd and Docker query results remain
+listeners. Native package, account, systemd and Docker query results remain
 synthetic; these tests perform no production lifecycle operations.
 Combined fixtures keep input freshness, property observations and route
 status separate and assert unchanged durable store contents. Successful

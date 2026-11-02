@@ -51,6 +51,12 @@ checks and product acceptance.
   cannot establish absence, provider identity or provenance. Planner
   source/property guards keep that evidence distinct from installed
   version and installation-reason facts.
+- `mpkg_manager.observe_accounts` collects
+  [local account scalar properties](docs/manager-account-observation.md)
+  through bounded fixed queries and repeated local/default NSS checks.
+  Missing or conflicting identities stay unknown. Supplementary
+  memberships, account creation and numeric-ID changes remain outside
+  its observation and comparison capabilities.
 - `mpkg_manager.observe_files` collects bounded file, directory and
   symlink metadata using Linux descriptors without reading contents.
   Its [metadata guide](docs/manager-file-observation.md) defines path
@@ -99,7 +105,7 @@ checks and product acceptance.
   application authority. Temporary loaded policies and actual XML reads
   exercise capture-to-store freshness and stale candidate refusal.
 - `tests/test_manager_observation_pipeline.py` combines authenticated
-  captures, real metadata descriptors, synthetic service/package queries and an
+  captures, real metadata descriptors, synthetic native queries and an
   owned HTTP listener through the fixed endpoint worker. It checks that
   changed inputs, property agreement and original accepted predicates
   stay distinct while durable history remains unchanged. This explicit
