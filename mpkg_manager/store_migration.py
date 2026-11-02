@@ -13,7 +13,7 @@ import sys
 import time
 import uuid
 
-from .store import (HostStore, StoreError, _SCHEMAS, _TABLES, _TRIGGERS,
+from .store import (HostStore, StoreError, _SCHEMAS, _TRIGGERS,
                     _directory, _file_info, _host_id, _json, _store_path)
 
 
@@ -21,7 +21,8 @@ MAX_BACKUP_BYTES = 1024 * 1024 * 1024
 BACKUP_SECONDS = 60
 _ORDER = {"host": "singleton", "snapshots": "id", "decisions": "revision",
           "resources": "stable_id,revision", "protected_inputs": "id",
-          "decision_inputs": "revision,name", "schema_migrations": "to_version"}
+          "decision_inputs": "revision,name", "schema_migrations": "to_version",
+          "sonarr_port_proposals": "id"}
 _DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _READ = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
 
@@ -40,11 +41,13 @@ class MigrationReceipt:
     migration_id: str
     backup_id: str
     revision: int
+    from_version: int = 1
+    to_version: int = 2
 
     def as_dict(self):
         return {"host_id": self.host_id, "migration_id": self.migration_id,
                 "backup_id": self.backup_id, "revision": self.revision,
-                "from_version": 1, "to_version": 2, "state": "completed",
+                "from_version": self.from_version, "to_version": self.to_version, "state": "completed",
                 "backup_verified": True, "external_policy_backed_up": False,
                 "host_effects_rolled_back": False}
 
@@ -194,6 +197,7 @@ class _Backup:
         self.check_paths()
         _source_paths(store)
         deadline = time.monotonic() + BACKUP_SECONDS
+        version = store._schema_version
         page_size = store._db.execute("PRAGMA page_size").fetchone()[0]
         page_count = store._db.execute("PRAGMA page_count").fetchone()[0]
         if page_size * page_count > MAX_BACKUP_BYTES:
@@ -207,7 +211,7 @@ class _Backup:
             source.execute("PRAGMA foreign_keys=ON")
             source.execute("PRAGMA temp_store=MEMORY")
             source.execute("BEGIN")
-            if _verify_connection(source, store.host_id) != 1:
+            if _verify_connection(source, store.host_id) != version:
                 _fail("migration_source_changed")
             original = _logical_digest(store._db)
             if _logical_digest(source) != original:
@@ -226,7 +230,7 @@ class _Backup:
             # The write-reserving connection is deliberately not the source:
             # backing up a connection's active write transaction can deadlock.
             source.backup(target, pages=128, progress=progress, sleep=0.01)
-            if (_verify_connection(target, store.host_id) != 1
+            if (_verify_connection(target, store.host_id) != version
                     or _logical_digest(target) != original or _logical_digest(store._db) != original):
                 _fail("backup_verification_failed")
         finally:
@@ -255,7 +259,7 @@ class _Backup:
         finally:
             os.close(fd)
         metadata = {"backup_id": str(uuid.uuid4()), "host_id": store.host_id,
-                    "schema_version": 1, "revision": revision, "directory": str(self.path),
+                    "schema_version": version, "revision": revision, "directory": str(self.path),
                     "database_size": total, "database_sha256": digest.hexdigest(),
                     "logical_sha256": original}
         self.write_new("backup.json", _json(metadata) + b"\n")
@@ -269,14 +273,16 @@ class _Backup:
 
 def _upgrade(store, revision, backup):
     db = store._db
-    db.execute(_TABLES["schema_migrations"])
-    for name in ("schema_migrations_update", "schema_migrations_delete"):
-        db.execute(_TRIGGERS[name])
+    before = backup["schema_version"]
+    after = before + 1
+    for name, statement in _SCHEMAS[after].items():
+        if name not in _SCHEMAS[before]:
+            db.execute(statement)
     db.execute("DROP TRIGGER host_update")
-    db.execute("UPDATE host SET schema_version=2 WHERE singleton=1")
+    db.execute("UPDATE host SET schema_version=? WHERE singleton=1", (after,))
     db.execute(_TRIGGERS["host_update"])
-    db.execute("PRAGMA user_version=2")
-    identity = store._save_schema_receipt("migrated", 1, 2, revision, backup)
+    db.execute(f"PRAGMA user_version={after}")
+    identity = store._save_schema_receipt("migrated", before, after, revision, backup)
     store._verify_schema()
     return identity
 
@@ -288,6 +294,17 @@ def migrate_store(directory, host_id, *, expected_revision, backup_directory, ow
     backup preserves database/key/captures, not external policy or host state.
     Existing or partial backup destinations are never overwritten or deleted.
     """
+    return _migrate_store(directory, host_id, expected_revision=expected_revision,
+                          backup_directory=backup_directory, owner_uid=owner_uid, before=1)
+
+
+def migrate_store_to_v3(directory, host_id, *, expected_revision, backup_directory, owner_uid=0):
+    """Upgrade exactly v2 to v3 with the same verified-backup requirements."""
+    return _migrate_store(directory, host_id, expected_revision=expected_revision,
+                          backup_directory=backup_directory, owner_uid=owner_uid, before=2)
+
+
+def _migrate_store(directory, host_id, *, expected_revision, backup_directory, owner_uid, before):
     if type(expected_revision) is not int or not 0 <= expected_revision < 2**63 - 1:
         _fail("invalid_migration_request")
     _host_id(host_id)
@@ -302,7 +319,7 @@ def migrate_store(directory, host_id, *, expected_revision, backup_directory, ow
             store._db.execute("BEGIN IMMEDIATE")
             try:
                 store._verify_schema()
-                if store._schema_version != 1:
+                if store._schema_version != before:
                     _fail("migration_not_required")
                 if store._revision() != expected_revision:
                     raise StoreError("revision_conflict")
@@ -316,7 +333,8 @@ def migrate_store(directory, host_id, *, expected_revision, backup_directory, ow
                     store._commit()
                     os.fsync(store._dirfd)
                     store._verify_schema()
-                    return MigrationReceipt(host_id, identity, metadata["backup_id"], expected_revision)
+                    return MigrationReceipt(host_id, identity, metadata["backup_id"], expected_revision,
+                                             before, before + 1)
             except BaseException:
                 if committing:
                     store._closed = True

@@ -15,7 +15,7 @@ from unittest.mock import patch
 from mpkg_manager.declarations import load_declaration
 from mpkg_manager.host_client import HostClientError, _Reply, request_host
 from mpkg_manager.host_helper import HostBoundary, handle_request
-from mpkg_manager.store import HostStore, ProtectedInput, StoreError, _TRIGGERS, _json
+from mpkg_manager.store import HostStore, ProtectedInput, SCHEMA_VERSION, StoreError, _TRIGGERS, _json
 from mpkg_manager import store_migration as migration
 
 
@@ -87,10 +87,10 @@ class MigrationTests(unittest.TestCase):
 
     def test_new_stores_have_a_sealed_creation_receipt(self):
         with HostStore.create(self.source, HOST, owner_uid=self.owner) as store:
-            self.assertEqual(store._schema_version, 2)
+            self.assertEqual(store._schema_version, SCHEMA_VERSION)
             row = store._db.execute("SELECT kind,from_version,to_version,revision,backup,length(seal) "
                                     "FROM schema_migrations").fetchone()
-            self.assertEqual(row, ("created", 0, 2, 0, None, 32))
+            self.assertEqual(row, ("created", 0, SCHEMA_VERSION, 0, None, 32))
             store.record_intent(EMPTY, 0)
             self.assertEqual(store._db.execute("SELECT count(*) FROM schema_migrations").fetchone(), (1,))
 
@@ -144,6 +144,10 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual(after[0], 2)
         self.assertEqual(after[1:], before[1:])
         self.assertEqual(self.read(self.backup), before)
+        self.assert_error("store_migration_required", lambda: HostStore.open_existing(
+            self.source, HOST, owner_uid=self.owner))
+        migration.migrate_store_to_v3(self.source, HOST, expected_revision=3,
+            backup_directory=self.root / "v2-backup", owner_uid=self.owner)
         with HostStore.open_existing(self.source, HOST, owner_uid=self.owner) as store:
             self.assertEqual(store._db.execute("SELECT private_key FROM host").fetchone()[0], key)
             self.assertEqual(store._db.execute("SELECT raw FROM protected_inputs").fetchone()[0], PRIVATE.encode())
@@ -428,7 +432,8 @@ class MigrationTests(unittest.TestCase):
         self.legacy()
         self.migrate()
         other_path = self.root / "other"
-        with HostStore.create(other_path, OTHER, owner_uid=self.owner) as other:
+        with patch("mpkg_manager.store.SCHEMA_VERSION", 2), \
+                HostStore.create(other_path, OTHER, owner_uid=self.owner) as other:
             other.record_intent(EMPTY, 0)
             receipt = other._db.execute("SELECT * FROM schema_migrations").fetchone()
             key = other._db.execute("SELECT private_key FROM host").fetchone()[0]
