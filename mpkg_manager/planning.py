@@ -509,6 +509,8 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
                 services = resource["desired"].get("services", [])
                 if not services or context.get("services") != sorted(services):
                     return fact, "compose_observed_service_scope_mismatch"
+            if prop not in {"present", "container_count", "running"}:
+                return fact, "observation_property_unsupported"
         if source == "pacman_dependency_satisfaction" and prop != "present":
             return fact, "observation_property_unsupported"
         if (source == "pacman_installed_inventory"

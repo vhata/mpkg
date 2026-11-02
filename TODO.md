@@ -72,8 +72,3 @@ measured against the first-release contract and acceptance scenarios.
 ### P3 Low
 
 ### Unprioritized
-
-- [DOCKER] `keep-unobserved-compose-properties-unknown` — **Reject scalar property claims that Compose inventory cannot establish.** A supported observer name and valid collected context must not turn unobserved declaration properties into misleading known differences.
-  - Source: [Compose fact generation](mpkg_manager/observe_compose.py), [planner source checks](mpkg_manager/planning.py), independent temporary-store/parser reproduction while fixing Compose evidence context, 2026-11-02.
-  - Reproduction: actual collected inventory leaves profiles unobserved; adding a known scalar profiles fact under docker_selected_project_inventory with valid engine context makes the report show difference and no property limitation for a declared profile list. The adapter never produces that capability, and reports remain non-executable.
-  - Restrict comparison capabilities to implemented Compose present/container_count/running facts, preserving their context, scope, freshness and failure checks. Unsupported profiles, services, images, input closure and health claims must stay unknown, including supplied known scalar values. Add real parser/store regressions without invoking Docker.
