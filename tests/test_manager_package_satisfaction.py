@@ -208,7 +208,8 @@ class CompletionPolicyTests(unittest.TestCase):
                    QUERY + ("--root",), QUERY + ("-",), QUERY + ("git>=1",),
                    QUERY + ("git", "git"), QUERY + ("git\n",), QUERY + (True,),
                    QUERY + ("git", 3), QUERY + tuple("p" + str(i) for i in range(257))]
-        with patch("mpkg_manager.query_process.subprocess.Popen") as spawn:
+        with patch("mpkg_manager.query_process.subprocess.Popen",
+                   side_effect=AssertionError("invalid query reached process launch")) as spawn:
             for argv in invalid:
                 with self.subTest(argv=repr(argv)[:60]):
                     self.assertEqual(run_readonly(argv).code, "invalid_query")
@@ -252,7 +253,8 @@ class CompletionPolicyTests(unittest.TestCase):
                    (None, (), [0, 127], (False, 127), (0, True), (0, 0), (127,),
                     (0, -1), (0, 256), (0, 1.0), tuple(range(257)))]
         invalid += [dict(require_empty_stderr=value) for value in (0, 1, None, "yes")]
-        with patch("mpkg_manager.query_process.subprocess.Popen") as spawn:
+        with patch("mpkg_manager.query_process.subprocess.Popen",
+                   side_effect=AssertionError("invalid policy reached process launch")) as spawn:
             for policy in invalid:
                 with self.subTest(policy=policy), self.assertRaisesRegex(ValueError, "^invalid_query_completion_policy$"):
                     run_bounded((sys.executable,), environment=ENVIRONMENT, **policy)
@@ -288,6 +290,28 @@ class CompletionPolicyTests(unittest.TestCase):
             result = run_bounded((sys.executable,), environment=ENVIRONMENT, timeout=1,
                                  accepted_returncodes=(0, 127))
         self.assertEqual((result.code, result.output, result.returncode), ("timeout", b"", 127))
+
+    def test_cancellation_during_accepted_cleanup_preserves_exception_and_closes_pipes(self):
+        real_popen, real_kill = subprocess.Popen, os.killpg
+        processes, calls = [], []
+        interrupted = KeyboardInterrupt(SECRET)
+        def launch(argv, **settings):
+            process = real_popen([sys.executable, "-c", "import sys; print('git'); sys.exit(127)"], **settings)
+            processes.append(process)
+            return process
+        def kill(group, signum):
+            calls.append((group, signum))
+            if len(calls) == 1:
+                raise interrupted
+            return real_kill(group, signum)
+        with patch("mpkg_manager.query_process.subprocess.Popen", side_effect=launch), \
+                patch("mpkg_manager.query_process.os.killpg", side_effect=kill):
+            with self.assertRaises(KeyboardInterrupt) as caught:
+                run_readonly(QUERY + ("git",))
+        self.assertIs(caught.exception, interrupted)
+        self.assertEqual(calls, [(processes[0].pid, 9)] * 2)
+        self.assertTrue(processes[0].stdout.closed)
+        self.assertTrue(processes[0].stderr.closed)
 
     def test_accepted_nonzero_stops_descendants_with_closed_output_pipes(self):
         real_popen = subprocess.Popen
