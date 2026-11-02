@@ -97,6 +97,8 @@ def run_bounded(argv, *, environment, timeout=10, max_output=1024 * 1024):
                         failure = "timeout"
         except OSError:
             failure = "io_error"
+        if not failure and time.monotonic() >= deadline:
+            failure = "timeout"
         if not failure and process.returncode != 0:
             failure = "command_failed"
         if failure:

@@ -73,10 +73,6 @@ measured against the first-release contract and acceptance scenarios.
 
 ### Unprioritized
 
-- [NATIVE] `reject-late-query-completion` — **Reject bounded query completion observed after its absolute deadline.** Late processing of final EOF or child completion can currently return successful output after the declared timeout.
-  - Source: [bounded query runner](mpkg_manager/query_process.py), endpoint supervisor investigation and independent private-process/clock reproductions, 2026-11-02.
-  - Reproduction: advance monotonic time beyond a one-second deadline after a real child finishes; run_bounded still returns ok because the final wait has no completion-time recheck. A delayed EOF probe demonstrates the analogous race in the endpoint prototype.
-  - Recheck the absolute deadline after completion, discard late output and preserve bounded process-group cleanup and original cancellation. Add meaningful completion-boundary regressions without production processes or wall-clock flakiness.
 
 
 

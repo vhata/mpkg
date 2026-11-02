@@ -369,6 +369,138 @@ os._exit(0)
             time.sleep(1.05)
             self.assertFalse(marker.exists())
 
+    def test_completion_at_or_after_deadline_discards_output(self):
+        real_popen, real_clock, real_killpg = subprocess.Popen, time.monotonic, os.killpg
+        cases = [(0.5, 0, "ok"), (0.5, 7, "command_failed"),
+                 (1.0, 0, "timeout"), (1.25, 0, "timeout"), (1.25, 7, "timeout")]
+        for completed_after, exit_code, expected in cases:
+            with self.subTest(completed_after=completed_after, exit_code=exit_code):
+                started, completed, processes = [None], [False], []
+
+                def clock():
+                    current = real_clock()
+                    if started[0] is None:
+                        started[0] = current
+                    return started[0] + completed_after if completed[0] else current
+
+                def launch(argv, **kwargs):
+                    code = f"import sys; print({SECRET!r}); sys.exit({exit_code})"
+                    process = real_popen([sys.executable, "-c", code], **kwargs)
+                    processes.append(process)
+                    real_wait = process.wait
+
+                    def wait(*args, **wait_kwargs):
+                        result = real_wait(*args, **wait_kwargs)
+                        completed[0] = True
+                        return result
+
+                    process.wait = wait
+                    return process
+
+                with patch("mpkg_manager.query_process.subprocess.Popen", side_effect=launch), \
+                        patch("mpkg_manager.query_process.time.monotonic", side_effect=clock), \
+                        patch("mpkg_manager.query_process.os.killpg", wraps=real_killpg) as kill:
+                    result = run_readonly(PACKAGE_VERSIONS, timeout=1)
+                self.assertEqual(result.code, expected)
+                self.assertEqual(result.returncode, exit_code)
+                self.assertEqual(result.output, (SECRET + "\n").encode() if expected == "ok" else b"")
+                self.assertNotIn(SECRET, repr(result))
+                self.assertTrue(processes[0].stdout.closed)
+                self.assertTrue(processes[0].stderr.closed)
+                if expected == "ok":
+                    kill.assert_not_called()
+                else:
+                    kill.assert_called_once_with(processes[0].pid, 9)
+
+    def test_late_reaped_leader_stops_closed_pipe_descendant(self):
+        real_popen, real_clock = subprocess.Popen, time.monotonic
+        started, completed, processes = [None], [False], []
+        release_read, release_write = os.pipe()
+        done_read, done_write = os.pipe()
+        owned = {release_read, release_write, done_read, done_write}
+
+        def close(fd):
+            os.close(fd)
+            owned.remove(fd)
+
+        def clock():
+            current = real_clock()
+            if started[0] is None:
+                started[0] = current
+            return started[0] + 1.25 if completed[0] else current
+
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "must-not-appear"
+            code = f"""
+import os
+ready_read, ready_write = os.pipe()
+child = os.fork()
+if child:
+    os.close(ready_write)
+    os.close({release_read})
+    os.close({done_write})
+    assert os.read(ready_read, 1) == b'x'
+    os.write(1, b'private-late-output')
+    os._exit(0)
+os.close(ready_read)
+os.close(1)
+os.close(2)
+os.write(ready_write, b'x')
+os.close(ready_write)
+if os.read({release_read}, 1) == b'x':
+    open({str(marker)!r}, 'w').write('effect')
+    os.write({done_write}, b'x')
+os._exit(0)
+"""
+
+            def launch(argv, **kwargs):
+                process = real_popen([sys.executable, "-c", code],
+                                    pass_fds=(release_read, done_write), **kwargs)
+                processes.append(process)
+                close(release_read)
+                close(done_write)
+                real_wait = process.wait
+
+                def wait(*args, **wait_kwargs):
+                    result = real_wait(*args, **wait_kwargs)
+                    completed[0] = True
+                    return result
+
+                process.wait = wait
+                return process
+
+            try:
+                with patch("mpkg_manager.query_process.subprocess.Popen", side_effect=launch), \
+                        patch("mpkg_manager.query_process.time.monotonic", side_effect=clock):
+                    result = run_readonly(PACKAGE_VERSIONS, timeout=1)
+                # An unfixed runner leaves this child alive. Release it only
+                # after the runner returns, then await effect or EOF directly.
+                try:
+                    os.write(release_write, b'x')
+                except BrokenPipeError:
+                    pass
+                close(release_write)
+                with selectors.DefaultSelector() as selector:
+                    selector.register(done_read, selectors.EVENT_READ)
+                    self.assertTrue(selector.select(1), "fixture descendant did not settle")
+                    acknowledgement = os.read(done_read, 1)
+                self.assertEqual(result.code, "timeout")
+                self.assertEqual(result.returncode, 0)
+                self.assertEqual(result.output, b"")
+                self.assertEqual(acknowledgement, b"")
+                self.assertFalse(marker.exists())
+                self.assertTrue(processes[0].stdout.closed)
+                self.assertTrue(processes[0].stderr.closed)
+            finally:
+                for process in processes:
+                    try:
+                        os.killpg(process.pid, 9)
+                    except ProcessLookupError:
+                        pass
+                    process.wait(timeout=1)
+                for fd in owned:
+                    os.close(fd)
+
     def test_cancellation_stops_group_and_preserves_exception(self):
         real_popen = subprocess.Popen
         real_selector = selectors.DefaultSelector
