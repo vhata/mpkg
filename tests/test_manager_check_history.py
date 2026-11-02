@@ -308,12 +308,18 @@ url="http://127.0.0.1:8080/PRIVATE_ENDPOINT_PATH"
 expected_status=200
 ''')
         self.adopt(original)
-        report = self.report(original)
+        with patch("socket.socket", side_effect=AssertionError("Unexpected endpoint probe")), \
+             patch("subprocess.Popen", side_effect=AssertionError("Unexpected endpoint worker")):
+            report = self.report(original)
         self.assertEqual(results(report["resources"][0]),
                          {("accepted", "health"): "unknown", ("current", "health"): "unknown"})
         self.assertNotIn("PRIVATE_ENDPOINT_PATH", json.dumps(report))
-        self.assertTrue(all(item["reason"] == "check_not_implemented"
-                            for item in report["resources"][0]["checks"]))
+        self.assertEqual(report["endpoint_checks"]["reason"], "not_observed")
+        for item in report["resources"][0]["checks"]:
+            self.assertEqual(item["reason"], "functional_verification_unavailable")
+            self.assertEqual(item["route_result"], "unavailable")
+            self.assertEqual(item["route_reason"], "not_observed")
+            self.assertEqual(item["functional_result"], "unverified")
 
     def test_historical_binding_survives_reopen_without_touching_store(self):
         self.adopt()
