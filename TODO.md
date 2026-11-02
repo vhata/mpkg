@@ -72,8 +72,3 @@ measured against the first-release contract and acceptance scenarios.
 ### P3 Low
 
 ### Unprioritized
-
-- [NATIVE] `freeze-native-observation-targets` — **Freeze native resource identities before collecting facts.** Caller mutation during a systemd query can relabel evidence with an unqueried unit identity.
-  - Source: [native observer](mpkg_manager/observe_native.py), private callback-based reproduction during command-wave integration, 2026-11-02.
-  - Reproduction: pass a service resource for observed.service; during the first injected query change its identity to unobserved.service. Both native queries still inspect observed.service, but returned known running facts name unobserved.service.
-  - Snapshot and validate resource labels, kinds, identities and any used desired-property keys before queries. Cover identity, label and kind changes and preserve existing package/service semantics, redaction and fixed invalid-request behavior.

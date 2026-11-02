@@ -5,6 +5,7 @@ change the host. Missing or unsupported evidence stays unknown.
 """
 import re
 
+from .declarations import validate_model
 from .query_process import QueryResult, run_bounded
 from .observations import Observation, ObservationBatch, utc_now, validate_context
 
@@ -18,6 +19,7 @@ SERVICE_QUERY = ("/usr/bin/systemctl", "show", "--no-pager",
 ENVIRONMENT = {"PATH": "/usr/bin", "LC_ALL": "C", "LANG": "C",
                "SYSTEMD_PAGER": "cat", "SYSTEMD_COLORS": "0"}
 NAME = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.@+-]{0,254}\Z")
+PROPERTY = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
 VERSION = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:+~\-]{0,254}\Z")
 PACKAGE_PROPERTIES = ("present", "version", "install_reason", "source", "provider")
 SERVICE_PROPERTIES = ("present", "running", "enabled", "load_state", "active_state",
@@ -108,6 +110,33 @@ def _service_snapshot(unit, runner):
     return snapshots[0], None
 
 
+def _snapshot_resources(resources):
+    """Detach every query and fact target before a runner can change inputs."""
+    checked, seen = [], set()
+    try:
+        for resource in list(resources):
+            if type(resource) is not dict:
+                raise ValueError
+            minimal = {key: resource[key] for key in ("id", "kind", "identity")}
+            item = validate_model({"schema": 1, "components": [],
+                                   "resources": [minimal]})["resources"][0]
+            if item["id"] in seen:
+                raise ValueError
+            seen.add(item["id"])
+            if item["kind"] not in ("package", "service"):
+                desired = resource.get("desired", {})
+                if (type(desired) is not dict or any(type(prop) is not str
+                        or not PROPERTY.fullmatch(prop) for prop in desired)):
+                    raise ValueError
+                # Only names affect unknown facts. Values can require declaration
+                # context, such as input bundles, and are not observed here.
+                item["desired"] = tuple(desired)
+            checked.append(item)
+    except (ValueError, TypeError, KeyError, RecursionError):
+        raise ValueError("invalid_observation_resource") from None
+    return tuple(checked)
+
+
 def observe_resources(resources, *, host_id, runner=None, observed_at=None):
     """Observe validated package/service declarations without changing intent.
 
@@ -117,24 +146,7 @@ def observe_resources(resources, *, host_id, runner=None, observed_at=None):
     when = observed_at or utc_now()
     validate_context(host_id, when)
     runner = runner or run_readonly
-    resources = list(resources)
-    seen = set()
-    for resource in resources:
-        if (type(resource) is not dict or type(resource.get("id")) is not str
-                or resource["id"] in seen or type(resource.get("identity")) is not dict
-                or type(resource.get("kind")) is not str):
-            raise ValueError("invalid_observation_resource")
-        seen.add(resource["id"])
-        if resource["kind"] == "package":
-            if (set(resource["identity"]) != {"name"}
-                    or type(resource["identity"]["name"]) is not str
-                    or not NAME.fullmatch(resource["identity"]["name"])):
-                raise ValueError("invalid_observation_resource")
-        if resource["kind"] == "service":
-            identity = resource["identity"]
-            if (set(identity) != {"manager", "unit"} or identity["manager"] != "system"
-                    or type(identity["unit"]) is not str or not NAME.fullmatch(identity["unit"])):
-                raise ValueError("invalid_observation_resource")
+    resources = _snapshot_resources(resources)
     facts = []
 
     def add(resource, prop, state, value=None, *, reason=None, source):

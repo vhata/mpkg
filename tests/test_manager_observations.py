@@ -1,5 +1,6 @@
 """Read-only host facts, using fake queries and private bounded child processes."""
 from dataclasses import FrozenInstanceError
+from datetime import datetime
 import json
 import os
 from pathlib import Path
@@ -13,6 +14,7 @@ from unittest.mock import patch
 
 from mpkg_manager.declarations import load_declaration
 from mpkg_manager.observations import Observation, ObservationBatch
+from mpkg_manager.planning import build_report
 from mpkg_manager.observe_native import (
     ENVIRONMENT, PACKAGE_EXPLICIT, PACKAGE_VERSIONS, SERVICE_QUERY,
     QueryResult, observe_resources, run_readonly,
@@ -163,6 +165,104 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual(found["service_type"].value, "simple")
         self.assertIn("service_state_not_functional_health", batch.limitations)
 
+    def test_service_facts_keep_prequery_identity_label_and_kind(self):
+        mutations = {
+            "nested_identity": lambda item: item["identity"].update(unit="unobserved.service"),
+            "identity_replacement": lambda item: item.update(
+                identity={"manager": "system", "unit": "unobserved.service"}),
+            "label": lambda item: item.update(id="unobserved"),
+            "kind": lambda item: item.update(kind="package"),
+            "removed_fields": lambda item: item.clear(),
+        }
+        expected = self.observe([service()], Queries()).as_dict()
+        for name, mutate in mutations.items():
+            with self.subTest(mutation=name):
+                resource, queries = service(), Queries()
+
+                def runner(argv):
+                    if not queries.calls:
+                        mutate(resource)
+                    return queries(argv)
+
+                self.assertEqual(self.observe([resource], runner).as_dict(), expected)
+                self.assertEqual(queries.calls, [SERVICE_QUERY + ("sshd.service",)] * 2)
+
+    def test_changed_service_identity_cannot_claim_agreement_for_unqueried_unit(self):
+        def declaration(unit):
+            return load_declaration(f'''schema = 1
+components = []
+[[resources]]
+id = "ssh"
+kind = "service"
+identity = {{manager = "system", unit = "{unit}"}}
+manage = ["running"]
+desired = {{running = true}}
+'''.encode())
+
+        observed, unobserved = declaration("sshd.service"), declaration("unobserved.service")
+        resources, queries = observed.model["resources"], Queries()
+
+        def runner(argv):
+            resources[0]["identity"]["unit"] = "unobserved.service"
+            return queries(argv)
+
+        batch = self.observe(resources, runner)
+        self.assertEqual(queries.calls, [SERVICE_QUERY + ("sshd.service",)] * 2)
+        for intent, comparison in ((observed, "agreement"), (unobserved, "unknown")):
+            report = build_report(intent, None, batch.as_dict(), host_id=HOST,
+                                  now=datetime.fromisoformat(WHEN)).as_dict()
+            running = report["resources"][0]["properties"][0]
+            self.assertEqual(running["property"], "running")
+            self.assertEqual(running["comparison"], comparison)
+            if comparison == "unknown":
+                self.assertEqual(running["limitations"], ["observation_identity_mismatch"])
+
+    def test_package_queries_cannot_change_later_resources_or_batch_coverage(self):
+        resources = [package(), service(),
+                     {"id": "data", "kind": "directory", "identity": {"path": "/srv/data"},
+                      "desired": {"mode": 0o750}}]
+        expected = self.observe(resources, Queries()).as_dict()
+        queries = Queries()
+
+        def runner(argv):
+            if not queries.calls:
+                resources[0]["identity"]["name"] = "python"
+                resources[0]["id"] = "changed-package"
+                resources[0]["kind"] = "directory"
+                resources[1]["identity"]["unit"] = "unobserved.service"
+                resources[1]["id"] = "changed-service"
+                resources[1]["kind"] = "package"
+                resources[2]["identity"]["path"] = "/unobserved"
+                resources[2]["id"] = "changed-directory"
+                resources[2]["kind"] = "service"
+                resources[2]["desired"].clear()
+                resources[2]["desired"][SECRET] = True
+                resources.append(package("late"))
+                resources.reverse()
+            return queries(argv)
+
+        self.assertEqual(self.observe(resources, runner).as_dict(), expected)
+        self.assertEqual(queries.calls, [PACKAGE_VERSIONS, PACKAGE_EXPLICIT] * 2
+                         + [SERVICE_QUERY + ("sshd.service",)] * 2)
+
+    def test_unknown_facts_keep_original_targets_after_query_failure(self):
+        resources = [package(), service()]
+        queries = Queries(results=[QueryResult("permission_denied"),
+                                   QueryResult("ok", b""), QueryResult("timeout")])
+
+        def runner(argv):
+            if not queries.calls:
+                resources[0]["identity"]["name"] = "unobserved"
+                resources[1]["identity"]["unit"] = "unobserved.service"
+            return queries(argv)
+
+        batch = self.observe(resources, runner)
+        self.assertTrue(all(fact.state == "unknown" for fact in batch.facts))
+        self.assertEqual(facts(batch, "git")["present"].identity, {"name": "git"})
+        self.assertEqual(facts(batch, "ssh")["running"].identity, service()["identity"])
+        self.assertEqual(queries.calls, [PACKAGE_VERSIONS, PACKAGE_EXPLICIT,
+                                         SERVICE_QUERY + ("sshd.service",)])
+
     def test_stopped_service_and_unsupported_state_semantics(self):
         cases = [({"ActiveState": "inactive", "SubState": "dead", "MainPID": "0",
                    "UnitFileState": "disabled"}, False, False),
@@ -212,6 +312,60 @@ class ObservationTests(unittest.TestCase):
         self.assertEqual({f.property for f in batch.facts}, {"present", "mode"})
         self.assertTrue(all(f.state == "unknown" for f in batch.facts))
 
+    def test_all_valid_unsupported_kinds_preserve_declared_property_coverage(self):
+        cases = [
+            ("compose", '{engine="local", project="app"}', '{running=true, services=["web"]}'),
+            ("volume", '{engine="local", name="data"}', '{present=true}'),
+            ("network", '{engine="local", name="app"}', '{present=true}'),
+            ("user", '{name="app"}', '{groups=["media"]}'),
+            ("group", '{name="media"}', '{members=["app"]}'),
+            ("file", '{path="/srv/config"}', '{content="private contents"}'),
+            ("directory", '{path="/srv/data"}', '{mode=488}'),
+            ("symlink", '{path="/srv/current"}', '{target="data"}'),
+            ("sonarr_xml", '{path="/srv/config.xml"}', '{port=8989}'),
+        ]
+        for kind, identity, desired in cases:
+            with self.subTest(kind=kind):
+                declaration = load_declaration(f'''schema = 1
+components = []
+[[resources]]
+id = "resource"
+kind = "{kind}"
+identity = {identity}
+desired = {desired}
+'''.encode())
+                resource = declaration.model["resources"][0]
+                queries = Queries()
+                batch = self.observe([resource], queries)
+                self.assertEqual(queries.calls, [])
+                self.assertEqual({fact.property for fact in batch.facts},
+                                 {"present", *resource["desired"]})
+                self.assertTrue(all(fact.state == "unknown" and fact.kind == kind
+                                    and fact.identity == resource["identity"]
+                                    and fact.evidence_source == "unsupported_adapter"
+                                    and fact.limitations == ("resource_kind_not_observed",)
+                                    for fact in batch.facts))
+
+    def test_contextual_desired_values_are_not_needed_or_exported(self):
+        declaration = load_declaration(b'''schema = 1
+components = []
+[[inputs]]
+id = "configuration"
+base_directory = "/srv"
+files = [{path="config", classification="nonsecret"}]
+[[resources]]
+id = "config"
+kind = "file"
+identity = {path="/srv/config"}
+desired = {content_input="configuration"}
+''')
+        queries = Queries()
+        batch = self.observe(declaration.model["resources"], queries)
+        self.assertEqual(queries.calls, [])
+        self.assertEqual({fact.property for fact in batch.facts}, {"present", "content_input"})
+        self.assertTrue(all(fact.state == "unknown" for fact in batch.facts))
+        self.assertNotIn("configuration", json.dumps(batch.as_dict()))
+
     def test_normalized_unsupported_unit_types_remain_unknown_without_commands(self):
         for unit in ("example.socket", "example.timer", "example"):
             with self.subTest(unit=unit):
@@ -241,6 +395,23 @@ desired = {{running = true, enabled = true}}
             with self.subTest(resources=resources), self.assertRaises(ValueError):
                 self.observe(resources, runner)
             self.assertEqual(runner.calls, [])
+
+    def test_invalid_targets_and_used_property_keys_fail_before_any_query(self):
+        directory = {"id": "data", "kind": "directory", "identity": {"path": "/srv/data"}}
+        invalid = [None, [], {}, service() | {"id": ""}, service() | {"id": SECRET + "\n"},
+                   service() | {"kind": SECRET}, service() | {"kind": ["service"]},
+                   directory | {"identity": {"path": 42}},
+                   directory | {"identity": {"path": "/srv/data", SECRET: "private"}},
+                   directory | {"desired": ["mode"]}, directory | {"desired": None}]
+        invalid.extend(directory | {"desired": {key: SECRET}}
+                       for key in (1, ("mode",), "", "x" * 129, SECRET + "\n"))
+        for resource in invalid:
+            with self.subTest(resource=resource):
+                runner = Queries()
+                with self.assertRaises(ValueError) as raised:
+                    self.observe([package(), resource], runner)
+                self.assertEqual(str(raised.exception), "invalid_observation_resource")
+                self.assertEqual(runner.calls, [])
 
 
 class BoundedQueryTests(unittest.TestCase):
