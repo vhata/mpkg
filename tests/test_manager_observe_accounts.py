@@ -118,6 +118,22 @@ class AccountObservationTests(unittest.TestCase):
         self.assertEqual(observed["present"].limitations, ("account_properties_changed",))
         self.assertEqual(observed["home"].state, "unknown")
 
+    def test_ignored_private_fields_and_additive_members_do_not_become_scalar_constraints(self):
+        runner = Queries()
+        def changed(argv, count):
+            if count <= 8:
+                return None
+            raw = USER if argv[-2] == "passwd" else GROUP
+            return QueryResult("ok", raw.replace(SECRET.encode(), b"OTHER_PRIVATE")
+                               .replace(b"ignored_member", b"new_member,another"), 0)
+        runner.override = changed
+        batch = self.observe(runner=runner)
+        self.assertIs(facts(batch)["present"].value, True)
+        self.assertEqual(facts(batch)["primary_group"].value, "workers")
+        self.assertEqual(facts(batch)["groups"].state, "unknown")
+        self.assertNotIn("OTHER_PRIVATE", json.dumps(batch.as_dict()))
+        self.assertNotIn("new_member", json.dumps(batch.as_dict()))
+
     def test_unsupported_paths_leave_only_those_properties_unknown(self):
         runner = Queries()
         runner.override = lambda argv, count: QueryResult("ok", USER.replace(b"/srv/worker", b"relative").replace(b"/usr/bin/nologin", b""), 0) if argv[-2] == "passwd" else None
@@ -199,6 +215,20 @@ class AccountObservationTests(unittest.TestCase):
         with self.assertRaises(KeyboardInterrupt):
             self.observe(runner=cancelled)
 
+    def test_deadline_during_primary_group_probe_cannot_leave_partially_completed_user_known(self):
+        for position in (5, 16):
+            clock = [0.0]
+            runner = Queries()
+            def late(argv, *, timeout):
+                result = runner(argv, timeout=timeout)
+                if len(runner.calls) == position:
+                    clock[0] = COLLECTION_SECONDS
+                return result
+            with patch("mpkg_manager.observe_accounts.time.monotonic", side_effect=lambda: clock[0]):
+                batch = self.observe(runner=late)
+            self.assertEqual(len(runner.calls), position)
+            self.assertEqual(facts(batch)["present"].limitations, ("account_collection_timeout",))
+
     def test_evidence_is_immutable_and_uses_one_collection_start(self):
         with patch("mpkg_manager.observe_accounts.utc_now", return_value=WHEN) as clock:
             batch = self.observe(observed_at=None)
@@ -233,7 +263,8 @@ class AccountObservationTests(unittest.TestCase):
                                  ("print('x'*20000)", "output_limit"),
                                  ("import time;time.sleep(5)", "timeout")):
             with patch("mpkg_manager.observe_accounts.run_bounded", transport):
-                result = run_readonly(("/usr/bin/getent", "--", "passwd", "worker"), timeout=0.05)
+                result = run_readonly(("/usr/bin/getent", "--", "passwd", "worker"),
+                                      timeout=0.1 if expected == "timeout" else 1)
             self.assertEqual(result.code, expected)
             self.assertEqual(result.output, b"")
 
