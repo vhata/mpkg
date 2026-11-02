@@ -40,6 +40,12 @@ This adapter does not solve dependency requirements or prepare native
 transactions. Planning must retain those limitations as blockers where
 the missing facts are required.
 
+The separate [package satisfaction adapter](manager-package-satisfaction.md)
+uses native dependency testing for positive unversioned request evidence,
+including providers. It does not change this direct inventory's semantics.
+Unmet dependency-test requests remain unknown because native database read
+failures cannot always be distinguished from absence.
+
 ## System services
 
 The adapter observes explicit `.service` units in the system manager.

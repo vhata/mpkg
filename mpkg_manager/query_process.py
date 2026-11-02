@@ -42,16 +42,23 @@ def _terminate_query(process):
         pass
 
 
-def run_bounded(argv, *, environment, timeout=10, max_output=1024 * 1024):
+def run_bounded(argv, *, environment, timeout=10, max_output=1024 * 1024,
+                accepted_returncodes=(0,), require_empty_stderr=False):
     """Run an adapter-approved query with bounded private capture and cleanup.
 
-    Only stdout from a successful query is returned privately for parsing.
-    Exceptions and stderr are never included in the public error code.
+    Only stdout from an adapter-approved completion is returned privately.
+    Nonzero completions still stop descendants, even when the adapter's
+    protocol accepts that exit status. Exceptions and stderr stay private.
     """
     if (type(timeout) not in (float, int) or not math.isfinite(timeout)
             or not 0 < timeout <= 30 or type(max_output) is not int
             or not 0 < max_output <= 8 * 1024 * 1024):
         raise ValueError("invalid_query_bounds")
+    if (type(accepted_returncodes) is not tuple or not 1 <= len(accepted_returncodes) <= 256
+            or any(type(code) is not int or not 0 <= code <= 255 for code in accepted_returncodes)
+            or len(set(accepted_returncodes)) != len(accepted_returncodes)
+            or 0 not in accepted_returncodes or type(require_empty_stderr) is not bool):
+        raise ValueError("invalid_query_completion_policy")
     try:
         process = subprocess.Popen(argv, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -88,6 +95,9 @@ def run_bounded(argv, *, environment, timeout=10, max_output=1024 * 1024):
                             break
                         if key.data:
                             chunks.append(chunk)
+                        elif require_empty_stderr:
+                            failure = "command_failed"
+                            break
                     if failure:
                         break
                 if not failure:
@@ -99,9 +109,9 @@ def run_bounded(argv, *, environment, timeout=10, max_output=1024 * 1024):
             failure = "io_error"
         if not failure and time.monotonic() >= deadline:
             failure = "timeout"
-        if not failure and process.returncode != 0:
+        if not failure and process.returncode not in accepted_returncodes:
             failure = "command_failed"
-        if failure:
+        if failure or process.returncode != 0:
             _terminate_query(process)
     except BaseException:
         # Cancellation must stop descendants even if the leader was reaped.

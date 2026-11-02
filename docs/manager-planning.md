@@ -111,8 +111,18 @@ The installed inventory source supports only presence, version and
 install-reason comparisons. A supplied known source or provider claim
 cannot expand that capability; unsupported properties stay unknown.
 Source validation does not authenticate a caller-supplied projection.
-Native dependency and provider resolution remain explicit capability
-limits.
+Selecting providers and preparing native transactions remain explicit
+capability limits.
+
+The separate [package satisfaction adapter](manager-package-satisfaction.md)
+can establish positive unversioned presence using native provider matching.
+Its `pacman_dependency_satisfaction` source supports only a boolean true
+`present` fact. False or other supplied values remain unknown, as do all
+other properties under that source. A satisfaction fact cannot supply the
+direct installed-name presence prerequisite for a version or installation
+reason, even when mixed with inventory facts for the same identity and time.
+Unmet requests stay unknown; no provider identity, provenance, transaction
+resolution or application capability is granted.
 
 Required checks stay separate from property agreement. Only the closed
 package and service property predicates can be evaluated from current
