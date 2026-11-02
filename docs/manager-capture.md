@@ -96,12 +96,13 @@ fails with `input_metadata_unsupported`; values are never clamped or
 substituted merely to make them recordable.
 
 The capture's `name` labels its recording and comparison within a
-decision. Capture does not return a declaration-reference UUID, and the
-store's generated private capture references do not currently resolve
-the protected references written in declarations. Capturing and recording
-one file therefore neither authorizes a declared protected reference nor
-establishes a complete input bundle. Binding those references and closing
-the bundle require a separate future recorder integration.
+legacy decision. Capture alone does not return a declaration-reference
+UUID or bind a complete input bundle. The separate
+[protected recorder](manager-protected-bindings.md) issues authenticated
+preparations, binds declared protected entries atomically, and compares
+those bindings under current policy. Generic capture/recording APIs retain
+their existing decision/name behavior. Nonsecret and Compose input
+closure remain separate work.
 
 ## Output and limits
 

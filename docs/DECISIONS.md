@@ -27,9 +27,12 @@ from retained host history. Observations carry explicit identity, source
 and time; they do not grant authority. Matching properties do not imply
 application readiness or successful functional checks. Imported report
 JSON and transformed candidate bytes cannot authorize host effects.
-Protected capture freshness currently uses the recorded decision and
-capture name. Resolving declaration reference UUIDs to stored captures
-remains separate work; successful capture is not proof of that binding.
+[Protected declaration bindings](manager-protected-bindings.md) add an
+explicit trusted recording path with authenticated origin, exact snapshot
+and input scope. Bound comparisons always require a current-policy fresh
+read. Legacy decision/name captures remain compatible but do not become
+bound merely because a declaration supplies a UUID. Complete input closure
+and application remain separate gates.
 
 Combined library checks use private temporary stores and synthetic query
 responses, including unavailable evidence, retained data, relinquishment

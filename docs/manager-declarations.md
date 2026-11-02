@@ -148,7 +148,8 @@ An input has `id`, absolute `base_directory`, and a nonempty ordered
 `files` array. Each file has a normalized relative `path` and explicit
 `classification` of `nonsecret` or `protected`. Paths cannot escape the
 base through `..`; duplicate normalized paths are errors. Protected files
-also require a canonical UUID `reference` from protected capture; nonsecret
+also require a canonical UUID `reference` from the
+[protected recorder](manager-protected-bindings.md); nonsecret
 files cannot carry such a reference. Literal secret values are not fields
 in this schema. The validator never reads or compares referenced bytes.
 
@@ -166,7 +167,9 @@ File `content_input` refers to a bundle containing exactly one file. A
 file cannot combine literal `content` and `content_input`, including when
 different consumers or desired properties supply the two constraints. A
 protected reference identifies required content without exposing it; its
-availability, source identity and freshness need the protected helper.
+availability, source identity and freshness need authenticated recording
+and a current-policy comparison. A syntactically valid UUID alone is not
+a binding or read capability.
 Classifying data as nonsecret is an explicit responsibility. Validation
 does not promise automatic secret detection in source declarations.
 
