@@ -12,8 +12,10 @@ and [acceptance scenarios](docs/specs/2026-10-31-first-release-acceptance.md)
 define requirements beyond the implemented foundations below.
 The [storage and execution design](docs/specs/2026-10-31-first-release-storage-and-execution.md)
 selects encoding, persistence and native operation boundaries. Recording
-and comparison primitives implement part of that design; the installed
-privileged boundary and application protocol remain separate work.
+and comparison primitives implement part of that design. A bounded
+recording client and staged privileged helper implement the initial
+request boundary; installation acceptance and application remain
+separate work.
 The [disposable fixture design](docs/specs/2026-10-31-first-release-fixture.md)
 binds source inputs and proposed assembly/checks. The separate
 [execution record](docs/fixtures/2026-11-01-disposable-execution-evidence.md)
@@ -24,14 +26,19 @@ checks and product acceptance.
 
 - `mpkg_manager.declarations` owns the Python 3.12 replacement's typed
   nonsecret model, contextual consumer constraints and exact snapshots.
-  `mpkg_manager.cli` exposes only bounded declaration-file validation;
-  see the [declaration guide](docs/manager-declarations.md).
+  `mpkg_manager.cli` exposes local declaration validation plus explicit
+  recording and history commands through `host_client`; see the
+  [declaration guide](docs/manager-declarations.md) and
+  [recording CLI guide](docs/manager-recording-cli.md).
 - `mpkg_manager.store` owns private SQLite intent/adoption records,
   retained consumers, protected captures and historical accepted check
   predicates. It validates durable history before projecting authority.
   Its [store guide](docs/manager-store.md) defines recording and ownership
-  boundaries; an installed recorder and authorization dispatcher are
-  separate work.
+  boundaries. `host_protocol` and `host_helper` provide closed recording
+  requests, verified paths, serialization and sanitized exports. The
+  [host-helper guide](docs/manager-host-helper.md) describes the staged
+  installed launcher and its unverified real-host acceptance; protected
+  recording, observation dispatch and application remain separate work.
 - `mpkg_manager.host_policy` loads and verifies host identity, engine
   aliases and allowed input roots. `mpkg_manager.protected_capture` reads
   bounded regular files beneath a verified policy handle. The
