@@ -23,7 +23,7 @@ from .declarations import (Declaration, DeclarationError, canonical_json,
                            load_declaration, physical_key, validate_model)
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 APPLICATION_ID = 0x4D504B47
 MAX_INPUT_BYTES = 16 * 1024 * 1024
 _BOUND_TOKEN_PREFIX = b"MPKGBND\x00\x01"
@@ -58,12 +58,22 @@ _TABLES = {
         protected_id TEXT NOT NULL REFERENCES protected_inputs(id),
         PRIMARY KEY(revision, name)) STRICT""",
 }
+_LEGACY_TABLES = dict(_TABLES)
+_TABLES["schema_migrations"] = """CREATE TABLE schema_migrations(
+        id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('created','migrated')),
+        from_version INTEGER NOT NULL, to_version INTEGER NOT NULL UNIQUE,
+        revision INTEGER NOT NULL, created_at TEXT NOT NULL,
+        backup BLOB, seal BLOB NOT NULL) STRICT"""
 _TRIGGERS = {
     f"{table}_{operation.lower()}": (
         f"CREATE TRIGGER {table}_{operation.lower()} BEFORE {operation} ON {table} "
         "BEGIN SELECT RAISE(ABORT, 'immutable_record'); END")
     for table in _TABLES for operation in ("UPDATE", "DELETE")
 }
+_LEGACY_TRIGGERS = {name: sql for name, sql in _TRIGGERS.items()
+                    if not name.startswith("schema_migrations_")}
+_SCHEMAS = {1: _LEGACY_TABLES | _LEGACY_TRIGGERS, 2: _TABLES | _TRIGGERS}
+_MIGRATION_DOMAIN = b"MPKGMIGRATION\x00\x01"
 
 
 class StoreError(RuntimeError):
@@ -115,6 +125,31 @@ def _framed_mac(key, domain, context, raw):
         result.update(len(item).to_bytes(8, "big"))
         result.update(item)
     return result.digest()
+
+
+def _migration_receipt(key, host_id, identity, kind, before, after, revision, created_at, backup):
+    context = {"host_id": host_id, "id": identity, "kind": kind,
+               "from_version": before, "to_version": after, "revision": revision,
+               "created_at": created_at, "backup": backup}
+    return _framed_mac(key, _MIGRATION_DOMAIN, context, b"")
+
+
+def _backup_metadata(value, host_id, version, revision):
+    if (type(value) is not dict or set(value) != {"backup_id", "host_id", "schema_version",
+            "revision", "directory", "database_size", "database_sha256", "logical_sha256"}
+            or value["host_id"] != host_id or type(value["schema_version"]) is not int
+            or value["schema_version"] != version or type(value["revision"]) is not int
+            or value["revision"] != revision or type(value["database_size"]) is not int
+            or not 1 <= value["database_size"] <= 1024 * 1024 * 1024):
+        _fail("store_corrupt")
+    _host_id(value["backup_id"])
+    if (type(value["directory"]) is not str or len(value["directory"]) > 4096
+            or any(ord(char) < 32 or ord(char) == 127 for char in value["directory"])):
+        _fail("store_corrupt")
+    _store_path(value["directory"])
+    for name in ("database_sha256", "logical_sha256"):
+        if type(value[name]) is not str or not re.fullmatch(r"[0-9a-f]{64}", value[name]):
+            _fail("store_corrupt")
 
 
 def _bound_name(input_id, path):
@@ -294,12 +329,14 @@ class HostStore:
                 db = store._db
                 db.execute("BEGIN IMMEDIATE")
                 try:
-                    for statement in (*_TABLES.values(), *_TRIGGERS.values()):
+                    for statement in _SCHEMAS[SCHEMA_VERSION].values():
                         db.execute(statement)
                     db.execute(f"PRAGMA application_id={APPLICATION_ID}")
                     db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                     db.execute("INSERT INTO host VALUES(1,?,?,?,?)",
                                (host_id, SCHEMA_VERSION, _json(aliases), os.urandom(32)))
+                    if SCHEMA_VERSION >= 2:
+                        store._save_schema_receipt("created", 0, SCHEMA_VERSION, 0, None)
                     store._commit()
                 except BaseException:
                     if db.in_transaction:
@@ -331,11 +368,12 @@ class HostStore:
         return cls._open(directory, host_id, owner_uid, readonly=True)
 
     @classmethod
-    def _open(cls, directory, host_id, owner_uid, readonly):
+    def _open(cls, directory, host_id, owner_uid, readonly, *, allow_legacy=False):
         _host_id(host_id)
         store = cls()
         try:
-            store._attach(_store_path(directory), host_id, owner_uid, readonly)
+            store._attach(_store_path(directory), host_id, owner_uid, readonly,
+                          allow_legacy=allow_legacy)
             return store
         except StoreError:
             store.close()
@@ -347,7 +385,7 @@ class HostStore:
             store.close()
             raise StoreError("store_unavailable") from None
 
-    def _attach(self, path, host_id, owner_uid, readonly, initializing=False):
+    def _attach(self, path, host_id, owner_uid, readonly, initializing=False, allow_legacy=False):
         if owner_uid != os.geteuid():
             _fail("store_owner_required")
         if sqlite3.sqlite_version_info < (3, 37, 0):
@@ -384,15 +422,18 @@ class HostStore:
                 _fail("sqlite_settings_unsupported")
             if not initializing:
                 self._verify_schema()
+                if not readonly and self._schema_version != SCHEMA_VERSION and not allow_legacy:
+                    _fail("store_migration_required")
 
     def _verify_schema(self):
         db = self._db
+        version = db.execute("PRAGMA user_version").fetchone()[0]
         if (db.execute("PRAGMA application_id").fetchone()[0] != APPLICATION_ID
-                or db.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION):
+                or version not in _SCHEMAS):
             _fail("store_schema_unsupported")
         actual = {name: sql for name, sql in db.execute(
             "SELECT name,sql FROM sqlite_schema WHERE sql IS NOT NULL")}
-        if actual != _TABLES | _TRIGGERS:
+        if actual != _SCHEMAS[version]:
             _fail("store_schema_unsupported")
         if db.execute("PRAGMA quick_check(1)").fetchall() != [("ok",)]:
             _fail("store_corrupt")
@@ -401,14 +442,55 @@ class HostStore:
         rows = db.execute("SELECT host_id,schema_version,engine_aliases,length(private_key) FROM host").fetchall()
         if len(rows) != 1 or rows[0][0] != self.host_id:
             _fail("store_host_mismatch")
-        if rows[0][1] != SCHEMA_VERSION or rows[0][3] != 32:
+        if rows[0][1] != version or rows[0][3] != 32:
             _fail("store_corrupt")
         try:
             self._engine_aliases = _aliases(_decode(rows[0][2]))
             self._verify_records()
+            if version >= 2:
+                self._verify_schema_receipts(version)
+            self._schema_version = version
         except (StoreError, DeclarationError, TypeError, ValueError, KeyError,
                 OverflowError, RecursionError):
             raise StoreError("store_corrupt") from None
+
+    def _save_schema_receipt(self, kind, before, after, revision, backup):
+        identity = str(uuid.uuid4())
+        created_at = datetime.now(timezone.utc).isoformat(timespec="microseconds")
+        key = self._db.execute("SELECT private_key FROM host").fetchone()[0]
+        seal = _migration_receipt(key, self.host_id, identity, kind, before, after,
+                                  revision, created_at, backup)
+        self._db.execute("INSERT INTO schema_migrations VALUES(?,?,?,?,?,?,?,?)",
+                         (identity, kind, before, after, revision, created_at,
+                          None if backup is None else _json(backup), seal))
+        return identity
+
+    def _verify_schema_receipts(self, version):
+        rows = self._db.execute("SELECT * FROM schema_migrations ORDER BY to_version").fetchall()
+        if len(rows) != 1:
+            _fail("store_corrupt")
+        key = self._db.execute("SELECT private_key FROM host").fetchone()[0]
+        for identity, kind, before, after, revision, created_at, raw, seal in rows:
+            _host_id(identity)
+            timestamp = datetime.fromisoformat(created_at)
+            if (timestamp.tzinfo != timezone.utc or timestamp.isoformat(timespec="microseconds") != created_at
+                    or type(revision) is not int or not 0 <= revision <= self._revision()
+                    or type(before) is not int or type(after) is not int or after != version):
+                _fail("store_corrupt")
+            backup = None if raw is None else _decode(raw)
+            if kind == "created":
+                if before != 0 or after != 2 or revision != 0 or backup is not None:
+                    _fail("store_corrupt")
+            elif kind == "migrated":
+                if (before, after) != (1, 2):
+                    _fail("store_corrupt")
+                _backup_metadata(backup, self.host_id, before, revision)
+            else:
+                _fail("store_corrupt")
+            expected = _migration_receipt(key, self.host_id, identity, kind, before, after,
+                                          revision, created_at, backup)
+            if type(seal) is not bytes or not hmac.compare_digest(seal, expected):
+                _fail("store_corrupt")
 
     def _verify_records(self):
         """Replay immutable facts; structural SQLite integrity is insufficient."""
@@ -633,6 +715,8 @@ class HostStore:
                 self._db.execute("BEGIN IMMEDIATE")
                 try:
                     self._verify_schema()
+                    if self._schema_version != SCHEMA_VERSION:
+                        _fail("store_migration_required")
                     if self._revision() != expected_revision:
                         _fail("revision_conflict")
                     yield
@@ -967,6 +1051,25 @@ class HostStore:
             return [{"revision": row[0], "parent_revision": row[1], "kind": row[2],
                      "snapshot_id": row[3], "created_at": row[4]}
                     for row in self._db.execute("SELECT * FROM decisions ORDER BY revision")]
+
+    def schema_history(self):
+        """Verified maintenance evidence without backup locations or digests."""
+        with self._read():
+            if self._schema_version == 1:
+                return {"schema_version": 1, "receipt_evidence": "unavailable", "receipts": []}
+            receipts = []
+            for identity, kind, before, after, revision, created_at, raw, _ in self._db.execute(
+                    "SELECT * FROM schema_migrations ORDER BY to_version"):
+                backup = None if raw is None else _decode(raw)
+                receipts.append({"migration_id": identity, "host_id": self.host_id,
+                                 "kind": kind, "from_version": before, "to_version": after,
+                                 "revision": revision, "created_at": created_at,
+                                 "backup_id": None if backup is None else backup["backup_id"],
+                                 "backup_verified": backup is not None,
+                                 "external_policy_backed_up": False,
+                                 "host_effects_rolled_back": False})
+            return {"schema_version": self._schema_version,
+                    "receipt_evidence": "verified", "receipts": receipts}
 
     def snapshot(self, identity):
         """Trusted nonsecret-source retrieval, not an ordinary public projection.

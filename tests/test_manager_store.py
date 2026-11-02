@@ -13,7 +13,7 @@ from unittest.mock import patch
 import uuid
 
 from mpkg_manager.declarations import load_declaration
-from mpkg_manager.store import HostStore, ProtectedInput, StoreError
+from mpkg_manager.store import HostStore, ProtectedInput, SCHEMA_VERSION, StoreError
 
 
 EMPTY = b"schema = 1\ncomponents = []\nresources = []\n"
@@ -225,12 +225,12 @@ class HostStoreTests(unittest.TestCase):
         store = self.create()
         store.close()
         with sqlite3.connect(self.directory / "state.sqlite3") as db:
-            db.execute("PRAGMA user_version=2")
+            db.execute(f"PRAGMA user_version={SCHEMA_VERSION + 1}")
         before = self.inventory()
         self.assert_error("store_schema_unsupported", self.open)
         self.assertEqual(self.inventory(), before)
         with sqlite3.connect(self.directory / "state.sqlite3") as db:
-            db.execute("PRAGMA user_version=1")
+            db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             db.execute("CREATE TABLE unexpected(value TEXT)")
         self.assert_error("store_schema_unsupported", self.open)
 

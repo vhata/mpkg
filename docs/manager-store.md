@@ -55,7 +55,11 @@ It does not use `immutable=1`, which would bypass normal change detection
 and locking. See [SQLite URI parameters](https://www.sqlite.org/uri.html).
 Any leftover rollback journal, WAL or shared-memory sidecar causes an
 explicit recovery-required error before SQLite opens. Recovery and
-migration need a separate maintenance implementation. An interrupted
+restoration require separate maintenance. The
+[explicit migration library](manager-store-migration.md) upgrades a
+verified version-1 store to version 2 only after a private verified
+backup. Ordinary opens never upgrade: version 1 remains readable, while
+recording fails with `store_migration_required`. An interrupted
 creation can leave an incomplete private directory, which is retained
 and refused rather than silently repaired.
 
