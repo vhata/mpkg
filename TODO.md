@@ -22,11 +22,6 @@ measured against the first-release contract and acceptance scenarios.
 
 ### Unprioritized
 
-- [NATIVE] `bind-protected-declaration-inputs` — **Bind declaration-level protected references to accepted captures.** Decision/name capture comparisons do not resolve the opaque UUID references required by declaration input bundles.
-  - Source: [declaration inputs](docs/manager-declarations.md#input-bundles), [protected store inputs](docs/manager-store.md#protected-capture-and-failure-reporting), [capture boundary](docs/manager-capture.md), combined implementation checks on 2026-11-01.
-  - Define how a recorder obtains and binds valid opaque references to exact captured source identities and immutable decision snapshots, without confusing user-provided UUIDs with store-generated IDs. Keep protected bytes, source metadata and comparison tokens out of ordinary projections.
-  - Verify valid, missing, dangling, foreign and changed bindings; retain old references through later intent and distinguish an unavailable reference from a successful decision/name comparison. Complete input-bundle closure and freshness must remain blocked until this path is implemented and independently reviewed.
-
 - [DESIGN] `refine-later-server-milestones` — **Define concrete scenarios for the later milestones.** Extend accountability, replacement-host recreation, and reusable application knowledge without weakening the first release.
   - Source: [later milestones](plans/2026-10-31-server-environment-milestones.md#later-milestones), 2026-10-31.
   - Clarify dependencies and evidence, then split into bounded planning tasks before implementation. Recreation needs an identified Arch baseline and explicit external data and secret prerequisites.
@@ -76,3 +71,9 @@ measured against the first-release contract and acceptance scenarios.
 ### P3 Low
 
 ### Unprioritized
+
+- [NATIVE] `bind-protected-declaration-inputs` — **Bind declaration-level protected references to accepted captures.** Decision/name capture comparisons do not resolve the opaque UUID references required by declaration input bundles.
+  - Source: [declaration inputs](docs/manager-declarations.md#input-bundles), [protected store inputs](docs/manager-store.md#protected-capture-and-failure-reporting), [capture boundary](docs/manager-capture.md), combined implementation checks on 2026-11-01.
+  - Use a trusted ProtectedRecorder with store-issued sealed preparation references, complete protected-entry coverage, current policy/source rechecks and short compare-and-swap writes. Preserve exact declaration bytes and the existing generic recording APIs. Persist versioned, domain-separated authentication of each reference, origin decision, snapshot, declared path and captured identity/content; accept legacy tokens without treating them as bound references.
+  - Permit reuse only for the exact same immutable snapshot after fresh checks, supporting record then adopt without reference churn. Changed source/model requires fresh preparation. Keep historical resolution intact through later intent, removal and relinquishment; reject missing, dangling, foreign, forged, future and retargeted bindings. Compare by revision, exact snapshot and declared slot, with only same/changed/unavailable public results.
+  - Keep SQL schema and existing stores compatible; distinguish tagged bound tokens from legacy tokens and reject unknown encodings. Bound the protected subset to 64 entries and 64 MiB total, retaining the 16 MiB file limit. Nonsecret/Compose closure, installed privilege dispatch and application remain separate work; reports remain non-executable.
