@@ -72,3 +72,8 @@ measured against the first-release contract and acceptance scenarios.
 ### P3 Low
 
 ### Unprioritized
+
+- [NATIVE] `keep-package-provenance-unverified-in-reports` — **Reject provenance claims that installed inventory cannot establish.** The planner must not promote package source or provider facts merely because a wire projection names the native inventory observer.
+  - Source: [package observation contract](docs/manager-observations.md#packages), [planner source checks](mpkg_manager/planning.py), independent private-store projection reproduction during combined observation review, 2026-11-02.
+  - Reproduction: real native observation parsers return package source unknown; replacing that one wire fact with known/aur, while retaining host, identity, time and pacman_installed_inventory source, makes the source property agreement with no property limitation. The actual observer never emits this claim, and reports remain non-executable.
+  - Restrict each implemented package evidence source to properties it actually establishes, preserve direct installed presence/version/reason behavior and explicit provider/provenance limits, and add focused projection regressions. This is source-capability validation, not authentication of imported JSON.
