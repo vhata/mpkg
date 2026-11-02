@@ -73,7 +73,16 @@ refused. Descendants on a different device are refused. Source ownership
 and ordinary file modes are recorded rather than rewritten; an allowed
 input root can contain files written by an unprivileged author.
 
-Capture reads at most 16 MiB plus one byte for overflow detection and
+Capture reads at most 16 MiB plus one byte for overflow detection. The
+optional `max_bytes` argument can lower this bound to an integer from
+zero through 16 MiB; it cannot expand the default limit. Booleans and
+other types are refused. A zero allowance accepts an empty file and
+still performs the same policy, path and metadata validation. This lets
+the protected recorder enforce a remaining aggregate byte allowance.
+An oversized file fails with `input_too_large`, including when its known
+size exceeds the allowance before reading.
+
+Capture
 checks byte count, inode, device, mode, owner/group, link count, size,
 mtime and ctime before/after reading. Directory and final-path
 replacement, detectable concurrent writes, policy changes and read

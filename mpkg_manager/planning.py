@@ -8,6 +8,7 @@ import uuid
 
 from .declarations import (Declaration, DeclarationError, canonical_json, load_declaration,
                            physical_key, validate_model)
+from .input_evidence import input_evidence
 
 
 MAX_PROJECTION_BYTES = 16 * 1024 * 1024
@@ -222,7 +223,7 @@ def _constraints_valid(model, resource, constraints):
 
 
 def build_report(declaration, current, observations, *, host_id, engine_aliases=None,
-                 selected_components=None, now=None, max_age_seconds=60):
+                 selected_components=None, now=None, max_age_seconds=60, input_observations=None):
     """Compare trusted helper projections without reading, recording or applying.
 
     Projection dictionaries are not authentication. A caller must obtain them
@@ -255,13 +256,55 @@ def build_report(declaration, current, observations, *, host_id, engine_aliases=
     except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
         raise PlanningError("invalid_observation_projection") from None
     try:
+        inputs = None if input_observations is None else input_evidence(input_observations).as_dict()
+    except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
+        raise PlanningError("invalid_input_observation_projection") from None
+    try:
         return _build(validated, model, current, observations, host_id, aliases,
-                      selected_components, now, max_age_seconds)
+                      selected_components, now, max_age_seconds, inputs)
     except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
         raise PlanningError("invalid_report_inputs") from None
 
 
-def _build(declaration, model, current, observations, host_id, aliases, selection, now, max_age):
+def _input_summary(model, current, evidence, recorded, host_id, now, max_age):
+    slots = [(bundle["id"], index) for bundle in model["inputs"]
+             for index, item in enumerate(bundle["files"]) if item["classification"] == "protected"]
+    reason = "collected"
+    if current is None:
+        reason = "history_unavailable"
+    elif not recorded:
+        reason = "intent_not_recorded"
+    elif evidence is None:
+        reason = "not_observed"
+    elif evidence["host_id"] != host_id:
+        reason = "host_mismatch"
+    elif evidence["revision"] != current["revision"] or evidence["snapshot"] != current["snapshot"]:
+        reason = "target_mismatch"
+    elif evidence["state"] != "complete":
+        reason = evidence["reason"]
+    else:
+        age = (now - _time(evidence["observed_at"])).total_seconds()
+        if age < 0:
+            reason = "from_future"
+        elif age > max_age:
+            reason = "stale"
+        elif set(slots) != {(entry["input_id"], entry["file_index"]) for entry in evidence["entries"]}:
+            reason = "coverage_incomplete"
+    found = {(entry["input_id"], entry["file_index"]): entry["state"]
+             for entry in evidence["entries"]} if reason == "collected" else {}
+    entries = [{"input_id": name, "file_index": index, "state": found.get((name, index), "unavailable")}
+               for name, index in slots]
+    return {"state": "available" if reason == "collected" else "unavailable", "reason": reason,
+            "observed_at": evidence["observed_at"] if evidence else None,
+            "source": evidence["source"] if evidence else None,
+            "scope": "current_recorded_snapshot", "coverage": "complete" if reason == "collected" else "unavailable",
+            "entries": entries, "historical_coverage": "unavailable",
+            "nonsecret_entries_unchecked": sum(item["classification"] == "nonsecret"
+                for bundle in model["inputs"] for item in bundle["files"]),
+            "full_input_closure": "unverified"}
+
+
+def _build(declaration, model, current, observations, host_id, aliases, selection, now, max_age, inputs):
     resources = {item["id"]: item for item in model["resources"]}
     components = {item["id"]: item for item in model["components"]}
     if selection is None:
@@ -291,6 +334,10 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
                     and snapshot["normalization_version"] == declaration.normalization_version)
     if not recorded:
         blocks.add("intent_not_recorded")
+    input_summary = _input_summary(model, current, inputs, recorded, host_id, now, max_age)
+    for entry in input_summary["entries"]:
+        if entry["state"] != "same":
+            blocks.add("protected_input_" + entry["state"])
     observation_state = "available"
     if observations is None:
         observation_state = "unavailable"
@@ -512,6 +559,7 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
                               "scope_limited": bool(observations and observations["limitations"])},
               "selected_components": selected, "resources": rows, "retained_resources": retained,
               "unselected_resources": unselected,
+              "protected_inputs": input_summary,
               "executable": False, "blockers": sorted(blocks),
               "limitations": ["time_bounded_observation_not_atomic_host_snapshot",
                               "no_attempt_history_or_input_replay_verification",
