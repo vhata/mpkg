@@ -17,7 +17,7 @@ MAX_PROJECTION_BYTES = 16 * 1024 * 1024
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 _KINDS = {"package", "compose", "volume", "network", "service", "user", "group",
           "file", "directory", "symlink", "sonarr_xml"}
-_SOURCES = {"pacman_installed_inventory", "systemd_unit_properties",
+_SOURCES = {"pacman_installed_inventory", "pacman_dependency_satisfaction", "systemd_unit_properties",
             "docker_selected_project_inventory", "filesystem_metadata", "unsupported_adapter"}
 
 
@@ -490,8 +490,12 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
         source = {"package": "pacman_installed_inventory", "service": "systemd_unit_properties",
                   "compose": "docker_selected_project_inventory", "file": "filesystem_metadata",
                   "directory": "filesystem_metadata", "symlink": "filesystem_metadata"}.get(resource["kind"])
+        if resource["kind"] == "package" and fact["evidence_source"] == "pacman_dependency_satisfaction":
+            source = "pacman_dependency_satisfaction"
         if source is None or fact["evidence_source"] != source:
             return fact, "observation_source_unsupported"
+        if source == "pacman_dependency_satisfaction" and prop != "present":
+            return fact, "observation_property_unsupported"
         if (source == "pacman_installed_inventory"
                 and prop not in {"present", "version", "install_reason"}):
             return fact, "observation_property_unsupported"
@@ -501,6 +505,8 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
             return fact, "observation_property_unsupported"
         if fact["state"] != "known":
             return fact, "observation_" + fact["state"]
+        if source == "pacman_dependency_satisfaction" and fact["value"] is not True:
+            return fact, "package_request_resolution_unknown"
         return fact, None
 
     def compare(resource, prop, expected, *, expected_key=None):
@@ -513,7 +519,8 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
             return "unknown", ["package_request_resolution_unknown"], source
         if resource["kind"] == "package" and prop in ("version", "install_reason"):
             present, present_reason = fact_for(resource, "present", expected_key=expected_key)
-            if present_reason or present["value"] is not True:
+            if (present_reason or present["value"] is not True
+                    or present["evidence_source"] != "pacman_installed_inventory"):
                 return "unknown", ["package_request_resolution_unknown"], source
         if resource["kind"] == "package" and prop == "version" and type(expected) is dict:
             if type(fact["value"]) is not str:
