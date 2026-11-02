@@ -8,6 +8,7 @@ import time
 from . import observe_accounts, observe_compose, observe_files, observe_native, observe_packages
 from .declarations import Declaration, DeclarationError, canonical_json, load_declaration, physical_key
 from .endpoint_checks import EndpointCollectionError, collect_endpoint_checks
+from .file_content import FileContentError, file_content_manifest, collect_file_content
 from .host_policy import LoadedHostPolicy, PolicyError
 from .observations import Observation, ObservationBatch, utc_now
 from .planning import PlanningError, build_report
@@ -246,7 +247,7 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
                    max_endpoint_probes=64, max_age_seconds=60,
                    native_runner=None, package_runner=None, account_runner=None,
                    compose_runner=None, endpoint_runner=None, identities=None,
-                   complete_inputs=False, expected_revision=None):
+                   complete_inputs=False, expected_revision=None, check_file_content=False):
     """Collect and compare through live trusted read-only handles.
 
     Runners and name resolvers are trusted embedding/test seams, never request
@@ -261,6 +262,7 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
             or getattr(store, "readonly", None) is not True
             or type(probe_endpoints) is not bool
             or type(complete_inputs) is not bool
+            or type(check_file_content) is not bool
             or (expected_revision is not None and (type(expected_revision) is not int
                 or not 0 <= expected_revision < 2**63 - 1))
             or type(budget_seconds) is not int or not 1 <= budget_seconds <= 300
@@ -298,10 +300,20 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
             raise StatusCollectionError("status_store_unavailable") from None
     targets = _targets(model, current, aliases)
     host_id = policy.host_id
+    content_manifest = None
+    if check_file_content and recorded is not None:
+        try:
+            content_manifest = file_content_manifest(store, revision=current["revision"],
+                                                     snapshot_id=current["snapshot_id"])
+        except FileContentError:
+            raise StatusCollectionError("status_file_content_unavailable") from None
+    content_arguments = ({"file_content_manifest": content_manifest, "file_content_requested": True}
+                         if check_file_content else {})
     # Validate report inputs before any host query or probe.
     try:
         build_report(declaration, current, None, host_id=host_id, engine_aliases=aliases,
-                     selected_components=selected_components, max_age_seconds=max_age_seconds)
+                     selected_components=selected_components, max_age_seconds=max_age_seconds,
+                     **content_arguments)
     except PlanningError:
         raise StatusCollectionError("invalid_status_report_context") from None
     facts, rows, packages = [], [], []
@@ -371,6 +383,18 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
                     inputs = None
             except (BindingError, StoreError, RecordedInputError):
                 input_reason = "status_input_observation_unavailable"
+    content, content_reason = None, "status_target_not_recorded"
+    if check_file_content and recorded == declaration:
+        content_reason = budget.reason()
+        if content_reason is None:
+            try:
+                content = collect_file_content(ProtectedRecorder(store, loaded_policy),
+                    revision=current["revision"], snapshot_id=current["snapshot_id"], observed_at=when)
+                content_reason = budget.reason()
+                if content_reason:
+                    content = None
+            except (BindingError, StoreError, FileContentError):
+                content_reason = "status_file_content_unavailable"
     endpoints, endpoint_reason = None, "status_endpoint_collection_not_requested"
     if probe_endpoints:
         endpoint_reason = "status_target_not_recorded"
@@ -393,13 +417,20 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
         try:
             if store.snapshot(current["snapshot_id"]) != recorded:
                 raise StatusCollectionError("status_context_changed")
+            if check_file_content and file_content_manifest(store, revision=current["revision"],
+                    snapshot_id=current["snapshot_id"]) != content_manifest:
+                raise StatusCollectionError("status_context_changed")
         except StoreError:
             raise StatusCollectionError("status_store_unavailable") from None
+        except FileContentError:
+            raise StatusCollectionError("status_file_content_unavailable") from None
     try:
         input_arguments = {"recorded_input_observations" if complete_inputs else "input_observations": inputs}
         report = build_report(declaration, current, batch.as_dict(), host_id=host_id, engine_aliases=aliases,
             selected_components=selected_components, now=datetime.now(timezone.utc),
-            max_age_seconds=max_age_seconds, endpoint_observations=endpoints, **input_arguments)
+            max_age_seconds=max_age_seconds, endpoint_observations=endpoints,
+            **input_arguments, **(content_arguments | {"file_content_observations": content}
+                                 if check_file_content else {}))
     except PlanningError:
         raise StatusCollectionError("invalid_status_report_context") from None
     collection = {
@@ -410,4 +441,6 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
         "endpoint_reason": endpoint_reason, "limitations": list(LIMITATIONS), "executable": False}
     if complete_inputs:
         collection["recorded_input_reason"] = collection.pop("protected_input_reason")
+    if check_file_content:
+        collection["file_content_reason"] = content_reason
     return StatusResult(canonical_json({"report": report.as_dict(), "collection": collection}))

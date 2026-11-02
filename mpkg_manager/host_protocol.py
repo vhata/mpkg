@@ -36,6 +36,7 @@ class HostRequest:
     selected_components: tuple | None = field(default=None, repr=False)
     probe_endpoints: bool = False
     capture_inputs: bool = False
+    check_file_content: bool = False
 
 
 def _object(pairs):
@@ -70,13 +71,19 @@ def _selection(value, *, stable=False, empty=False):
 def _status(arguments):
     if arguments.get("operation") != "status":
         raise RequestError("operation_unsupported")
-    if set(arguments) != {"operation", "expected_revision", "source", "source_is_nonsecret",
-                          "selected_components", "probe_endpoints"}:
+    keys = {"operation", "expected_revision", "source", "source_is_nonsecret",
+            "selected_components", "probe_endpoints"}
+    if "check_file_content" in arguments:
+        keys.add("check_file_content")
+    if set(arguments) != keys:
         raise RequestError("invalid_request")
     revision = arguments["expected_revision"]
     if revision is not None and (type(revision) is not int or not 0 <= revision < 2**63 - 1):
         raise RequestError("invalid_request")
     if type(arguments["probe_endpoints"]) is not bool:
+        raise RequestError("invalid_request")
+    check_file_content = arguments.get("check_file_content", False)
+    if type(check_file_content) is not bool:
         raise RequestError("invalid_request")
     selection = arguments["selected_components"]
     selection = None if selection is None else _selection(selection, empty=True)
@@ -94,7 +101,8 @@ def _status(arguments):
         if selection is not None and not set(selection) <= {item["id"] for item in declaration.model["components"]}:
             raise RequestError("invalid_status_selection")
     return HostRequest("observe", "status", revision, source,
-                       selected_components=selection, probe_endpoints=arguments["probe_endpoints"])
+                       selected_components=selection, probe_endpoints=arguments["probe_endpoints"],
+                       check_file_content=check_file_content)
 
 
 def parse_request(raw):

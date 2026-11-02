@@ -21,6 +21,7 @@ or sudo acceptance.
 .venv/bin/python -m mpkg_manager status environment.toml \
   --source-is-nonsecret --json
 .venv/bin/python -m mpkg_manager status --probe-endpoints --json
+.venv/bin/python -m mpkg_manager status --check-file-content --json
 ```
 
 ## Target and selection
@@ -74,6 +75,14 @@ original dependency and consumer-content obligations. It never mixes the
 legacy protected-only evidence mode with this evidence. Source-file
 freshness remains distinct from target-file content and property agreement.
 
+Target-byte comparison requires `--check-file-content`. Its separate
+[file-content report](manager-file-content-reporting.md) binds current
+and retained desired/consumer roles to independently loaded history.
+Only exact recorded intent can trigger target reads; edited intent keeps
+the recorded obligations unavailable. The option neither captures missing
+baselines nor grants overwrite, consumer-access or application authority.
+Default status retains metadata and source-freshness behavior.
+
 The recording CLI's explicit
 [`--capture-inputs` option](manager-recording-capture.md) establishes
 nonsecret file baselines. Ordinary declaration-only records retain
@@ -99,6 +108,8 @@ trigger status or probes automatically.
 
 Human output shows property comparisons, current and accepted checks,
 retained and unselected resources, per-role input results and blockers.
+Requested target-content results list current/accepted and desired/consumer
+roles separately, without paths, bytes or content hashes.
 `--json` returns `{"ok": true, "result": {"report": ..., "collection": ...}}`.
 The report contains the full redacted comparison; collection states its
 manifest coverage, query count, reserved output allowance and gaps.

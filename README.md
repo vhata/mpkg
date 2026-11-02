@@ -17,7 +17,9 @@ explicitly installed helper and administrator-provided host policy;
 recording does not change running software. The separate
 [`status` command](docs/manager-status-cli.md) compares recorded or
 working-tree intent with read-only observations. Endpoint probes are
-explicit and matching properties never authorize application. The existing
+explicit. `--check-file-content` separately compares exact recorded
+targets with their authenticated input bytes. Matching properties never
+authorize application. The existing
 `mpkg` helper below remains available.
 
 The replacement Python libraries provide these foundations:
@@ -40,6 +42,14 @@ The replacement Python libraries provide these foundations:
 - [Recorded input evidence](docs/manager-recorded-input-evidence.md) and
   [report binding](docs/manager-recorded-input-reporting.md) keep current
   and retained declared-file baselines separate across classifications.
+- [Recorded target content](docs/manager-file-content.md) and its
+  [status report](docs/manager-file-content-reporting.md) compare exact
+  current and retained desired/consumer bytes separately from source
+  freshness, metadata and overwrite authority.
+- Library-only [Compose input preflight](docs/manager-compose-input-bundles.md),
+  [runtime endpoint attribution](docs/manager-runtime-endpoint-attribution.md)
+  and [declared-user access](docs/manager-consumer-access.md) provide
+  separate bounded evidence; installed status does not collect them.
 - Positive [local account properties](docs/manager-account-observation.md)
   cross-checked against effective name resolution. Missing identities,
   supplementary memberships and safe account creation remain unknown.
@@ -55,7 +65,8 @@ The replacement Python libraries provide these foundations:
   protected XML bytes that preserves unrelated content.
 
 The [status collector](docs/manager-status-collection.md) connects these
-observers and comparisons through live trusted read-only handles. The
+native, metadata, input and route observers and comparisons through live
+trusted read-only handles, with target content explicitly opt-in. The
 status and recording clients use a fixed privileged request boundary with
 a staged install payload; real installation and sudo acceptance remain
 separate checks.

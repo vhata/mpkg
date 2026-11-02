@@ -41,7 +41,15 @@ pins its chosen revision and compares current and retained declared inputs
 against independent history manifests. Endpoint probing requires an
 explicit flag and exact recorded intent. Working-tree declarations remain
 valid status targets without being recorded or granting apply authority.
-Legacy missing input captures remain unavailable. Recording commands can
+An explicit `--check-file-content` option adds
+[independently bound target-byte results](manager-file-content-reporting.md)
+for current and retained desired/consumer roles, distinct from source
+freshness. Target reads require exact recorded intent and policy-approved
+roots; neither matches nor differences authorize overwrite.
+Library-only [Compose preflight](manager-compose-input-bundles.md),
+[runtime attribution](manager-runtime-endpoint-attribution.md) and
+[declared-user access](manager-consumer-access.md) remain outside installed
+status collection. Legacy missing input captures remain unavailable. Recording commands can
 [explicitly capture declared nonsecret files](manager-recording-capture.md);
 protected capture preparation remains a trusted library API.
 
