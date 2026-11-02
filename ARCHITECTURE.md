@@ -4,28 +4,58 @@ This file maps the current implementation. The
 [proposed architecture](docs/specs/2026-10-31-server-environment-architecture.md)
 and
 [resource model](docs/specs/2026-10-31-server-environment-resources.md)
-describe the replacement direction. Its initial declaration model and
-validation CLI are implemented; recording, host observation, application
-and product acceptance remain separate work.
+describe the target design. Its declaration, recording, observation and
+comparison foundations are now in staged implementation alongside the
+existing helper; application and product acceptance remain incomplete.
 The [first-release contract](docs/specs/2026-10-31-first-release-contract.md)
 and [acceptance scenarios](docs/specs/2026-10-31-first-release-acceptance.md)
-refine that proposal without changing the current implementation.
+define requirements beyond the implemented foundations below.
 The [storage and execution design](docs/specs/2026-10-31-first-release-storage-and-execution.md)
-selects proposed encoding, persistence and native operation boundaries;
-its mechanism proofs remain prerequisites to implementation.
+selects encoding, persistence and native operation boundaries. Recording
+and comparison primitives implement part of that design; the installed
+privileged boundary and application protocol remain separate work.
 The [disposable fixture design](docs/specs/2026-10-31-first-release-fixture.md)
 binds source inputs and proposed assembly/checks. The separate
 [execution record](docs/fixtures/2026-11-01-disposable-execution-evidence.md)
-records actual acquisition and guest outcomes without claiming that the
-replacement manager has been implemented.
+records actual acquisition and guest outcomes separately from library
+checks and product acceptance.
 
 ## Current boundaries
 
-- `mpkg_manager/` is the Python 3.12 replacement namespace. Its initial
-  `validate` command reads and validates one TOML declaration without
-  recording or applying host state. The
-  [declaration guide](docs/manager-declarations.md) specifies the closed
-  schema, canonical snapshots and current boundaries.
+- `mpkg_manager.declarations` owns the Python 3.12 replacement's typed
+  nonsecret model, contextual consumer constraints and exact snapshots.
+  `mpkg_manager.cli` exposes only bounded declaration-file validation;
+  see the [declaration guide](docs/manager-declarations.md).
+- `mpkg_manager.store` owns private SQLite intent/adoption records,
+  retained consumers, protected captures and historical accepted check
+  predicates. It validates durable history before projecting authority.
+  Its [store guide](docs/manager-store.md) defines recording and ownership
+  boundaries; an installed recorder and authorization dispatcher are
+  separate work.
+- `mpkg_manager.host_policy` loads and verifies host identity, engine
+  aliases and allowed input roots. `mpkg_manager.protected_capture` reads
+  bounded regular files beneath a verified policy handle. The
+  [capture guide](docs/manager-capture.md) defines path, metadata and
+  ownership checks and their concurrency limits. Trusted fixture path/UID
+  overrides are not a production privilege boundary.
+- `mpkg_manager.observe_native` and `mpkg_manager.observe_compose` collect
+  time-bounded observations through closed read-only queries. Their
+  [native](docs/manager-observations.md) and
+  [Compose](docs/manager-compose-observations.md) guides define exact
+  scope and limitations. `observations` supplies immutable scalar facts;
+  Compose keeps nested inventory separate. `query_process` supplies
+  bounded process capture shared by these adapters.
+- `mpkg_manager.planning` compares validated intent, trusted store
+  projections and current facts without reads or effects. The
+  [comparison guide](docs/manager-planning.md) owns source/identity
+  binding, retained constraints and separate accepted/current checks.
+  Reports are always non-executable; attempts, native preparation and
+  application are not supplied.
+- `mpkg_manager.sonarr_xml` transforms only the existing Port value in
+  protected XML bytes, preserving unrelated bytes. Its
+  [adapter guide](docs/manager-sonarr-xml.md) defines the supported subset
+  and protected candidate interface. It performs no live file operation,
+  writer coordination or restart, and grants no apply authority.
 - `mpkg` contains the CLI, PKGBUILD metadata handling, dependency edits,
   package-tool calls, and scoped Git commits. Paths are resolved
   relative to the executable, including when invoked through a symlink.
@@ -40,6 +70,14 @@ replacement manager has been implemented.
   the helper's metapackage discovery and rewriting scope.
 - `tests/test_mpkg.py` copies the helper to temporary repositories and
   substitutes package tools. It exercises real Git behavior there.
+- `tests/test_manager_integration.py` connects the real model, temporary
+  store, native/Compose parsers and planner using synthetic query results.
+  Its test assembly routes disjoint resource sets with a common host and
+  timestamp. It is not a production observation coordinator or status CLI.
+  Protected Sonarr candidates are also checked against stored capture
+  evidence without turning a pure transformation into observation or
+  application authority. Temporary loaded policies and actual XML reads
+  exercise capture-to-store freshness and stale candidate refusal.
 - `scripts/fixture/` owns private runner acquisition, disposable guest
   assembly, supervised builds and bounded input/artifact transport.
   `scripts/proofs/` contains guarded mechanism experiments. These tools
@@ -61,10 +99,20 @@ and does not create a success commit. Commits select the relevant
 PKGBUILD and preserve unrelated staged files. Literal dependency editing
 must not execute a package's dependency expression.
 
-The current CLI couples recording, installation, and commits. The design
-requires separate recording and application, but that separation has not
-been implemented. Do not describe the current helper as satisfying the
-new mandate or infer a backward-compatible API requirement.
+The existing helper CLI couples recording, installation, and commits.
+Replacement libraries separate recording and read-only comparisons from
+effects, but do not yet implement application. Do not describe either as
+satisfying the complete mandate or infer a backward-compatible API
+requirement. Synthetic integration checks establish how the library
+interfaces compose, not real Arch/Docker behavior, production privilege
+isolation or the first-release acceptance scenarios.
+
+Protected-input storage currently relates captured bytes to a decision
+revision and capture name. The declaration's protected `reference` UUID
+is not resolved to a generated stored capture identity. Tests exercise
+the decision/name API explicitly and retain unavailable reference
+resolution and input-freshness limits; recording bytes does not prove
+that a declaration's protected inputs have been bound or replayed.
 
 ## Worktree isolation
 

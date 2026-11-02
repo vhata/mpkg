@@ -1,15 +1,36 @@
 # mpkg
 
-The replacement server-environment manager begins with a strict TOML
-declaration validator:
+The replacement server environment manager is in staged implementation.
+Its current CLI validates an explicit TOML declaration:
 
 ```sh
 .venv/bin/python -m mpkg_manager validate environment.toml --json
 ```
 
 See [manager declarations](docs/manager-declarations.md) for setup, schema
-and examples. Validation does not record or apply host state. The existing
-`mpkg` helper below remains available.
+and examples. This command does not read referenced inputs, inspect the
+host, record adoption or apply changes. The existing `mpkg` helper below
+remains available.
+
+The replacement Python libraries provide these foundations:
+
+- [Durable host records](docs/manager-store.md) for intent, adoption,
+  relinquishment, protected captures and original accepted checks.
+- [Verified host policy and protected capture](docs/manager-capture.md)
+  for bounded reads beneath explicitly allowed input roots.
+- Read-only [native](docs/manager-observations.md) and
+  [Compose](docs/manager-compose-observations.md) observations with
+  explicit identity, scope, time and unavailable evidence.
+- [Immutable comparisons](docs/manager-planning.md) of desired state,
+  retained authority, consumer requirements and current evidence.
+- A pure [Sonarr Port transformation](docs/manager-sonarr-xml.md) of
+  protected XML bytes that preserves unrelated content.
+
+These are library interfaces. There is no installed privileged helper,
+application worker or apply command; comparison reports remain
+non-executable, and transformed candidate bytes carry no apply authority.
+Protected captures currently bind a recording decision and capture name;
+declaration reference UUIDs are not yet resolved to stored captures.
 
 This repository currently contains an Arch Linux metapackage helper and
 five `vhata-*` package groups. `mpkg` is a Python executable; its
@@ -42,12 +63,11 @@ supplies the shared Vim configuration and its system-wide login
 environment. Its build and migration instructions preserve an existing
 `/usr/local/etc/vimrc` directory before pacman takes ownership.
 
-A broader server environment tool is being designed. It will cover
-native packages, Docker deployments, configuration, service identities,
-and file accountability. These are design goals, not implemented
-capabilities. Start with the
+Native package solving, Docker lifecycle changes, functional checks,
+file accountability and first-release acceptance remain incomplete. The
 [design mandate](docs/specs/2026-10-30-server-environment.md) and
-[milestone plan](plans/2026-10-31-server-environment-milestones.md).
+[milestone plan](plans/2026-10-31-server-environment-milestones.md)
+describe the intended product beyond these foundations.
 
 The [disposable fixture tools](scripts/fixture/README.md) and
 [mechanism experiments](scripts/proofs/README.md) support the separately
@@ -73,5 +93,7 @@ If Python 3.12 is outside PATH, set `MPKG_PYTHON` to its executable when
 running setup. Setup also recognizes the owner's standalone environment
 at `/Users/jonathan.hitchcock/.venv/3.12/bin/python` when present. No
 Python packages are downloaded; the current tests use only the standard
-library. The tests stub package tools and run Git in temporary
-repositories.
+library. The tests stub package and service tools and Docker responses,
+use private temporary stores, and run Git in temporary repositories.
+Integration tests exercise real declaration, storage, observation-parser
+and comparison code together; they never invoke live host tools.

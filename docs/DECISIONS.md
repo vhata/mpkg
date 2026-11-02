@@ -12,12 +12,34 @@ Final review and landing remain with the user; this does not authorize
 production package, service or Docker operations.
 
 Keep the existing `mpkg` helper usable while the replacement is developed
-in the `mpkg_manager` Python 3.12 namespace. The first implemented command
+in the `mpkg_manager` Python 3.12 namespace. The implemented command
 validates a closed TOML model and produces an immutable nonsecret snapshot.
-It does not imply observation, adoption, executable plans or application.
-The [declaration guide](manager-declarations.md) specifies its concrete
-schema choices; the original first-release contract and A1–A12 evidence
-requirements remain in force.
+Separate libraries provide [durable recording](manager-store.md),
+[verified host policy and bounded capture](manager-capture.md),
+[native](manager-observations.md) and
+[Compose](manager-compose-observations.md) observations,
+[non-executable comparisons](manager-planning.md), and protected
+[Sonarr Port transformation](manager-sonarr-xml.md). These do not expose
+host application through the validation command.
+
+Accepted authority, consumers and original verification predicates come
+from retained host history. Observations carry explicit identity, source
+and time; they do not grant authority. Matching properties do not imply
+application readiness or successful functional checks. Imported report
+JSON and transformed candidate bytes cannot authorize host effects.
+Protected capture freshness currently uses the recorded decision and
+capture name. Resolving declaration reference UUIDs to stored captures
+remains separate work; successful capture is not proof of that binding.
+
+Combined library checks use private temporary stores and synthetic query
+responses, including unavailable evidence, retained data, relinquishment
+and changed check declarations. This evidence is separate from disposable
+mechanism experiments and A1–A12 acceptance. An installed privileged
+recorder, worker, apply protocol, attempt history and real native/Docker
+acceptance remain future implementation and validation work. The
+[declaration guide](manager-declarations.md) owns the schema; the original
+first-release contract and acceptance evidence requirements remain in
+force.
 
 ## 2026-11-01: disposable mechanism execution
 
