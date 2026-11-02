@@ -127,6 +127,9 @@ class ComposeContextTests(unittest.TestCase):
         no_services = declaration(())
         self.store.record_intent(no_services, 1)
         self.assertEqual(running(self.report(original, model=no_services))["comparison"], "unknown")
+        empty = deepcopy(original)
+        next(row for row in empty["facts"] if row["property"] == "running")["compose_context"]["services"] = []
+        self.assertEqual(running(self.report(empty, model=no_services))["comparison"], "unknown")
 
     def test_service_order_and_equivalent_engine_alias_keep_the_same_scope(self):
         first = declaration(("worker", "app"))
