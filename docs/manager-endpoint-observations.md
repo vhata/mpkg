@@ -46,7 +46,7 @@ There is no JSON import or privileged dispatcher here.
 ## Transport and bounds
 
 The default transport launches only a fixed Python worker in isolated
-mode with a clean environment. A bounded private stdin request carries
+mode with a clean environment. A private stdin request of at most 8 KiB carries
 the URL; process arguments contain no URL or declaration-selected command.
 The parent limits combined stdout/stderr to 4096 bytes and retains only
 fixed worker codes and a successful terminal status for comparison.
@@ -71,7 +71,8 @@ A 3xx terminal response is compared as received; its Location is never
 followed. `match` or `mismatch` describe the declared terminal status
 expectation only; request failure reports `unavailable`.
 
-The parent enforces the declared 1–60 second deadline across request
+The parent rechecks completion time as well as readiness waits and enforces
+the declared 1–60 second deadline across request
 transport, worker execution and captured streams, then kills the worker
 process group on failure or cancellation. Cleanup waits at most one second.
 Kernel process launch/reaping and synchronous system calls cannot provide
@@ -88,7 +89,9 @@ to the wrong process or deployment, and response status does not prove
 service usefulness. Anonymous GET may have endpoint-defined side effects;
 trusted authors must select a read-only health route.
 
-Tests use owned ephemeral loopback listeners, synthetic protocol bytes and
-private subprocess fixtures. They never probe a production endpoint or
+Tests use owned ephemeral HTTP/TLS listeners, synthetic protocol bytes and
+private subprocess fixtures. They cover exact binding, output privacy,
+certificate/hostname verification, inherited trust refusal, parser limits,
+late completion, cancellation and closed-pipe descendant cleanup. They never probe a production endpoint or
 perform package, service or Docker operations. They do not establish
 installed privilege isolation or first-release acceptance.

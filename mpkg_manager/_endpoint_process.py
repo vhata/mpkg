@@ -110,7 +110,13 @@ def run_probe(url, timeout_seconds):
                         break
                 if not failure:
                     try:
-                        process.wait(timeout=max(0.001, deadline - time.monotonic()))
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            failure = "timeout"
+                        else:
+                            process.wait(timeout=remaining)
+                            if time.monotonic() >= deadline:
+                                failure = "timeout"
                     except subprocess.TimeoutExpired:
                         failure = "timeout"
         except OSError:
@@ -132,4 +138,7 @@ def run_probe(url, timeout_seconds):
         raise
     finally:
         for stream in (process.stdin, process.stdout, process.stderr):
-            stream.close()
+            try:
+                stream.close()
+            except OSError:
+                pass

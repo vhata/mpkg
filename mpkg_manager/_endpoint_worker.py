@@ -101,6 +101,7 @@ def _status(sock, deadline):
                     or any(byte < 32 and byte != 9 or byte == 127 for byte in value)):
                 raise _ProbeFailure("response_invalid")
         if status >= 200:
+            _remaining(deadline)
             return status
         informational += 1
         if status == 101 or informational > MAX_INFORMATIONAL:
@@ -141,7 +142,10 @@ def probe(value):
         return {"code": "request_failed", "status": None}
     finally:
         if sock is not None:
-            sock.close()
+            try:
+                sock.close()
+            except OSError:
+                pass
 
 
 def main():
