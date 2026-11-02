@@ -79,6 +79,15 @@ Protected recording declarations return `protected_recording_unsupported`; they
 cannot be downgraded to generic unbound captures. Authenticated capture
 preparation across helper requests remains separate work.
 
+Intent and adoption additionally accept an optional boolean
+`capture_inputs`, defaulting to false. When true, the helper captures all
+declared nonsecret files through the verified host policy and publishes
+them with the decision using the authenticated recorder. Other operations
+reject this field. Protected declarations remain unsupported. Capture
+failure returns `input_capture_rejected` without advancing the decision;
+commit uncertainty retains its distinct outcome. See
+[explicit input capture](manager-recording-capture.md).
+
 `expected_revision` is an integer from zero through `2**63 - 2`.
 Adoption selects one to 4096 distinct declaration resource IDs;
 relinquishment selects distinct stable resource UUIDs from accepted host

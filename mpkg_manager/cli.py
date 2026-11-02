@@ -73,6 +73,8 @@ def _parser():
             command.add_argument("source", metavar="PATH")
             command.add_argument("--source-is-nonsecret", action="store_true", required=True,
                                  help="explicitly classify the complete TOML source as nonsecret")
+            command.add_argument("--capture-inputs", action="store_true",
+                                 help="capture declared nonsecret files under installed host policy")
         if name in {"record", "adopt", "relinquish"}:
             command.add_argument("--expected-revision", type=_revision, required=True, metavar="N",
                                  help="exact revision from current/history; stale decisions are refused")
@@ -120,6 +122,8 @@ def _request(options):
             if not set(options.resource) <= known:
                 raise RequestError("unknown_resource_selection")
         arguments.update(source=raw.decode("utf-8"), source_is_nonsecret=options.source_is_nonsecret)
+        if options.capture_inputs:
+            arguments["capture_inputs"] = True
     if command in {"adopt", "relinquish"}:
         arguments["resource_ids"] = options.resource
     return json.dumps({"version": PROTOCOL_VERSION,

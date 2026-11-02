@@ -41,8 +41,9 @@ pins its chosen revision and compares current and retained declared inputs
 against independent history manifests. Endpoint probing requires an
 explicit flag and exact recorded intent. Working-tree declarations remain
 valid status targets without being recorded or granting apply authority.
-Legacy missing input captures remain unavailable; complete input recording
-and protected capture preparation are still trusted library APIs.
+Legacy missing input captures remain unavailable. Recording commands can
+[explicitly capture declared nonsecret files](manager-recording-capture.md);
+protected capture preparation remains a trusted library API.
 
 Combined library checks use private temporary stores and synthetic query
 responses, including unavailable evidence, retained data, relinquishment

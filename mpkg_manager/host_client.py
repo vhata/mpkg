@@ -33,6 +33,7 @@ _ERROR_CODES = frozenset({
     "commit_outcome_unknown", "store_write_failed", "store_read_failed", "record_rejected",
     "record_outcome_unknown", "internal_error", "installed_helper_unavailable", "invalid_status_selection",
     "status_no_recorded_snapshot", "status_unavailable", "status_context_changed", "status_scope_limit",
+    "input_capture_rejected",
 })
 _UNCERTAIN_CODES = {"commit_outcome_unknown", "record_outcome_unknown", "response_size_limit",
                     "internal_error", "installed_helper_unavailable"}

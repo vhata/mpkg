@@ -74,12 +74,13 @@ original dependency and consumer-content obligations. It never mixes the
 legacy protected-only evidence mode with this evidence. Source-file
 freshness remains distinct from target-file content and property agreement.
 
-The recording CLI currently records declarations without nonsecret file
-captures and refuses new protected declarations. Those legacy records
-therefore retain unavailable input baselines. Status never creates missing
-captures or updates a baseline. Trusted complete-recording library APIs
-can establish those baselines separately. Matching declared input files
-still leaves full Compose input closure unverified.
+The recording CLI's explicit
+[`--capture-inputs` option](manager-recording-capture.md) establishes
+nonsecret file baselines. Ordinary declaration-only records retain
+unavailable input baselines, and new protected recording declarations
+remain unsupported through the CLI. Status never creates missing captures
+or updates a baseline. Matching declared input files still leaves full
+Compose input closure unverified.
 
 For a working declaration that differs from the current record, status
 does not read its input references or collect input freshness. The report

@@ -41,6 +41,13 @@ selected declaration resource IDs. Repeat `--resource ID` to select
 multiple resources. Adoption records an unknown observation baseline;
 it does not claim those resources exist or have been verified.
 
+Add `--capture-inputs` to either command to capture every declared
+nonsecret file under the installed host policy. The helper records those
+private baselines atomically with the decision, so subsequent status can
+compare input freshness. The flag is optional; ordinary recording retains
+its declaration-only behavior. See [explicit input capture](manager-recording-capture.md)
+for bounds, failure semantics and the separate protected-input boundary.
+
 `relinquish` selects stable resource UUIDs shown by `current`, rather
 than declaration IDs. For example, after inspecting current revision 2:
 

@@ -64,9 +64,10 @@ remain non-executable, and transformed candidate bytes carry no apply
 authority.
 [Authenticated protected bindings](docs/manager-protected-bindings.md)
 connect exact declaration snapshots to captures through a trusted recorder.
-Generic legacy captures retain decision/name comparisons. Complete declared
-input recording remains a trusted library API; legacy missing baselines
-stay unavailable. Status reports current and retained declared-file
+Generic legacy captures retain decision/name comparisons. Recording can
+[explicitly capture declared nonsecret files](docs/manager-recording-capture.md);
+protected preparation remains a trusted library API. Legacy missing
+baselines stay unavailable. Status reports current and retained declared-file
 freshness independently of resource properties. Full effective Compose
 input closure remains unverified; matching properties do not imply
 unchanged inputs.
