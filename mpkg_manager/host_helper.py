@@ -19,6 +19,7 @@ from .host_protocol import (MAX_REQUEST_BYTES, MAX_RESPONSE_BYTES, PROTOCOL_VERS
 from .store import HostStore, StoreError
 from .status_collection import StatusCollectionError, collect_status
 from .status_wire import validate_status
+from .protected_bindings import BindingError, ProtectedRecorder
 
 
 STORE_DIRECTORY = Path("/var/lib/mpkg")
@@ -34,6 +35,7 @@ _ERROR_CODES = frozenset({
     "commit_outcome_unknown", "store_write_failed", "store_read_failed", "record_rejected",
     "record_outcome_unknown", "internal_error", "invalid_status_selection",
     "status_no_recorded_snapshot", "status_unavailable", "status_context_changed", "status_scope_limit",
+    "input_capture_rejected",
 })
 _STORE_ERRORS = _ERROR_CODES & frozenset({
     "store_missing", "store_exists", "store_busy", "store_recovery_required", "store_corrupt",
@@ -196,7 +198,15 @@ class HostBoundary:
                     with HostStore.open_existing(self._store_directory, accepted_policy.host_id,
                                                  owner_uid=self._owner_uid) as store:
                         self._bound(store, accepted_policy)
-                        if request.operation == "intent":
+                        if request.operation in {"intent", "adopt"} and request.capture_inputs:
+                            recorder = ProtectedRecorder(store, policy)
+                            declaration = load_declaration(request.source)
+                            if request.operation == "intent":
+                                result = recorder.record_all_inputs(declaration, request.expected_revision)
+                            else:
+                                result = recorder.adopt_all_inputs(declaration, request.expected_revision,
+                                                                   request.resource_ids)
+                        elif request.operation == "intent":
                             result = store.record_intent(load_declaration(request.source), request.expected_revision)
                         elif request.operation == "adopt":
                             result = store.adopt(load_declaration(request.source), request.expected_revision,
@@ -228,6 +238,8 @@ def handle_request(raw, *, boundary=None):
         response = _error(error.code)
     except PolicyError:
         response = _error("policy_unavailable")
+    except BindingError:
+        response = _error("input_capture_rejected")
     except StoreError as error:
         response = _error(error.code if error.code in _STORE_ERRORS else "record_rejected")
     except BoundaryError as error:

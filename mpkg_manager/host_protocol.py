@@ -35,6 +35,7 @@ class HostRequest:
     resource_ids: tuple = field(default=(), repr=False)
     selected_components: tuple | None = field(default=None, repr=False)
     probe_endpoints: bool = False
+    capture_inputs: bool = False
 
 
 def _object(pairs):
@@ -130,9 +131,14 @@ def parse_request(raw):
         keys = {"operation", "expected_revision"}
         if operation in {"intent", "adopt"}:
             keys |= {"source", "source_is_nonsecret"}
+            if "capture_inputs" in arguments:
+                keys.add("capture_inputs")
         if operation in {"adopt", "relinquish"}:
             keys.add("resource_ids")
         if set(arguments) != keys:
+            raise RequestError("invalid_request")
+        capture_inputs = arguments.get("capture_inputs", False)
+        if type(capture_inputs) is not bool:
             raise RequestError("invalid_request")
         revision = arguments["expected_revision"]
         if type(revision) is not int or not 0 <= revision < 2**63 - 1:
@@ -149,7 +155,8 @@ def parse_request(raw):
                    for entry in bundle["files"]):
                 raise RequestError("protected_recording_unsupported")
         resources = _selection(arguments["resource_ids"], stable=operation == "relinquish") if "resource_ids" in arguments else ()
-        return HostRequest(verb, operation, revision, source, resources)
+        return HostRequest(verb, operation, revision, source, resources,
+                           capture_inputs=capture_inputs)
     except RequestError:
         raise
     except DeclarationError:

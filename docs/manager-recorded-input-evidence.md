@@ -109,8 +109,10 @@ The existing protected-only comparison API and planner input remain
 unchanged. The opt-in [recorded-input reporting API](manager-recorded-input-reporting.md)
 compares this evidence against an independent trusted history manifest.
 The [installed status command](manager-status-cli.md) uses this comparison
-and reporting path through a read-only store. Complete input recording
-remains a trusted library API; status does not create missing baselines.
+and reporting path through a read-only store. The recording CLI can
+[explicitly capture nonsecret inputs](manager-recording-capture.md);
+protected preparation remains a trusted library API. Status does not
+create missing baselines.
 
 Every result retains `full_input_closure = "unverified"`. Matching declared
 files cannot prove all effective Compose environment, recursive references,
