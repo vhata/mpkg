@@ -95,6 +95,10 @@ def _parser():
                                  help="explicitly probe recorded loopback routes; not a health claim")
             command.add_argument("--check-file-content", action="store_true",
                                  help="compare recorded file targets with captured input bytes")
+            command.add_argument("--attribute-endpoints", action="store_true",
+                                 help="inspect recorded runtime ownership and probe its loopback status")
+            command.add_argument("--check-consumer-access", action="store_true",
+                                 help="attempt recorded read/list checks as declared local users")
     return parser
 
 
@@ -112,8 +116,9 @@ def _request(options):
         arguments.update(source=source, source_is_nonsecret=options.source_is_nonsecret,
                          expected_revision=options.expected_revision,
                          selected_components=options.component, probe_endpoints=options.probe_endpoints)
-        if options.check_file_content:
-            arguments["check_file_content"] = True
+        for name in ("check_file_content", "attribute_endpoints", "check_consumer_access"):
+            if getattr(options, name):
+                arguments[name] = True
         return json.dumps({"version": PROTOCOL_VERSION, "verb": "observe", "arguments": arguments},
                           ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     if command in {"record", "adopt", "relinquish"}:
@@ -177,6 +182,15 @@ def _human_result(command, result):
                                   else "desired")
                     print(f"Content {entry['resource_id']} ({owner}, {obligation}, input {entry['input_id']}): "
                           f"{entry['state']} ({entry['reason']}).")
+        if "runtime_checks" in report:
+            summary = report["runtime_checks"]
+            print(f"Runtime and consumer checks: {summary['reason']}.")
+            for row in summary["entries"]:
+                owner = f"accepted {row['stable_id']}" if row["role"] == "accepted" else "current"
+                outcome = (f"attribution {row['attribution']}, route {row['route_result']}"
+                           if row["check_kind"] == "endpoint" else f"local-user access {row['access_result']}")
+                print(f"Check {row['check_id']} ({owner}): {outcome} ({row['reason']}).")
+            print("Runtime ownership and local-user access do not establish application functionality.")
         print("Blockers: " + ", ".join(report["blockers"]) + ".")
         print("Status is time-bounded evidence. Application and attempt history remain unavailable.")
     else:

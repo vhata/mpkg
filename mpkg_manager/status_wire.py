@@ -6,6 +6,10 @@ import uuid
 
 from .declarations import load_declaration
 from ._endpoint_process import PROBE_CODES
+from .runtime_reporting import SUMMARY_REASONS as _RUNTIME_SUMMARY_REASONS
+from .runtime_checks import LIMITATIONS as _RUNTIME_LIMITATIONS, _UNAVAILABLE as _RUNTIME_UNAVAILABLE
+from .runtime_endpoint import _RUNTIME_CODES
+from .consumer_access import _UNAVAILABLE as _ACCESS_UNAVAILABLE
 
 
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
@@ -49,7 +53,7 @@ _COLLECTION_REASONS = frozenset({"status_logical_identity_conflict", "status_res
     "status_query_byte_limit", "status_query_failed", "status_query_result_invalid", "status_query_output_limit",
     "status_query_timeout", "status_resource_limit", "status_adapter_unavailable", "status_no_recorded_snapshot",
     "status_input_observation_unavailable", "status_endpoint_collection_not_requested", "status_target_not_recorded",
-    "status_endpoint_collection_unavailable", "status_file_content_unavailable"})
+    "status_endpoint_collection_unavailable", "status_file_content_unavailable", "status_runtime_checks_unavailable"})
 _ENDPOINT_LIMITATIONS = ["listener_attribution_unavailable", "application_identity_unverified"]
 _REPORT_LIMITATIONS = ["time_bounded_observation_not_atomic_host_snapshot",
     "no_attempt_history_or_input_replay_verification", "no_native_resolution_or_executable_effects",
@@ -166,12 +170,60 @@ _CONTENT = {"state": frozenset({"available", "unavailable"}), "reason": _CONTENT
 _ROUTE = {"route_result": frozenset({"match", "mismatch", "unavailable"}), "route_reason": _ENDPOINT_REASONS,
     "functional_result": "unverified", "limitations": _ENDPOINT_LIMITATIONS}
 
+_RUNTIME_REASONS = (_RUNTIME_SUMMARY_REASONS | _RUNTIME_UNAVAILABLE | _RUNTIME_CODES | _ACCESS_UNAVAILABLE
+                    | (PROBE_CODES - {"ok"}) | {"status_matches", "status_differs", "access_succeeded", "access_denied"})
+
+
+def _runtime_entry(value):
+    _require(type(value) is dict)
+    schema = {"role": _ROLE, "stable_id": _nullable(_uuid), "adoption_revision": _nullable(_integer),
+        "management": _nullable(_MANAGEMENT), "selected": _boolean, "check_id": _identifier,
+        "check_kind": frozenset({"endpoint", "access"}), "resource_id": _identifier, "resource_kind": _KINDS,
+        "consumer_id": _nullable(_identifier), "operation": _nullable(frozenset({"read", "list"})),
+        "functional_result": "unverified", "reason": frozenset(_RUNTIME_REASONS)}
+    if value.get("check_kind") == "endpoint":
+        schema |= {"attribution": frozenset({"verified", "unavailable"}),
+                   "route_result": frozenset({"match", "mismatch", "unavailable", "not_observed"})}
+    else:
+        schema |= {"access_result": frozenset({"match", "mismatch", "unavailable"})}
+    _validate(value, schema)
+    if value["role"] == "current":
+        _require(all(value[name] is None for name in ("stable_id", "adoption_revision", "management")))
+    else:
+        _require(all(value[name] is not None for name in ("stable_id", "adoption_revision", "management")))
+        _require(value["selected"])
+    if value["check_kind"] == "endpoint":
+        _require(value["consumer_id"] is None and value["operation"] is None)
+        _require((value["route_result"] == "match") == (value["reason"] == "status_matches"))
+        _require((value["route_result"] == "mismatch") == (value["reason"] == "status_differs"))
+        if value["attribution"] == "verified":
+            _require(value["selected"] and value["route_result"] != "not_observed")
+            _require(value["reason"] in (PROBE_CODES - {"ok"}) | {"runtime_probe_failed", "status_matches", "status_differs"})
+        else:
+            _require(value["route_result"] in ("not_observed", "unavailable"))
+    else:
+        _require(value["consumer_id"] is not None and value["operation"] is not None)
+        _require((value["access_result"] == "match") == (value["reason"] == "access_succeeded"))
+        _require((value["access_result"] == "mismatch") == (value["reason"] == "access_denied"))
+        _require(value["selected"] or value["access_result"] == "unavailable")
+
+
+_RUNTIME = {"state": frozenset({"available", "unavailable"}), "reason": _RUNTIME_SUMMARY_REASONS,
+    "source": _nullable(frozenset({"recorded_runtime_and_consumer_checks"})), "observed_at": _nullable(_time),
+    "scope": "current_and_retained_runtime_and_consumer_checks", "coverage": _COVERAGE,
+    "required_checks": _nullable(_integer), "entries": _list(_runtime_entry),
+    "attribute_endpoints": _boolean, "check_consumer_access": _boolean,
+    "endpoint_count": _integer, "access_count": _integer, "query_count": _integer,
+    "query_output_bytes_reserved": _integer, "query_limits": _list(_RUNTIME_UNAVAILABLE),
+    "functional_result": "unverified", "executable": False, "limitations": list(_RUNTIME_LIMITATIONS)}
+
 
 def _check(value):
     _require(type(value) is dict)
     schema = {"id": _identifier, "role": _ROLE, "result": frozenset({"passed", "failed", "unknown"}),
               "reason": frozenset({"property_predicates_only", "functional_verification_unavailable",
-                                   "check_not_implemented", "accepted_check_unavailable"})}
+                                   "check_not_implemented", "accepted_check_unavailable",
+                                   "declared_local_user_access_only"})}
     if "route_result" in value:
         schema |= _ROUTE
     if "adoption_revision" in value:
@@ -233,6 +285,9 @@ def validate_status(value, request):
     if request.check_file_content:
         report_schema = report_schema | {"file_content": _CONTENT}
         collection_schema = collection_schema | {"file_content_reason": _nullable(_COLLECTION_REASONS)}
+    if request.attribute_endpoints or request.check_consumer_access:
+        report_schema = report_schema | {"runtime_checks": _RUNTIME}
+        collection_schema = collection_schema | {"runtime_check_reason": _nullable(_COLLECTION_REASONS)}
     _validate(value, {"report": report_schema, "collection": collection_schema})
     report, collection = value["report"], value["collection"]
     _require(report["host_id"] == collection["host_id"]
@@ -256,6 +311,49 @@ def validate_status(value, request):
     if not report["target"]["recorded"]:
         _require("intent_not_recorded" in report["blockers"]
                  and report["recorded_inputs"]["state"] == "unavailable")
+    runtime_rows = {}
+    if request.attribute_endpoints or request.check_consumer_access:
+        runtime = report["runtime_checks"]
+        _require(runtime["attribute_endpoints"] == request.attribute_endpoints
+                 and runtime["check_consumer_access"] == request.check_consumer_access)
+        available = runtime["state"] == "available"
+        _require(available == (runtime["reason"] == "collected")
+                 and available == (runtime["coverage"] == "complete"))
+        _require(runtime["required_checks"] is None or runtime["required_checks"] == len(runtime["entries"]))
+        _require(runtime["required_checks"] is not None or not runtime["entries"])
+        if available:
+            _require(report["target"]["recorded"] and collection["runtime_check_reason"] is None)
+            _require(runtime["source"] is not None and runtime["observed_at"] is not None)
+        else:
+            _require(runtime["source"] is None and runtime["observed_at"] is None)
+            _require(all(runtime[name] == 0 for name in ("endpoint_count", "access_count", "query_count",
+                                                        "query_output_bytes_reserved")))
+            _require(not runtime["query_limits"])
+        for row in runtime["entries"]:
+            key = row["role"], row["stable_id"], row["check_id"]
+            _require(key not in runtime_rows)
+            runtime_rows[key] = row
+            _require(row["adoption_revision"] is None or row["adoption_revision"] <= collection["revision"])
+            if row["check_kind"] == "endpoint":
+                if not available or not request.attribute_endpoints or not row["selected"]:
+                    _require(row["attribution"] == "unavailable" and row["route_result"] == "not_observed")
+            elif not available or not request.check_consumer_access or not row["selected"]:
+                _require(row["access_result"] == "unavailable")
+        _require(runtime["endpoint_count"] + runtime["access_count"] <= min(256, len(runtime_rows)))
+        _require(runtime["query_count"] <= collection["query_count"]
+                 and runtime["query_output_bytes_reserved"] <= collection["query_output_bytes_reserved"])
+        _require(request.attribute_endpoints or runtime["endpoint_count"] == 0)
+        _require(request.check_consumer_access or runtime["access_count"] == 0)
+    for group in ("resources", "retained_resources", "unselected_resources"):
+        for resource in report[group]:
+            for check in resource["checks"]:
+                if check["reason"] == "declared_local_user_access_only":
+                    _require(request.attribute_endpoints or request.check_consumer_access)
+                    key = check["role"], resource["stable_id"] if check["role"] == "accepted" else None, check["id"]
+                    row = runtime_rows.get(key)
+                    expected = ({"match": "passed", "mismatch": "failed"}.get(row.get("access_result"), "unknown")
+                                if row else "unknown")
+                    _require(check["result"] == expected)
     content_properties = [item for resource in report["resources"] for item in resource["properties"]
                           if item["evidence_source"] == "recorded_file_content_comparison"]
     if not request.check_file_content:

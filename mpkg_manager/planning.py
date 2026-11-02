@@ -9,6 +9,7 @@ import uuid
 from .declarations import (Declaration, DeclarationError, canonical_json, load_declaration,
                            physical_key, validate_model)
 from .observations import ComposeContext
+from . import runtime_reporting
 from .input_evidence import input_evidence
 from .recorded_inputs import (RecordedInputEvidence, RecordedInputManifest, RecordedInputError,
                               SCOPE as RECORDED_INPUT_SCOPE)
@@ -265,7 +266,8 @@ def build_report(declaration, current, observations, *, host_id, engine_aliases=
                  selected_components=None, now=None, max_age_seconds=60, input_observations=None,
                  endpoint_observations=None, recorded_input_observations=None,
                  file_content_manifest=None, file_content_observations=None,
-                 file_content_requested=False):
+                 file_content_requested=False, runtime_check_manifest=None, runtime_check_observations=None,
+                 attribute_endpoints=False, check_consumer_access=False):
     """Compare trusted helper projections without reading, recording or applying.
 
     Projection dictionaries are not authentication. A caller must obtain them
@@ -275,6 +277,7 @@ def build_report(declaration, current, observations, *, host_id, engine_aliases=
         _uuid(host_id)
         _require(type(max_age_seconds) is int and 0 < max_age_seconds <= 3600)
         _require(type(file_content_requested) is bool)
+        _require(type(attribute_endpoints) is bool and type(check_consumer_access) is bool)
         now = datetime.now(timezone.utc) if now is None else now
         _require(isinstance(now, datetime) and now.tzinfo is not None and now.utcoffset() is not None)
         now = now.astimezone(timezone.utc)
@@ -323,6 +326,10 @@ def build_report(declaration, current, observations, *, host_id, engine_aliases=
     except (ValueError, TypeError, AttributeError, KeyError, RecursionError, FileContentError):
         raise PlanningError("invalid_file_content_inputs") from None
     try:
+        runtime_reporting.validate_inputs(runtime_check_manifest, runtime_check_observations)
+    except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
+        raise PlanningError("invalid_runtime_check_inputs") from None
+    try:
         endpoints = endpoint_observations
         if endpoints is not None:
             _require(type(endpoints) is EndpointCheckBatch)
@@ -333,7 +340,8 @@ def build_report(declaration, current, observations, *, host_id, engine_aliases=
     try:
         return _build(validated, model, current, observations, host_id, aliases,
                       selected_components, now, max_age_seconds, inputs, endpoints, recorded_inputs,
-                      content_requested, content_manifest, content)
+                      content_requested, content_manifest, content, runtime_check_manifest,
+                      runtime_check_observations, attribute_endpoints, check_consumer_access)
     except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
         raise PlanningError("invalid_report_inputs") from None
 
@@ -687,7 +695,8 @@ def _endpoint_summary(model, current, evidence, recorded, host_id, aliases, now,
 
 
 def _build(declaration, model, current, observations, host_id, aliases, selection, now, max_age,
-           inputs, endpoints, recorded_inputs, content_requested, content_manifest, content):
+           inputs, endpoints, recorded_inputs, content_requested, content_manifest, content,
+           runtime_manifest, runtime_evidence, attribute_endpoints, check_consumer_access):
     resources = {item["id"]: item for item in model["resources"]}
     components = {item["id"]: item for item in model["components"]}
     if selection is None:
@@ -730,6 +739,12 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
                     blocks.add("recorded_input_" + entry["state"])
     endpoint_summary, endpoint_results = _endpoint_summary(
         model, current, endpoints, recorded, host_id, aliases, now, max_age)
+    runtime_summary, runtime_results = (runtime_reporting.summarize(
+        model, current, runtime_manifest, runtime_evidence, recorded=recorded, host_id=host_id,
+        aliases=aliases, selection=selection, included=included, now=now, max_age=max_age,
+        attribute_endpoints=attribute_endpoints, check_consumer_access=check_consumer_access)
+        if attribute_endpoints or check_consumer_access or runtime_manifest is not None or runtime_evidence is not None
+        else (None, {}))
     content_summary = (_file_content_summary(model, current, content_manifest, content, recorded,
                                              host_id, now, max_age) if content_requested else None)
     if content_summary is not None:
@@ -859,6 +874,13 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
         for check in sorted(definitions, key=lambda item: item["id"]):
             if check["kind"] == "endpoint":
                 result, reason = "unknown", "functional_verification_unavailable"
+            elif check["kind"] == "access" and runtime_summary is not None:
+                key = role, endpoint_record["stable_id"] if endpoint_record else None, check["id"]
+                access = runtime_results.get(key)
+                result = ({"match": "passed", "mismatch": "failed"}.get(access["access_result"], "unknown")
+                          if (runtime_summary["state"] == "available" and access
+                              and access["check_kind"] == "access") else "unknown")
+                reason = "declared_local_user_access_only"
             elif check["kind"] not in ("package", "service"):
                 result, reason = "unknown", "check_not_implemented"
             else:
@@ -1049,5 +1071,7 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
         report["recorded_inputs"] = recorded_summary
     if content_summary is not None:
         report["file_content"] = content_summary
+    if runtime_summary is not None:
+        report["runtime_checks"] = runtime_summary
     raw = canonical_json(report)
     return ComparisonReport(raw, hashlib.sha256(raw).hexdigest())

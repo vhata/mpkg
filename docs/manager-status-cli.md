@@ -22,6 +22,8 @@ or sudo acceptance.
   --source-is-nonsecret --json
 .venv/bin/python -m mpkg_manager status --probe-endpoints --json
 .venv/bin/python -m mpkg_manager status --check-file-content --json
+.venv/bin/python -m mpkg_manager status --attribute-endpoints --json
+.venv/bin/python -m mpkg_manager status --check-consumer-access --json
 ```
 
 ## Target and selection
@@ -97,12 +99,20 @@ keeps the recorded history manifest and marks input evidence unavailable
 with `intent_not_recorded`. Retained scope remains visible; it is not
 silently replaced by the working declaration's smaller scope.
 
-Endpoint requests require `--probe-endpoints` and an exact recorded target.
+Route-only endpoint requests require `--probe-endpoints` and an exact recorded target.
 The collector derives current and retained routes from actual history;
 working-tree URL edits cannot cause requests. Ordinary status never probes.
 A matching loopback response remains a route result, with listener and
 application identity unverified. Recording and removing resources never
 trigger status or probes automatically.
+
+Separate [runtime and consumer checks](manager-runtime-check-reporting.md)
+require `--attribute-endpoints` or `--check-consumer-access`. Attribution
+performs its own HTTP status probe and socket-ownership inspection; it
+does not imply the route-only option. Declared-user read/list results
+can satisfy only that exact access predicate. Both preserve original
+retained roles and leave application functionality unverified. Edited
+intent keeps all recorded runtime roles unavailable without those reads.
 
 ## Output and bounds
 
@@ -127,7 +137,9 @@ error, never a truncated report.
 
 Installed collection has a fixed 45-second scheduling budget, 1,024
 queries, 64 MiB reserved query output, 256 scheduled resource targets and
-64 endpoint probes. No request changes these limits or provides a runner,
+64 route-only endpoint probes and 64 runtime/access attempts. Native
+queries across these phases share the same query count/output allowance;
+new phases use remaining scheduling time. No request changes these limits or provides a runner,
 program, policy/store path or environment override. Complete target and
 input manifests have their own bounds and refuse overflow before reads.
 Coverage means represented scope, not successful observation.

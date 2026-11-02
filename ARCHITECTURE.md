@@ -36,7 +36,9 @@ checks and product acceptance.
   retained consumers, protected captures and historical accepted check
   predicates. It validates durable history before projecting authority.
   Its [store guide](docs/manager-store.md) defines recording and ownership
-  boundaries. `host_protocol` and `host_helper` provide closed recording
+  boundaries. [Explicit migration](docs/manager-store-migration.md) requires
+  a verified private backup and retains authenticated maintenance receipts;
+  opening a legacy store does not silently upgrade it. `host_protocol` and `host_helper` provide closed recording
   and status requests, verified paths, serialization and sanitized output. The
   [host-helper guide](docs/manager-host-helper.md) describes the staged
   installed launcher and its unverified real-host acceptance; protected
@@ -89,10 +91,13 @@ checks and product acceptance.
   current/accepted desired/consumer roles, with source freshness separate.
   Installed status requires `--check-file-content` and exact recorded
   intent before target reads. Missing evidence never changes a baseline.
-- The trusted [Compose preflight](docs/manager-compose-input-bundles.md),
-  [runtime endpoint attribution](docs/manager-runtime-endpoint-attribution.md)
-  and [consumer access](docs/manager-consumer-access.md) libraries retain
-  separate evidence boundaries. Installed status does not collect them.
+- The trusted [Compose preflight](docs/manager-compose-input-bundles.md)
+  remains a pure library boundary.
+- `runtime_checks` collects [runtime attribution](docs/manager-runtime-endpoint-attribution.md)
+  and [consumer access](docs/manager-consumer-access.md) with original
+  current/retained private scopes. `runtime_reporting` validates them
+  against independent history. Explicit [status options](docs/manager-runtime-check-reporting.md)
+  keep socket ownership, local-user access and application health separate.
 - `mpkg_manager.observe_endpoint` uses a fixed isolated Python worker
   for bounded loopback HTTP status evidence. `endpoint_checks` collects
   required current and retained accepted predicates from actual host
