@@ -29,8 +29,10 @@ The replacement Python libraries provide these foundations:
 These are library interfaces. There is no installed privileged helper,
 application worker or apply command; comparison reports remain
 non-executable, and transformed candidate bytes carry no apply authority.
-Protected captures currently bind a recording decision and capture name;
-declaration reference UUIDs are not yet resolved to stored captures.
+[Authenticated protected bindings](docs/manager-protected-bindings.md)
+connect exact declaration snapshots to captures through a trusted recorder.
+Generic legacy captures retain decision/name comparisons; full nonsecret
+and Compose input closure remains separate work.
 
 This repository currently contains an Arch Linux metapackage helper and
 five `vhata-*` package groups. `mpkg` is a Python executable; its

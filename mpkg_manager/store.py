@@ -13,6 +13,7 @@ import hmac
 import json
 import os
 from pathlib import Path
+import posixpath
 import re
 import sqlite3
 import stat
@@ -25,6 +26,8 @@ from .declarations import (Declaration, DeclarationError, canonical_json,
 SCHEMA_VERSION = 1
 APPLICATION_ID = 0x4D504B47
 MAX_INPUT_BYTES = 16 * 1024 * 1024
+_BOUND_TOKEN_PREFIX = b"MPKGBND\x00\x01"
+_PREPARATION_DOMAIN = b"MPKGPREP\x00\x01"
 _NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
 _SIDEFILES = ("state.sqlite3-journal", "state.sqlite3-wal", "state.sqlite3-shm")
 _TABLES = {
@@ -102,6 +105,32 @@ def _decode(raw):
         return value
     except (ValueError, TypeError, UnicodeError, RecursionError):
         raise StoreError("invalid_store_record") from None
+
+
+def _framed_mac(key, domain, context, raw):
+    encoded = _json(context)
+    result = hmac.new(key, digestmod="sha256")
+    for item in (domain, encoded, raw):
+        result.update(len(item).to_bytes(8, "big"))
+        result.update(item)
+    return result.digest()
+
+
+def _bound_name(input_id, path):
+    return "declared-v1:" + hashlib.sha256(_json([input_id, path])).hexdigest()
+
+
+def _declared_protected(declaration):
+    return [{"input_id": bundle["id"], "base_directory": bundle["base_directory"], **entry}
+            for bundle in declaration.model["inputs"] for entry in bundle["files"]
+            if entry["classification"] == "protected"]
+
+
+def _binding_entries(declaration):
+    result = {}
+    for entry in _declared_protected(declaration):
+        result.setdefault(entry["reference"], []).append(entry)
+    return result
 
 
 def _host_id(value):
@@ -429,25 +458,76 @@ class HostStore:
             last_snapshot = snapshot_id
         if used_snapshots != set(snapshots):
             _fail("store_corrupt")
-        self._verify_protected_records({row[0]: row[2] for row in decisions})
+        self._verify_protected_records({row[0]: (row[2], row[3]) for row in decisions}, snapshots)
 
-    def _verify_protected_records(self, decisions):
+    def _verify_protected_records(self, decisions, snapshots):
         key = self._db.execute("SELECT private_key FROM host").fetchone()[0]
+        links = {}
+        for revision, name, reference in self._db.execute("SELECT * FROM decision_inputs"):
+            if (revision not in decisions or decisions[revision][0] == "relinquish"
+                    or not _NAME.fullmatch(name) or reference in links):
+                _fail("store_corrupt")
+            links[reference] = (revision, name)
         protected = set()
+        entries = {}
         for reference, raw, identity, purpose, token in self._db.execute("SELECT * FROM protected_inputs"):
             _host_id(reference)
             _captures([ProtectedInput("validation", raw, _decode(identity), purpose)])
-            if not hmac.compare_digest(token, hmac.digest(key, identity + b"\0" + raw, "sha256")):
+            if reference not in links:
+                _fail("store_corrupt")
+            revision, name = links[reference]
+            snapshot_id = decisions[revision][1]
+            if len(token) != 32 and snapshot_id not in entries:
+                entries[snapshot_id] = _binding_entries(snapshots[snapshot_id])
+            expected = self._capture_token(key, reference, revision, name, purpose, identity, raw, token,
+                                           snapshot_id=snapshot_id, entries=entries.get(snapshot_id))
+            if not hmac.compare_digest(token, expected):
                 _fail("store_corrupt")
             protected.add(reference)
-        used = set()
-        for revision, name, reference in self._db.execute("SELECT * FROM decision_inputs"):
-            if (revision not in decisions or decisions[revision] == "relinquish"
-                    or not _NAME.fullmatch(name) or reference in used or reference not in protected):
-                _fail("store_corrupt")
-            used.add(reference)
-        if used != protected:
+        if set(links) != protected:
             _fail("store_corrupt")
+
+    def _bound_context(self, reference, revision, name, purpose, identity, *, snapshot_id=None, entries=None):
+        if snapshot_id is None:
+            row = self._db.execute("SELECT snapshot_id FROM decisions WHERE revision=?", (revision,)).fetchone()
+            if row is None:
+                _fail("store_corrupt")
+            snapshot_id = row[0]
+        if entries is None:
+            entries = _binding_entries(self._load_snapshot(snapshot_id))
+        matching = entries.get(reference, [])
+        if len(matching) != 1:
+            _fail("store_corrupt")
+        entry = matching[0]
+        source = _decode(identity)
+        if (name != _bound_name(entry["input_id"], entry["path"])
+                or source["path"] != posixpath.join(entry["base_directory"], entry["path"])):
+            _fail("store_corrupt")
+        return {"host_id": self.host_id, "origin_revision": revision,
+                "snapshot_id": snapshot_id, "name": name, "purpose": purpose,
+                "source_identity": source, **entry}
+
+    def _capture_token(self, key, reference, revision, name, purpose, identity, raw, token,
+                       *, snapshot_id=None, entries=None):
+        if len(token) == 32:
+            return hmac.digest(key, identity + b"\0" + raw, "sha256")
+        if len(token) != len(_BOUND_TOKEN_PREFIX) + 32 or not token.startswith(_BOUND_TOKEN_PREFIX):
+            _fail("store_corrupt")
+        context = self._bound_context(reference, revision, name, purpose, identity,
+                                      snapshot_id=snapshot_id, entries=entries)
+        return _BOUND_TOKEN_PREFIX + _framed_mac(key, _BOUND_TOKEN_PREFIX, context, raw)
+
+    def _bound_capture(self, reference, snapshot_id, target_revision):
+        """Private lookup; callers already hold a verified transaction."""
+        row = self._db.execute("""SELECT p.raw,p.source_identity,p.purpose,p.token,
+            i.revision,i.name,d.snapshot_id FROM protected_inputs p
+            JOIN decision_inputs i ON i.protected_id=p.id
+            JOIN decisions d ON d.revision=i.revision WHERE p.id=?""", (reference,)).fetchone()
+        if (row is None or row[4] > target_revision or row[6] != snapshot_id
+                or len(row[3]) != len(_BOUND_TOKEN_PREFIX) + 32
+                or not row[3].startswith(_BOUND_TOKEN_PREFIX)):
+            return None
+        return row
 
     @property
     def engine_aliases(self):
@@ -585,15 +665,21 @@ class HostStore:
             _fail("invalid_store_record")
         return declaration
 
-    def _decision(self, kind, declaration, revision, captures):
+    def _decision(self, kind, declaration, revision, captures, *, binding_references=None):
         snapshot_id = self._save_snapshot(declaration)
         self._db.execute("INSERT INTO decisions VALUES(?,?,?,?,?)",
                          (revision, revision - 1 if revision > 1 else None, kind,
                           snapshot_id, datetime.now(timezone.utc).isoformat(timespec="microseconds")))
         key = self._db.execute("SELECT private_key FROM host").fetchone()[0]
+        entries = _binding_entries(declaration) if binding_references is not None else None
         for name, raw, identity, purpose in captures:
-            reference = str(uuid.uuid4())
-            token = hmac.digest(key, identity + b"\0" + raw, "sha256")
+            reference = str(uuid.uuid4()) if binding_references is None else binding_references[name]
+            if binding_references is None:
+                token = hmac.digest(key, identity + b"\0" + raw, "sha256")
+            else:
+                context = self._bound_context(reference, revision, name, purpose, identity,
+                                              snapshot_id=snapshot_id, entries=entries)
+                token = _BOUND_TOKEN_PREFIX + _framed_mac(key, _BOUND_TOKEN_PREFIX, context, raw)
             self._db.execute("INSERT INTO protected_inputs VALUES(?,?,?,?,?)",
                              (reference, raw, identity, purpose, token))
             self._db.execute("INSERT INTO decision_inputs VALUES(?,?,?)", (revision, name, reference))
@@ -698,6 +784,13 @@ class HostStore:
         """Explicitly accept selected identities/authority; observations stay unknown."""
         declaration, captures = _declaration(declaration), _captures(protected_inputs)
         self._check_bound_identities(declaration)
+        model, resources = self._adoption_selection(declaration, resource_ids)
+        with self._write(expected_revision):
+            result = self._decision("adopt", declaration, expected_revision + 1, captures)
+            self._save_adoptions(model, resources, resource_ids, result["revision"])
+        return result
+
+    def _adoption_selection(self, declaration, resource_ids):
         if (type(resource_ids) not in (list, tuple) or not resource_ids
                 or any(type(item) is not str for item in resource_ids)
                 or len(set(resource_ids)) != len(resource_ids)):
@@ -706,17 +799,17 @@ class HostStore:
         resources = {item["id"]: item for item in model["resources"]}
         if not set(resource_ids) <= set(resources):
             _fail("resource_missing")
-        with self._write(expected_revision):
-            existing = self._current_resources()
-            result = self._decision("adopt", declaration, expected_revision + 1, captures)
-            for identity in resource_ids:
-                item = self._adoption_record(model, resources[identity], existing)
-                stable_id = item["stable_id"] or str(uuid.uuid4())
-                self._db.execute("INSERT INTO resources VALUES(?,?,?,?,?,?,1)",
-                                 (stable_id, result["revision"], item["logical_id"],
-                                  _json(item["physical_key"]), _json(item["definition"]),
-                                  _json(item["requirements"])))
-        return result
+        return model, resources
+
+    def _save_adoptions(self, model, resources, resource_ids, revision):
+        existing = self._current_resources()
+        for identity in resource_ids:
+            item = self._adoption_record(model, resources[identity], existing)
+            stable_id = item["stable_id"] or str(uuid.uuid4())
+            self._db.execute("INSERT INTO resources VALUES(?,?,?,?,?,?,1)",
+                             (stable_id, revision, item["logical_id"],
+                              _json(item["physical_key"]), _json(item["definition"]),
+                              _json(item["requirements"])))
 
     def relinquish(self, resource_ids, expected_revision):
         """Record external responsibility; do not retire or change live resources."""
@@ -828,12 +921,18 @@ class HostStore:
         except StoreError:
             return "unavailable"
         with self._read():
-            row = self._db.execute("""SELECT p.token,h.private_key FROM protected_inputs p
+            row = self._db.execute("""SELECT p.id,p.source_identity,p.purpose,p.token,h.private_key FROM protected_inputs p
                 JOIN decision_inputs d ON d.protected_id=p.id CROSS JOIN host h
                 WHERE d.revision=? AND d.name=?""", (revision, name)).fetchone()
             if row is None:
                 return "unavailable"
-            return "same" if hmac.compare_digest(row[0], hmac.digest(row[1], identity + b"\0" + raw, "sha256")) else "changed"
+            if len(row[3]) == 32:
+                token = hmac.digest(row[4], identity + b"\0" + raw, "sha256")
+            else:
+                context = self._bound_context(row[0], revision, name, row[2], row[1])
+                context["source_identity"] = _decode(identity)
+                token = _BOUND_TOKEN_PREFIX + _framed_mac(row[4], _BOUND_TOKEN_PREFIX, context, raw)
+            return "same" if hmac.compare_digest(row[3], token) else "changed"
 
     def close(self):
         if self._db is not None:

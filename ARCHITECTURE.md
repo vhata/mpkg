@@ -107,12 +107,13 @@ requirement. Synthetic integration checks establish how the library
 interfaces compose, not real Arch/Docker behavior, production privilege
 isolation or the first-release acceptance scenarios.
 
-Protected-input storage currently relates captured bytes to a decision
-revision and capture name. The declaration's protected `reference` UUID
-is not resolved to a generated stored capture identity. Tests exercise
-the decision/name API explicitly and retain unavailable reference
-resolution and input-freshness limits; recording bytes does not prove
-that a declaration's protected inputs have been bound or replayed.
+[Protected declaration bindings](docs/manager-protected-bindings.md) use
+store-issued preparations and durable authentication of capture origins,
+exact snapshots and declared input scope. The trusted recorder compares
+bound inputs under current policy and preserves original history. Generic
+legacy captures still use decision/name comparisons and do not authenticate
+declaration UUIDs. Neither path establishes complete nonsecret/Compose
+input closure, replay authorization or application readiness.
 
 ## Worktree isolation
 

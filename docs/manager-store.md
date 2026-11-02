@@ -131,6 +131,14 @@ reads. This library does not read arbitrary live paths. Inputs above
 are refused. Protected bytes, generated opaque references and private
 HMAC tokens are written in the same transaction as their decision.
 
+The separate [protected recorder](manager-protected-bindings.md) adds
+explicit declaration bindings. Its tagged tokens authenticate the exact
+origin decision, snapshot and input scope as well as identity/content.
+SQL tables remain unchanged; new readers accept legacy 32-byte tokens,
+while older readers reject new bound-token records. Generic recording
+continues to produce legacy captures and does not authenticate arbitrary
+declaration UUIDs.
+
 `compare_protected(revision, name, raw, source_identity)` returns only
 `same`, `changed` or `unavailable`. The comparison binds the full bytes
 and source identity. `current()` and `history()` omit protected bytes,
