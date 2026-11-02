@@ -106,7 +106,9 @@ one, or importing its JSON, does not authenticate a host or grant
 management authority. Callers must obtain it through their trusted host
 boundary and verify exact target and accepted-role coverage before use.
 The existing protected-only comparison API and planner input remain
-unchanged; this new evidence has no planner or public CLI integration yet.
+unchanged. The opt-in [recorded-input reporting API](manager-recorded-input-reporting.md)
+compares this evidence against an independent trusted history manifest.
+Public CLI integration remains separate work.
 
 Every result retains `full_input_closure = "unverified"`. Matching declared
 files cannot prove all effective Compose environment, recursive references,

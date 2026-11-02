@@ -10,6 +10,8 @@ from .declarations import (Declaration, DeclarationError, canonical_json, load_d
                            physical_key, validate_model)
 from .observations import ComposeContext
 from .input_evidence import input_evidence
+from .recorded_inputs import (RecordedInputEvidence, RecordedInputManifest, RecordedInputError,
+                              SCOPE as RECORDED_INPUT_SCOPE)
 from .endpoint_checks import (EndpointCheckBatch, EndpointCollectionError, MAX_CHECKS,
                               LIMITATIONS as ENDPOINT_LIMITATIONS, _scopes as _endpoint_scopes)
 
@@ -84,7 +86,8 @@ def _management(value, aliases):
     if value is None:
         return None
     result = _copy(value)
-    _table(result, ("host_id", "revision", "snapshot_id", "snapshot", "resources"))
+    _table(result, ("host_id", "revision", "snapshot_id", "snapshot", "resources")
+           + (("input_manifest",) if "input_manifest" in result else ()))
     _uuid(result["host_id"])
     _require(type(result["revision"]) is int and result["revision"] >= 0)
     snapshot = result["snapshot"]
@@ -134,7 +137,33 @@ def _management(value, aliases):
         if "accepted_checks" in resource:
             _accepted_check_projection(resource, result)
     _require(snapshot is not None or not result["resources"])
+    if result.get("input_manifest") is not None:
+        _input_manifest_projection(result)
     return result
+
+
+def _input_manifest_projection(current):
+    manifest = RecordedInputManifest(canonical_json(current["input_manifest"])).as_dict()
+    _require(manifest["host_id"] == current["host_id"] and manifest["revision"] == current["revision"]
+             and manifest["snapshot"] == current["snapshot"])
+    accepted = {scope["stable_id"]: scope for scope in manifest["scopes"] if scope["role"] == "accepted"}
+    _require(set(accepted) == {resource["stable_id"] for resource in current["resources"]})
+    for resource in current["resources"]:
+        scope = accepted[resource["stable_id"]]
+        binding = resource.get("accepted_checks")
+        _require(binding is not None and scope["resource_id"] == resource["logical_id"]
+                 and scope["management"] == resource["management"]
+                 and scope["adoption_revision"] == binding["adoption_revision"]
+                 and scope["snapshot"]["id"] == binding["snapshot_id"])
+        # Direct input obligations are also visible outside the manifest. A
+        # malformed projection cannot call them empty accepted coverage.
+        definition = resource["definition"]
+        required = {definition["input"]["bundle"]} if "input" in definition else set()
+        if "content_input" in definition["desired"]:
+            required.add(definition["desired"]["content_input"])
+        required.update(item["value"] for item in resource["requirements"] if item["property"] == "content_input")
+        _require(required <= {entry["input_id"] for entry in scope["entries"]})
+    current["input_manifest"] = manifest
 
 
 def _accepted_check_projection(resource, current):
@@ -232,7 +261,7 @@ def _constraints_valid(model, resource, constraints):
 
 def build_report(declaration, current, observations, *, host_id, engine_aliases=None,
                  selected_components=None, now=None, max_age_seconds=60, input_observations=None,
-                 endpoint_observations=None):
+                 endpoint_observations=None, recorded_input_observations=None):
     """Compare trusted helper projections without reading, recording or applying.
 
     Projection dictionaries are not authentication. A caller must obtain them
@@ -258,7 +287,7 @@ def build_report(declaration, current, observations, *, host_id, engine_aliases=
         raise PlanningError("invalid_declaration_snapshot") from None
     try:
         current = _management(current, aliases)
-    except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
+    except (ValueError, TypeError, AttributeError, KeyError, RecursionError, RecordedInputError):
         raise PlanningError("invalid_management_projection") from None
     try:
         observations = _observation(observations)
@@ -268,6 +297,15 @@ def build_report(declaration, current, observations, *, host_id, engine_aliases=
         inputs = None if input_observations is None else input_evidence(input_observations).as_dict()
     except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
         raise PlanningError("invalid_input_observation_projection") from None
+    if input_observations is not None and recorded_input_observations is not None:
+        raise PlanningError("conflicting_input_observation_modes")
+    try:
+        recorded_inputs = None
+        if recorded_input_observations is not None:
+            _require(type(recorded_input_observations) is RecordedInputEvidence)
+            recorded_inputs = RecordedInputEvidence(recorded_input_observations.canonical_bytes).as_dict()
+    except (ValueError, TypeError, AttributeError, KeyError, RecursionError, RecordedInputError):
+        raise PlanningError("invalid_recorded_input_observation") from None
     try:
         endpoints = endpoint_observations
         if endpoints is not None:
@@ -278,7 +316,7 @@ def build_report(declaration, current, observations, *, host_id, engine_aliases=
         raise PlanningError("invalid_endpoint_observation") from None
     try:
         return _build(validated, model, current, observations, host_id, aliases,
-                      selected_components, now, max_age_seconds, inputs, endpoints)
+                      selected_components, now, max_age_seconds, inputs, endpoints, recorded_inputs)
     except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
         raise PlanningError("invalid_report_inputs") from None
 
@@ -319,6 +357,95 @@ def _input_summary(model, current, evidence, recorded, host_id, now, max_age):
             "nonsecret_entries_unchecked": sum(item["classification"] == "nonsecret"
                 for bundle in model["inputs"] for item in bundle["files"]),
             "full_input_closure": "unverified"}
+
+
+def _declared_input_slots(model):
+    return [{"input_id": bundle["id"], "file_index": index, "classification": item["classification"]}
+            for bundle in model["inputs"] for index, item in enumerate(bundle["files"])]
+
+
+def _input_scope_key(scope):
+    return scope["role"], scope["stable_id"]
+
+
+def _input_slots_key(entries):
+    return {(entry["input_id"], entry["file_index"], entry["classification"]) for entry in entries}
+
+
+def _recorded_input_summary(model, current, evidence, recorded, host_id, now, max_age):
+    manifest = current.get("input_manifest") if current else None
+    expected = manifest["scopes"] if manifest else [{
+        "role": "current", "stable_id": None, "resource_id": None, "adoption_revision": None,
+        "recorded_revision": None, "management": None, "snapshot": current["snapshot"] if current else None,
+        "entries": _declared_input_slots(model)}]
+    reason = "collected"
+    if current is None:
+        reason = "history_unavailable"
+    elif not recorded:
+        reason = "intent_not_recorded"
+    elif manifest is None:
+        reason = "manifest_unavailable"
+    elif _input_slots_key(next(scope for scope in expected if scope["role"] == "current")["entries"]) \
+            != _input_slots_key(_declared_input_slots(model)):
+        reason = "manifest_context_mismatch"
+    elif evidence is None:
+        reason = "not_observed"
+    elif evidence["host_id"] != host_id:
+        reason = "host_mismatch"
+    elif evidence["revision"] != current["revision"] or evidence["snapshot"] != current["snapshot"]:
+        reason = "target_mismatch"
+    elif evidence["state"] != "complete":
+        reason = evidence["reason"]
+    else:
+        age = (now - _time(evidence["observed_at"])).total_seconds()
+        if age < 0:
+            reason = "from_future"
+        elif age > max_age:
+            reason = "stale"
+        else:
+            observed = {_input_scope_key(scope): scope for scope in evidence["scopes"]}
+            if set(observed) != {_input_scope_key(scope) for scope in expected}:
+                reason = "coverage_incomplete"
+            else:
+                for scope in expected:
+                    candidate = observed[_input_scope_key(scope)]
+                    if {key: value for key, value in scope.items() if key != "entries"} != {
+                            key: value for key, value in candidate.items() if key != "entries"}:
+                        reason = "scope_mismatch"
+                        break
+                    if _input_slots_key(scope["entries"]) != _input_slots_key(candidate["entries"]):
+                        reason = "coverage_incomplete"
+                        break
+    found = {_input_scope_key(scope): {(row["input_id"], row["file_index"]): row["state"]
+             for row in scope["entries"]} for scope in evidence["scopes"]} if reason == "collected" else {}
+    scopes = []
+    for scope in expected:
+        states = found.get(_input_scope_key(scope), {})
+        scopes.append({key: scope[key] for key in (
+            "role", "stable_id", "resource_id", "adoption_revision", "recorded_revision", "management")} | {
+                "snapshot_id": scope["snapshot"]["id"] if scope["snapshot"] else None,
+                "coverage": "complete" if reason == "collected" else "unavailable",
+                "entries": [entry | {"state": states.get((entry["input_id"], entry["file_index"]), "unavailable")}
+                            for entry in scope["entries"]]})
+    return {"state": "available" if reason == "collected" else "unavailable", "reason": reason,
+            "source": evidence["source"] if evidence else None,
+            "observed_at": evidence["observed_at"] if evidence else None,
+            "scope": RECORDED_INPUT_SCOPE,
+            "coverage": "complete" if reason == "collected" else "unavailable",
+            "historical_coverage": "complete" if reason == "collected" else "unavailable",
+            "required_slots": sum(len(scope["entries"]) for scope in expected), "scopes": scopes,
+            "full_input_closure": "unverified"}
+
+
+def _protected_recorded_subset(model, current, summary, recorded, host_id, now, max_age):
+    result = _input_summary(model, current, None, recorded, host_id, now, max_age)
+    scopes = [scope for scope in summary["scopes"] if scope["role"] == "current"]
+    found = {(row["input_id"], row["file_index"]): row["state"]
+             for scope in scopes for row in scope["entries"] if row["classification"] == "protected"}
+    result.update({key: summary[key] for key in ("state", "reason", "source", "observed_at", "coverage")})
+    result["entries"] = [entry | {"state": found.get((entry["input_id"], entry["file_index"]), "unavailable")}
+                         for entry in result["entries"]]
+    return result
 
 
 
@@ -414,7 +541,8 @@ def _endpoint_summary(model, current, evidence, recorded, host_id, aliases, now,
     return summary, by_role
 
 
-def _build(declaration, model, current, observations, host_id, aliases, selection, now, max_age, inputs, endpoints):
+def _build(declaration, model, current, observations, host_id, aliases, selection, now, max_age,
+           inputs, endpoints, recorded_inputs):
     resources = {item["id"]: item for item in model["resources"]}
     components = {item["id"]: item for item in model["components"]}
     if selection is None:
@@ -445,6 +573,16 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
     if not recorded:
         blocks.add("intent_not_recorded")
     input_summary = _input_summary(model, current, inputs, recorded, host_id, now, max_age)
+    recorded_summary = None
+    if recorded_inputs is not None or (inputs is None and current and "input_manifest" in current):
+        recorded_summary = _recorded_input_summary(model, current, recorded_inputs, recorded, host_id, now, max_age)
+        input_summary = _protected_recorded_subset(model, current, recorded_summary, recorded, host_id, now, max_age)
+        if recorded_summary["state"] != "available":
+            blocks.add("recorded_input_unavailable")
+        for scope in recorded_summary["scopes"]:
+            for entry in scope["entries"]:
+                if entry["state"] != "same":
+                    blocks.add("recorded_input_" + entry["state"])
     endpoint_summary, endpoint_results = _endpoint_summary(
         model, current, endpoints, recorded, host_id, aliases, now, max_age)
     for entry in input_summary["entries"]:
@@ -723,5 +861,7 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
                               "no_attempt_history_or_input_replay_verification",
                               "no_native_resolution_or_executable_effects",
                               "projections_require_trusted_host_boundary"]}
+    if recorded_summary is not None:
+        report["recorded_inputs"] = recorded_summary
     raw = canonical_json(report)
     return ComparisonReport(raw, hashlib.sha256(raw).hexdigest())
