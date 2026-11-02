@@ -21,6 +21,9 @@ The replacement Python libraries provide these foundations:
 - Read-only [native](docs/manager-observations.md) and
   [Compose](docs/manager-compose-observations.md) observations with
   explicit identity, scope, time and unavailable evidence.
+- Positive [package request satisfaction](docs/manager-package-satisfaction.md)
+  through native dependency testing. Unmet requests and provider
+  provenance remain unknown.
 - [File metadata](docs/manager-file-observation.md) observations for
   bounded path targets, without reading contents or checking access.
 - [Endpoint transport](docs/manager-endpoint-observations.md) and
@@ -28,7 +31,9 @@ The replacement Python libraries provide these foundations:
   bounded loopback requests and retained original predicates. Route
   agreement leaves listener and application identity unverified.
 - [Immutable comparisons](docs/manager-planning.md) of desired state,
-  retained authority, consumer requirements and current evidence.
+  retained authority, consumer requirements and current evidence,
+  including [recorded endpoint results](docs/manager-endpoint-reporting.md)
+  kept separate from functional verification.
 - A pure [Sonarr Port transformation](docs/manager-sonarr-xml.md) of
   protected XML bytes that preserves unrelated content.
 

@@ -45,6 +45,12 @@ checks and product acceptance.
   scope and limitations. `observations` supplies immutable scalar facts;
   Compose keeps nested inventory separate. `query_process` supplies
   bounded process capture shared by these adapters.
+- `mpkg_manager.observe_packages` complements direct inventory with
+  [positive native request satisfaction](docs/manager-package-satisfaction.md).
+  It accepts no version expression or alternate package root, and
+  cannot establish absence, provider identity or provenance. Planner
+  source/property guards keep that evidence distinct from installed
+  version and installation-reason facts.
 - `mpkg_manager.observe_files` collects bounded file, directory and
   symlink metadata using Linux descriptors without reading contents.
   Its [metadata guide](docs/manager-file-observation.md) defines path
@@ -60,6 +66,9 @@ checks and product acceptance.
   projections and current facts without reads or effects. The
   [comparison guide](docs/manager-planning.md) owns source/identity
   binding, retained constraints and separate accepted/current checks.
+  [Endpoint report binding](docs/manager-endpoint-reporting.md) requires
+  typed complete role coverage, exact recorded context and freshness;
+  every route result remains functionally unverified.
   Reports are always non-executable; attempts, native preparation and
   application are not supplied.
 - `mpkg_manager.sonarr_xml` transforms only the existing Port value in
@@ -90,7 +99,7 @@ checks and product acceptance.
   application authority. Temporary loaded policies and actual XML reads
   exercise capture-to-store freshness and stale candidate refusal.
 - `tests/test_manager_observation_pipeline.py` combines authenticated
-  captures, real metadata descriptors, synthetic service queries and an
+  captures, real metadata descriptors, synthetic service/package queries and an
   owned HTTP listener through the fixed endpoint worker. It checks that
   changed inputs, property agreement and original accepted predicates
   stay distinct while durable history remains unchanged. This explicit
