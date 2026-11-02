@@ -68,6 +68,11 @@ measured against the first-release contract and acceptance scenarios.
 
 ### P2 Normal
 
+- [NATIVE] `retain-accepted-check-definitions` — **Preserve accepted verification predicates in management projections.** Current declarations must not weaken an earlier accepted check merely by reusing its ID.
+  - Source: [host store projection](docs/manager-store.md), [status and planning](docs/manager-planning.md), integration discovery on 2026-11-01.
+  - Return each adopted resource's original normalized required-check definitions with its stable identity and adoption-decision binding. Retain them through intent recording, declaration removal and logical renaming; distinguish an explicit new adoption decision.
+  - Compare accepted and current predicates independently. Cover same-ID weakening, rebinding, removal, unchanged predicates, retained consumers and inaccessible historical evidence. Keep protected inputs and tokens out of ordinary projections.
+
 ### P3 Low
 
 ### Unprioritized
