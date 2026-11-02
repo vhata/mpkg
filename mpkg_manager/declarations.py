@@ -293,12 +293,13 @@ def _input(value, path):
 
 def _endpoint_url(value, path):
     value = _string(value, path)
+    if any(char.isspace() or ord(char) < 0x20 or ord(char) == 0x7f for char in value):
+        _fail("unsupported_endpoint_url", path)
     try:
         parsed = urlsplit(value)
         valid = (parsed.scheme in ("http", "https") and parsed.hostname in ("localhost", "127.0.0.1", "::1")
                  and parsed.username is None and parsed.password is None
-                 and not parsed.fragment and not parsed.query and parsed.port is not None
-                 and not any(char.isspace() for char in value))
+                 and not parsed.fragment and not parsed.query and parsed.port is not None)
     except ValueError:
         valid = False
     if not valid:

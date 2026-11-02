@@ -187,8 +187,12 @@ rejected. These are check declarations; `validate` executes none of them.
 | `access` | `as_user` name, `operation` (`read`, `list`), and a declared `consumer` | `file`, `directory`, `symlink`, `volume` |
 
 Endpoint URLs use HTTP or HTTPS, an explicit port, and `localhost`,
-`127.0.0.1` or `::1`. User information, query strings, fragments and
-whitespace are unsupported. Authenticated application checks, response
+`127.0.0.1` or `::1`. User information, query strings, fragments, whitespace
+and literal ASCII controls (C0 and DEL) are unsupported. The
+original URL is checked before parsing; percent-encoded path data stays
+encoded and unchanged. Stored declarations containing literal controls
+also fail when their contents are revalidated; no rewrite is performed.
+Authenticated application checks, response
 content checks and write-access verification require a further bounded
 schema and implementation; they cannot be represented as arbitrary
 commands, headers or secret arguments.
