@@ -157,6 +157,7 @@ class HostBoundary:
                         result = collect_status(declaration, store, policy,
                             selected_components=request.selected_components,
                             probe_endpoints=request.probe_endpoints, complete_inputs=True,
+                            check_file_content=request.check_file_content,
                             expected_revision=current["revision"], budget_seconds=45).as_dict()
                     except StatusCollectionError as error:
                         code = {"status_revision_conflict": "revision_conflict",

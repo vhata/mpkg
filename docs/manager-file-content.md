@@ -5,9 +5,10 @@ bytes authenticated for its recorded `content_input`. It reads only
 explicit targets derived from actual host history, returns sanitized
 immutable evidence, and never changes files or recording history.
 
-This is a trusted library slice. The existing metadata observer, planner,
-store projection, recorder methods and CLI remain unchanged. Complete
-file accountability, package baselines and keep/restore operations remain
+The [status integration](manager-file-content-reporting.md) uses this
+trusted library through the explicit `--check-file-content` option. The
+metadata observer continues to report metadata separately. Complete file
+accountability, package baselines and keep/restore operations remain
 outside this API.
 
 ## Independent history and collection
@@ -32,7 +33,7 @@ verified loaded host policy. Both functions require the exact current
 revision and source/model snapshot. They accept no target paths, input
 references, resource lists, filesystem roots or UID overrides. Existing
 policy/store fixture seams remain trusted Python embedding facilities;
-no installed privilege boundary or public arbitrary-file reader exists.
+the installed status option supplies no public arbitrary-file reader.
 
 `file_content_manifest` returns a `FileContentManifest` containing the
 expected obligations, independently of live target reads and observed
@@ -43,11 +44,11 @@ values have canonical bytes and return independent copies through
 `as_dict()`. Representations omit their payloads. Shape validation is
 not host authentication, and imported JSON cannot authorize an effect.
 
-A future pure report consumer must compare evidence with an independently
-obtained trusted manifest, including complete scope/obligation coverage,
-exact host/revision/snapshot and freshness. This slice supplies those
-separate inputs without extending `build_report` or claiming that an
-evidence object's own coverage declaration proves completeness.
+The [pure report consumer](manager-file-content-reporting.md) compares
+evidence with an independently obtained trusted manifest, including
+complete scope/obligation coverage, exact host/revision/snapshot and
+freshness. An evidence object's own coverage declaration never proves
+completeness.
 
 ## Baselines and roles
 

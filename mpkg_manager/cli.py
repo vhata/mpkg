@@ -93,6 +93,8 @@ def _parser():
                                  help="select a component; retained obligations remain visible")
             command.add_argument("--probe-endpoints", action="store_true",
                                  help="explicitly probe recorded loopback routes; not a health claim")
+            command.add_argument("--check-file-content", action="store_true",
+                                 help="compare recorded file targets with captured input bytes")
     return parser
 
 
@@ -110,6 +112,8 @@ def _request(options):
         arguments.update(source=source, source_is_nonsecret=options.source_is_nonsecret,
                          expected_revision=options.expected_revision,
                          selected_components=options.component, probe_endpoints=options.probe_endpoints)
+        if options.check_file_content:
+            arguments["check_file_content"] = True
         return json.dumps({"version": PROTOCOL_VERSION, "verb": "observe", "arguments": arguments},
                           ensure_ascii=False, separators=(",", ":")).encode("utf-8")
     if command in {"record", "adopt", "relinquish"}:
@@ -164,6 +168,15 @@ def _human_result(command, result):
             for entry in scope["entries"]:
                 owner = scope["stable_id"] if scope["role"] == "accepted" else "current"
                 print(f"Input {entry['input_id']}[{entry['file_index']}] ({owner}): {entry['state']}.")
+        if "file_content" in report:
+            print(f"Target file content: {report['file_content']['reason']}.")
+            for scope in report["file_content"]["scopes"]:
+                owner = f"accepted {scope['stable_id']}" if scope["role"] == "accepted" else "current"
+                for entry in scope["entries"]:
+                    obligation = (f"consumer {entry['consumer_id']}" if entry["requirement"] == "consumer"
+                                  else "desired")
+                    print(f"Content {entry['resource_id']} ({owner}, {obligation}, input {entry['input_id']}): "
+                          f"{entry['state']} ({entry['reason']}).")
         print("Blockers: " + ", ".join(report["blockers"]) + ".")
         print("Status is time-bounded evidence. Application and attempt history remain unavailable.")
     else:

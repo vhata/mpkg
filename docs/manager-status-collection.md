@@ -110,6 +110,15 @@ Its collection summary uses `recorded_input_reason` in place of
 `protected_input_reason`. Bounds and unsupported closure are defined by
 the [recorded-input guide](manager-recorded-input-evidence.md).
 
+`check_file_content=True` independently opts into
+[target-content reporting](manager-file-content-reporting.md). It loads
+`file_content_manifest` before host observation, invokes
+`collect_file_content` only for the exact recorded target and checks the
+manifest again after all collection, including failures and empty scopes.
+Its separate `file_content_reason` records scheduling or collection gaps.
+The default adds no content section and reads no target bytes. Target
+reads retain policy-root and byte limits with no filesystem deadline.
+
 An optional `expected_revision` pins the initial live context before any
 host queries. Installed status supplies the revision used to choose its
 target, so a race between target selection and collection is refused.

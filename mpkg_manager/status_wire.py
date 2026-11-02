@@ -17,7 +17,7 @@ _PROPERTIES = frozenset({"present", "source", "version", "running", "profiles", 
     "content", "content_input", "target", "port"})
 _SOURCES = frozenset({"pacman_installed_inventory", "pacman_dependency_satisfaction",
     "systemd_unit_properties", "docker_selected_project_inventory", "filesystem_metadata",
-    "local_account_properties", "unsupported_adapter", "provided_observation"})
+    "local_account_properties", "unsupported_adapter", "provided_observation", "recorded_file_content_comparison"})
 _INPUT_REASONS = frozenset({"collected", "history_unavailable", "intent_not_recorded", "not_observed",
     "host_mismatch", "target_mismatch", "from_future", "stale", "coverage_incomplete", "policy_unavailable",
     "target_changed", "store_unavailable", "protected_input_limit", "input_limit", "manifest_unavailable",
@@ -27,6 +27,7 @@ _ENDPOINT_REASONS = _INPUT_REASONS | frozenset({"accepted_check_definition_unava
     "collection_probe_limit", "collection_probe_timeout", "physical_identity_unbound",
     "invalid_endpoint_context", "endpoint_runner_failed", "invalid_endpoint_result"}) | (PROBE_CODES - {"ok"})
 _BLOCKERS = frozenset({"application_not_implemented", "attempt_history_unavailable",
+    "file_content_unavailable", "file_content_changed",
     "history_unavailable", "history_host_mismatch", "intent_not_recorded", "recorded_input_unavailable",
     "recorded_input_changed", "protected_input_changed", "protected_input_unavailable",
     "observations_unavailable", "observations_host_mismatch", "observations_from_future", "observations_stale",
@@ -48,7 +49,7 @@ _COLLECTION_REASONS = frozenset({"status_logical_identity_conflict", "status_res
     "status_query_byte_limit", "status_query_failed", "status_query_result_invalid", "status_query_output_limit",
     "status_query_timeout", "status_resource_limit", "status_adapter_unavailable", "status_no_recorded_snapshot",
     "status_input_observation_unavailable", "status_endpoint_collection_not_requested", "status_target_not_recorded",
-    "status_endpoint_collection_unavailable"})
+    "status_endpoint_collection_unavailable", "status_file_content_unavailable"})
 _ENDPOINT_LIMITATIONS = ["listener_attribution_unavailable", "application_identity_unverified"]
 _REPORT_LIMITATIONS = ["time_bounded_observation_not_atomic_host_snapshot",
     "no_attempt_history_or_input_replay_verification", "no_native_resolution_or_executable_effects",
@@ -130,6 +131,38 @@ _INPUT_SCOPE = {"role": _ROLE, "stable_id": _nullable(_uuid), "resource_id": _nu
     "adoption_revision": _nullable(_integer), "recorded_revision": _nullable(_integer),
     "management": _nullable(_MANAGEMENT), "snapshot_id": _nullable(_hash), "coverage": _COVERAGE,
     "entries": _list(_INPUT_ENTRY | {"classification": frozenset({"protected", "nonsecret"})})}
+_CONTENT_REASONS = _INPUT_REASONS | frozenset({"content_limit"})
+_CONTENT_ENTRY_REASONS = frozenset({"matching_bytes", "different_bytes", "not_observed", "baseline_unavailable",
+    "target_unavailable", "target_changed", "target_unsupported", "target_outside_policy", "batch_unavailable"})
+
+
+def _content_entry(value):
+    _validate(value, _INPUT_ENTRY | {"file_index": 0, "resource_id": _identifier,
+        "requirement": frozenset({"desired", "consumer"}), "consumer_id": _nullable(_identifier),
+        "classification": frozenset({"protected", "nonsecret"}), "reason": _CONTENT_ENTRY_REASONS})
+    _require((value["requirement"] == "desired") == (value["consumer_id"] is None))
+    _require((value["state"] == "same") == (value["reason"] == "matching_bytes"))
+    _require((value["state"] == "changed") == (value["reason"] == "different_bytes"))
+
+
+def _content_scope(value):
+    _validate(value, _INPUT_SCOPE | {"entries": _list(_content_entry)})
+    _require(value["recorded_revision"] is not None and value["snapshot_id"] is not None)
+    if value["role"] == "current":
+        _require(all(value[name] is None for name in ("stable_id", "resource_id", "adoption_revision", "management")))
+    else:
+        _require(all(value[name] is not None for name in ("stable_id", "resource_id", "adoption_revision", "management")))
+        _require(value["adoption_revision"] == value["recorded_revision"])
+    keys = [(row["resource_id"], row["requirement"], row["consumer_id"]) for row in value["entries"]]
+    _require(len(keys) == len(set(keys)))
+
+
+_CONTENT = {"state": frozenset({"available", "unavailable"}), "reason": _CONTENT_REASONS,
+    "source": _nullable(frozenset({"recorded_file_content_comparison"})), "observed_at": _nullable(_time),
+    "scope": "current_and_retained_content_input_targets", "coverage": _COVERAGE,
+    "historical_coverage": _COVERAGE, "required_obligations": _nullable(_integer),
+    "scopes": _list(_content_scope, 256),
+    "source_input_freshness": "not_observed", "application": "unverified"}
 _ROUTE = {"route_result": frozenset({"match", "mismatch", "unavailable"}), "route_reason": _ENDPOINT_REASONS,
     "functional_result": "unverified", "limitations": _ENDPOINT_LIMITATIONS}
 
@@ -196,7 +229,11 @@ def validate_status(value, request):
     report or its suitability for host effects. Only the fixed helper sends
     production responses; no imported response is an authorization token.
     """
-    _validate(value, {"report": _REPORT, "collection": _COLLECTION})
+    report_schema, collection_schema = _REPORT, _COLLECTION
+    if request.check_file_content:
+        report_schema = report_schema | {"file_content": _CONTENT}
+        collection_schema = collection_schema | {"file_content_reason": _nullable(_COLLECTION_REASONS)}
+    _validate(value, {"report": report_schema, "collection": collection_schema})
     report, collection = value["report"], value["collection"]
     _require(report["host_id"] == collection["host_id"]
              and report["management"]["revision"] == collection["revision"]
@@ -219,3 +256,31 @@ def validate_status(value, request):
     if not report["target"]["recorded"]:
         _require("intent_not_recorded" in report["blockers"]
                  and report["recorded_inputs"]["state"] == "unavailable")
+    content_properties = [item for resource in report["resources"] for item in resource["properties"]
+                          if item["evidence_source"] == "recorded_file_content_comparison"]
+    if not request.check_file_content:
+        _require(not content_properties)
+    else:
+        content = report["file_content"]
+        entries = [entry for scope in content["scopes"] for entry in scope["entries"]]
+        _require(len(entries) <= 4096)
+        _require(content["required_obligations"] is None or content["required_obligations"] == len(entries))
+        keys = [(scope["role"], scope["stable_id"]) for scope in content["scopes"]]
+        _require(len(keys) == len(set(keys)))
+        _require((content["required_obligations"] is None) == (not keys))
+        _require(not keys or ("current", None) in keys)
+        for scope in content["scopes"]:
+            _require(scope["recorded_revision"] <= collection["revision"])
+            if scope["role"] == "current":
+                _require(scope["snapshot_id"] == collection["snapshot_id"])
+        available = content["state"] == "available"
+        _require(available == (content["reason"] == "collected"))
+        _require(all((content[name] == "complete") == available for name in ("coverage", "historical_coverage")))
+        _require(all((scope["coverage"] == "complete") == available for scope in content["scopes"]))
+        if available:
+            _require(content["source"] is not None and content["observed_at"] is not None and bool(keys))
+            _require(report["target"]["recorded"] and collection["file_content_reason"] is None)
+        else:
+            _require(all(entry["state"] == "unavailable" for entry in entries))
+            _require(all(item["comparison"] == "unknown" for item in content_properties))
+        _require(all(item["property"] == "content_input" for item in content_properties))

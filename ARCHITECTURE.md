@@ -82,6 +82,17 @@ checks and product acceptance.
   [report binding](docs/manager-recorded-input-reporting.md) checks them
   against independent `HostStore.current_with_inputs()` history manifests.
   This is declared-file coverage, not complete effective Compose closure.
+- `mpkg_manager.file_content` compares authenticated recorded bytes with
+  explicit targets under policy-approved roots. Its
+  [collector](docs/manager-file-content.md) and
+  [report binding](docs/manager-file-content-reporting.md) preserve complete
+  current/accepted desired/consumer roles, with source freshness separate.
+  Installed status requires `--check-file-content` and exact recorded
+  intent before target reads. Missing evidence never changes a baseline.
+- The trusted [Compose preflight](docs/manager-compose-input-bundles.md),
+  [runtime endpoint attribution](docs/manager-runtime-endpoint-attribution.md)
+  and [consumer access](docs/manager-consumer-access.md) libraries retain
+  separate evidence boundaries. Installed status does not collect them.
 - `mpkg_manager.observe_endpoint` uses a fixed isolated Python worker
   for bounded loopback HTTP status evidence. `endpoint_checks` collects
   required current and retained accepted predicates from actual host
@@ -102,7 +113,8 @@ checks and product acceptance.
   with live policy/history checks, bounded query scheduling and explicit
   gaps. The [collection guide](docs/manager-status-collection.md) defines
   retained scope, legacy and complete input modes, exact recorded endpoint
-  targets and the lack of a hard filesystem/history latency deadline.
+  targets, optional exact recorded file-content comparisons and the lack
+  of a hard filesystem/history latency deadline.
   The installed helper opts into complete input mode and pins the chosen
   revision before queries; no observation records or repairs intent.
 - `mpkg_manager.sonarr_xml` transforms only the existing Port value in

@@ -402,7 +402,8 @@ desired={present=true}
             self.result("--expected-revision", "1")
         kwargs = collector.call_args.kwargs
         self.assertEqual(kwargs, {"selected_components": None, "probe_endpoints": False,
-                                  "complete_inputs": True, "expected_revision": 1, "budget_seconds": 45})
+                                  "complete_inputs": True, "expected_revision": 1, "budget_seconds": 45,
+                                  "check_file_content": False})
         self.assertTrue(collector.call_args.args[1].readonly)
 
     def test_helper_rejects_malformed_internal_projection_without_leaking_it(self):
