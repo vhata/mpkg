@@ -18,8 +18,10 @@ result = collect_status(
 public_status = result.as_dict()
 ```
 
-This internal library adds no CLI, installed helper, recording operation,
-store recovery, migration, application protocol or authorization. A
+The [installed status command](manager-status-cli.md) invokes this library
+through trusted read-only handles. The library itself supplies no
+recording operation, store recovery, migration, application protocol or
+authorization. A
 writable store handle is refused. The caller opens the existing store
 and policy through their established trusted boundaries; parsed policy
 objects and imported store/report JSON are not accepted substitutes.
@@ -96,6 +98,24 @@ separate from property agreement. This protected subset does not inspect
 nonsecret or historical input closure. Input failures do not erase useful
 property evidence, and matching properties cannot clear input blockers.
 
+`complete_inputs=True` instead loads `HostStore.current_with_inputs()`
+and uses `ProtectedRecorder.observe_recorded_inputs` with the planner's
+independent manifest and `recorded_input_observations` argument. The
+legacy default remains unchanged; neither mode supplies both batches.
+The complete mode includes current and retained declared-file obligations
+across classifications, dependencies and consumers. It collects only for
+an exact recorded target; edited working declarations keep their history
+manifest but unavailable input results and cause no input-file reads.
+Its collection summary uses `recorded_input_reason` in place of
+`protected_input_reason`. Bounds and unsupported closure are defined by
+the [recorded-input guide](manager-recorded-input-evidence.md).
+
+An optional `expected_revision` pins the initial live context before any
+host queries. Installed status supplies the revision used to choose its
+target, so a race between target selection and collection is refused.
+Complete manifests are loaded and compared again at the final check;
+unavailable or changed coverage cannot accompany a successful report.
+
 Endpoint probing is opt-in through `probe_endpoints=True`. Even with that
 flag, the working declaration must exactly equal the current recorded
 snapshot, including source comments, before any probe is scheduled. A
@@ -137,7 +157,9 @@ propagates. The subprocess adapters retain their bounded cleanup limits.
 Endpoint probes share the remaining scheduling time through the existing
 collector and have a separate count and transport byte limits. Protected
 input reads retain their separate 64-entry, 64 MiB aggregate and 16 MiB
-per-file limits. Policy/store verification, file metadata, synchronous NSS
+per-file limits. Complete recorded-input mode adds bounded retained-role
+coverage and at most 64 distinct capture contexts. Policy/store
+verification, file metadata, synchronous NSS
 resolution and protected-file reads have **no enforced latency deadline**.
 A returned late metadata/input result is discarded and no further
 resource work is scheduled after expiry, but an in-progress kernel or

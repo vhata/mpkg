@@ -1,11 +1,13 @@
-# Bounded host recording protocol
+# Bounded host recording and observation protocol
 
-The host helper exposes existing recording and history primitives through
-closed JSON requests. It supplies a staged installed entrypoint, not a
-host installation or a complete manager. No request installs packages,
-reads declared input files, changes accounts, starts services, contacts
-Docker or probes endpoints. Observation coordination and application are
-separate handlers that this version explicitly rejects.
+The host helper exposes recording, history and read-only status through
+closed JSON requests. It supplies a staged installed entrypoint; host
+installation and complete-manager acceptance remain separate. Recording
+and exports perform no live observation. Explicit status can query native
+tools, Docker, file metadata and recorded input files; endpoint requests
+require an additional explicit flag. No supported request applies host
+changes. Preparation, executable planning, application and recovery are
+unsupported.
 
 ## Installation and authorization boundary
 
@@ -32,7 +34,8 @@ Production construction fixes the private policy at
 mutation lock at `/run/mpkg/apply.lock`. Policy must already exist with
 its required private ownership and modes. Administration separately
 provisions the lock through the staged tmpfiles rule. Missing lock state
-is refused rather than created during a request. The helper never
+is refused for mutations rather than created during a request. Read-only
+status and exports do not require or acquire that lock. The helper never
 creates a default policy or repairs existing/partial state.
 
 ## Requests and responses
@@ -62,6 +65,7 @@ The supported operations are:
 | `record` | `relinquish` | `expected_revision`, `resource_ids` |
 | `export` | `current` | None |
 | `export` | `history` | None |
+| `observe` | `status` | `expected_revision`, `source`, `source_is_nonsecret`, `selected_components`, `probe_endpoints` |
 
 `initialize` creates the private store using the existing policy's host
 and engine bindings. It refuses an existing destination. Ordinary reads
@@ -71,7 +75,7 @@ and recording requests never initialize the store as a side effect.
 require the literal boolean `source_is_nonsecret: true`, reflecting the
 operator's explicit classification. This acknowledgement does not relax
 declaration validation and cannot automatically detect secret content.
-Protected declarations return `protected_recording_unsupported`; they
+Protected recording declarations return `protected_recording_unsupported`; they
 cannot be downgraded to generic unbound captures. Authenticated capture
 preparation across helper requests remains separate work.
 
@@ -83,7 +87,18 @@ Relinquishment changes recorded responsibility without retiring software
 or deleting data. No caller can provide a store/policy/lock path, owner
 UID, executable, argv, environment, module, worker unit or raw capture.
 
-The remaining fixed verbs `observe`, `prepare`, `plan`, `apply` and
+Status uses `source: null` with `source_is_nonsecret: false` to inspect
+the current recorded snapshot, or exact nonsecret source text with a true
+acknowledgement for working-tree inspection. Protected references are
+allowed for observation without creating captures. `expected_revision`
+is null or a bounded integer, `selected_components` is null or a bounded
+list of distinct IDs, and `probe_endpoints` is an explicit boolean.
+An empty component selection retains accepted obligations while selecting
+no current components. Missing recorded intent is an explicit error.
+See the [status guide](manager-status-cli.md) for evidence and latency
+limits, retained scope and the closed public response.
+
+The remaining fixed verbs `prepare`, `plan`, `apply` and
 `recover` return `operation_unsupported`. Unknown verbs are malformed
 requests; there is no generic command fallback.
 
@@ -100,7 +115,7 @@ text is returned.
 
 Mutations take the pre-existing verified host lock nonblockingly, then
 use the store's own revision/transaction checks. A competing mutation
-returns `mutation_busy`; read-only exports do not take that host lock.
+returns `mutation_busy`; read-only status and exports do not take that host lock.
 Store locking still applies. Policy is rechecked before recording and
 afterward, and stored host/engine bindings must match it. This is not an
 atomic lock against an administrator changing policy or external tools.

@@ -19,8 +19,10 @@ batch = collect_endpoint_checks(
 public = batch.as_dict()
 ```
 
-This is a trusted library call. It is not wired into declaration recording,
-removal, the CLI, planning, health evaluation or application. Ordinary
+This is a trusted library call, used by the
+[status command](manager-status-cli.md) only with explicit endpoint
+opt-in and exact recorded intent. It is never triggered by declaration
+recording or removal, and it grants no health or application authority. Ordinary
 recording and declaration removal never request endpoint probes. Use the
 [endpoint transport guide](manager-endpoint-observations.md) for the fixed
 HTTP(S) request, loopback mapping, TLS verification and transport limits.

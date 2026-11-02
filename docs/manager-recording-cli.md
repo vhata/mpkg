@@ -135,9 +135,11 @@ are never printed. Argument errors retain the validation command's
 fixed JSON diagnostic format regardless of output mode.
 
 `current` reports recorded responsibility and unknown observation state;
-it is not live status. `history` reports decision metadata. Neither
-output grants authority for applying changes. Observe, prepare, plan,
-apply and recover commands remain unavailable.
+it is not live status. `history` reports decision metadata. The separate
+[`status` command](manager-status-cli.md) explicitly collects read-only
+observations and compares current and retained obligations. Neither
+output grants authority for applying changes. Prepare, plan, apply and
+recover commands remain unavailable.
 
 ## Validation limits
 

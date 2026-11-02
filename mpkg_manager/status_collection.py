@@ -13,6 +13,7 @@ from .observations import Observation, ObservationBatch, utc_now
 from .planning import PlanningError, build_report
 from .protected_bindings import BindingError, ProtectedRecorder
 from .query_process import QueryResult
+from .recorded_inputs import RecordedInputError
 from .store import HostStore, StoreError
 
 
@@ -59,10 +60,10 @@ class StatusResult:
         return json.loads(self.canonical_bytes)
 
 
-def _context(store, loaded_policy):
+def _context(store, loaded_policy, *, complete_inputs=False):
     try:
         policy = loaded_policy.policy
-        current = store.current()
+        current = store.current_with_inputs() if complete_inputs else store.current()
         aliases = store.engine_aliases
         if policy.host_id != current["host_id"] or policy.engine_aliases != aliases:
             raise StatusCollectionError("status_policy_store_mismatch")
@@ -244,7 +245,8 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
                    max_query_bytes=64 * 1024 * 1024, max_resources=256,
                    max_endpoint_probes=64, max_age_seconds=60,
                    native_runner=None, package_runner=None, account_runner=None,
-                   compose_runner=None, endpoint_runner=None, identities=None):
+                   compose_runner=None, endpoint_runner=None, identities=None,
+                   complete_inputs=False, expected_revision=None):
     """Collect and compare through live trusted read-only handles.
 
     Runners and name resolvers are trusted embedding/test seams, never request
@@ -258,6 +260,9 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
             or type(loaded_policy) is not LoadedHostPolicy
             or getattr(store, "readonly", None) is not True
             or type(probe_endpoints) is not bool
+            or type(complete_inputs) is not bool
+            or (expected_revision is not None and (type(expected_revision) is not int
+                or not 0 <= expected_revision < 2**63 - 1))
             or type(budget_seconds) is not int or not 1 <= budget_seconds <= 300
             or type(max_queries) is not int or not 1 <= max_queries <= 4096
             or type(max_query_bytes) is not int or not 1 <= max_query_bytes <= 128 * 1024 * 1024
@@ -282,7 +287,9 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
         raise StatusCollectionError("invalid_status_declaration_or_selection") from None
     when = utc_now()
     budget = _Budget(budget_seconds, max_queries, max_query_bytes, runners)
-    policy, current, aliases = _context(store, loaded_policy)
+    policy, current, aliases = _context(store, loaded_policy, complete_inputs=complete_inputs)
+    if expected_revision is not None and current["revision"] != expected_revision:
+        raise StatusCollectionError("status_revision_conflict")
     recorded = None
     if current["snapshot_id"] is not None:
         try:
@@ -351,15 +358,18 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
     batch = ObservationBatch(host_id, when, tuple(facts), tuple(row["resource_id"] for row in rows), LIMITATIONS)
     inputs, input_reason = None, "status_no_recorded_snapshot"
     if recorded is not None:
-        input_reason = budget.reason()
+        input_reason = ("status_target_not_recorded" if complete_inputs and recorded != declaration
+                        else budget.reason())
         if input_reason is None:
             try:
-                inputs = ProtectedRecorder(store, loaded_policy).observe_inputs(
+                recorder = ProtectedRecorder(store, loaded_policy)
+                observe = recorder.observe_recorded_inputs if complete_inputs else recorder.observe_inputs
+                inputs = observe(
                     revision=current["revision"], snapshot_id=current["snapshot_id"], observed_at=when)
                 input_reason = budget.reason()
                 if input_reason:
                     inputs = None
-            except (BindingError, StoreError):
+            except (BindingError, StoreError, RecordedInputError):
                 input_reason = "status_input_observation_unavailable"
     endpoints, endpoint_reason = None, "status_endpoint_collection_not_requested"
     if probe_endpoints:
@@ -376,7 +386,7 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
                 except EndpointCollectionError:
                     endpoint_reason = "status_endpoint_collection_unavailable"
     # Even empty scopes and failed adapters must cross the final live checks.
-    final_policy, final_current, final_aliases = _context(store, loaded_policy)
+    final_policy, final_current, final_aliases = _context(store, loaded_policy, complete_inputs=complete_inputs)
     if policy != final_policy or aliases != final_aliases or current != final_current:
         raise StatusCollectionError("status_context_changed")
     if recorded is not None:
@@ -386,14 +396,18 @@ def collect_status(declaration, store, loaded_policy, *, selected_components=Non
         except StoreError:
             raise StatusCollectionError("status_store_unavailable") from None
     try:
+        input_arguments = {"recorded_input_observations" if complete_inputs else "input_observations": inputs}
         report = build_report(declaration, current, batch.as_dict(), host_id=host_id, engine_aliases=aliases,
             selected_components=selected_components, now=datetime.now(timezone.utc),
-            max_age_seconds=max_age_seconds, input_observations=inputs, endpoint_observations=endpoints)
+            max_age_seconds=max_age_seconds, endpoint_observations=endpoints, **input_arguments)
     except PlanningError:
         raise StatusCollectionError("invalid_status_report_context") from None
-    return StatusResult(canonical_json({"report": report.as_dict(), "collection": {
+    collection = {
         "host_id": host_id, "revision": current["revision"], "snapshot_id": current["snapshot_id"],
         "observed_at": when, "targets": rows, "coverage_complete": True,
         "query_count": budget.query_count, "query_output_bytes_reserved": budget.reserved_bytes,
         "query_limits": sorted(budget.reasons), "protected_input_reason": input_reason,
-        "endpoint_reason": endpoint_reason, "limitations": list(LIMITATIONS), "executable": False}}))
+        "endpoint_reason": endpoint_reason, "limitations": list(LIMITATIONS), "executable": False}
+    if complete_inputs:
+        collection["recorded_input_reason"] = collection.pop("protected_input_reason")
+    return StatusResult(canonical_json({"report": report.as_dict(), "collection": collection}))
