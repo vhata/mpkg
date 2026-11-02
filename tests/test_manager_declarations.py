@@ -335,6 +335,45 @@ desired = {present = true, source = "repository", version = {policy = "any"}}
                      expected={'present': True, 'reason': 'explicit'})
         self.assertEqual(declaration([package], checks=[check]).model['checks'][0], check)
 
+    def test_endpoint_urls_reject_literal_ascii_controls_with_private_errors(self):
+        service = resource({'manager': 'system', 'unit': 'sonarr.service'}, kind='service',
+                           desired={'running': True}, manage=['running'], checks=['healthy'])
+        endpoint = dict(id='healthy', kind='endpoint', resource='data', timeout_seconds=5,
+                        expected_status=200)
+        for codepoint in (*range(32), 127):
+            control = chr(codepoint)
+            for url in (control + 'http://127.0.0.1:8989/private-sentinel',
+                        'http://127.0.0.1:8989/private-sentinel' + control + '/health',
+                        'http://127.0.0.1:8989/private-sentinel' + control):
+                check = endpoint | {'url': url}
+                model = dict(schema=1, components=[], resources=[service], checks=[check])
+                loaders = {'model': lambda: validate_model(model),
+                           'toml': lambda: declaration([service], checks=[check])}
+                for name, load in loaders.items():
+                    with self.subTest(codepoint=codepoint, source=name, url_position=url.index(control)):
+                        with self.assertRaises(DeclarationError) as error:
+                            load()
+                        expected = 'expected_nonempty_string' if codepoint == 0 else 'unsupported_endpoint_url'
+                        self.assertEqual(error.exception.code, expected)
+                        self.assertEqual(str(error.exception), expected)
+                        self.assertEqual(error.exception.path, ('checks', 0, 'url'))
+                        self.assertNotIn('private-sentinel', str(error.exception))
+
+    def test_endpoint_urls_preserve_normal_and_percent_encoded_paths(self):
+        service = resource({'manager': 'system', 'unit': 'sonarr.service'}, kind='service',
+                           desired={'running': True}, manage=['running'], checks=['healthy'])
+        endpoint = dict(id='healthy', kind='endpoint', resource='data', timeout_seconds=5,
+                        expected_status=200)
+        urls = ['http://127.0.0.1:8989/health', 'https://localhost:443/health/readiness',
+                'http://[::1]:8080/health', 'http://127.0.0.1:8989/%20health%2Fready',
+                'http://127.0.0.1:8989/' + ''.join(f'%{codepoint:02X}' for codepoint in (*range(32), 127))]
+        for url in urls:
+            with self.subTest(url=url):
+                check = endpoint | {'url': url}
+                model = dict(schema=1, components=[], resources=[service], checks=[check])
+                self.assertEqual(validate_model(model)['checks'][0]['url'], url)
+                self.assertEqual(declaration([service], checks=[check]).model['checks'][0]['url'], url)
+
     def test_runtime_rules_cannot_hide_declared_configuration(self):
         component = dict(id='app', purpose='Service', resources=['config'])
         config = resource({'path': '/srv/config'}, id='config', kind='file',
