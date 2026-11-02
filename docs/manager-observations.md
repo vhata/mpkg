@@ -15,6 +15,14 @@ projection. Each `Observation` retains resource identity, property,
 Unknown facts have no value and carry a fixed diagnostic code.
 `for_resource(id)` selects a resource's facts.
 
+Before any query, the adapter validates and copies every resource label,
+kind and physical identity. For unsupported kinds it also validates and
+copies the desired-property names used for unknown facts; their values
+are neither required nor retained. Invalid targets raise the fixed
+`invalid_observation_resource` error before a tool runs. Caller changes
+during collection cannot redirect later queries, relabel evidence or
+change the batch's coverage.
+
 The timestamp marks the start of the observation batch. Coverage names
 the requested resource IDs, including those whose inspection was
 unavailable. No other resource or filesystem scope is claimed. Repeated
