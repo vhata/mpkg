@@ -386,6 +386,10 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
                   "directory": "filesystem_metadata", "symlink": "filesystem_metadata"}.get(resource["kind"])
         if source is None or fact["evidence_source"] != source:
             return fact, "observation_source_unsupported"
+        if (source == "filesystem_metadata"
+                and prop not in ({"present", "mode", "owner", "group"}
+                                 | ({"target"} if resource["kind"] == "symlink" else set()))):
+            return fact, "observation_property_unsupported"
         if fact["state"] != "known":
             return fact, "observation_" + fact["state"]
         return fact, None

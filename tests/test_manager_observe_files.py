@@ -1,5 +1,6 @@
 """Private path metadata fixtures; no production paths or account changes."""
 from copy import deepcopy
+from dataclasses import FrozenInstanceError
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -184,6 +185,10 @@ desired={{{fields}}}
             raise KeyError("SECRET_DIAGNOSTIC")
         self.names.user = missing
         self.assertEqual(self.facts(self.observe())["owner"].state, "unknown")
+        def failed(uid):
+            raise RuntimeError("SECRET_DIAGNOSTIC")
+        self.names.user = failed
+        self.assertEqual(self.facts(self.observe())["owner"].state, "unknown")
 
     def test_native_resolver_requires_bounded_names_and_reverse_forward_agreement(self):
         uid, gid = self.file.stat().st_uid, self.file.stat().st_gid
@@ -200,6 +205,49 @@ desired={{{fields}}}
             self.assertEqual(self.facts(self.observe(identities=None))["owner"].state, "unknown")
             reverse_group.return_value = SimpleNamespace(gr_name="SECRET/bad", gr_gid=gid)
             self.assertEqual(self.facts(self.observe(identities=None))["group"].state, "unknown")
+            reverse_user.return_value = SimpleNamespace(pw_name="fixture_owner", pw_uid=True)
+            forward_user.return_value = SimpleNamespace(pw_name="fixture_owner", pw_uid=True)
+            with self.assertRaises(ValueError):
+                SystemIdentities().user(1)
+
+    def test_symlink_replacement_during_target_read_is_unknown(self):
+        original = os.readlink
+        def replaced(*args, **kwargs):
+            target = original(*args, **kwargs)
+            self.link.unlink()
+            self.link.symlink_to("different")
+            return target
+        with patch("mpkg_manager.observe_files.os.readlink", replaced):
+            facts = self.facts(self.observe([self.resource(self.link, kind="symlink")]))
+        self.assertEqual(facts["target"].state, "unknown")
+        self.assertEqual(facts["present"].limitations, ("path_changed",))
+
+    def test_undecodable_symlink_target_does_not_erase_other_metadata(self):
+        self.link.unlink()
+        os.symlink(b"\xff", os.fsencode(self.link))
+        facts = self.facts(self.observe([self.resource(self.link, kind="symlink")]))
+        self.assertEqual(facts["target"].state, "unknown")
+        self.assertEqual(facts["target"].limitations, ("symlink_target_unavailable",))
+        self.assertIs(facts["present"].value, True)
+
+    def test_collection_time_coverage_and_immutable_output_remain_explicit(self):
+        with patch("mpkg_manager.observe_files.utc_now", return_value=WHEN) as clock:
+            batch = self.observe(observed_at=None)
+        clock.assert_called_once_with()
+        self.assertEqual({fact.observed_at for fact in batch.facts}, {WHEN})
+        copy = batch.as_dict()
+        copy["facts"].clear()
+        self.assertTrue(batch.facts)
+        with self.assertRaises(FrozenInstanceError):
+            batch.coverage = ()
+        with patch("os.open", side_effect=AssertionError("No empty inventory reads")):
+            empty = self.observe([])
+        self.assertEqual(empty.coverage, ())
+        self.assertIn("no_management_authority_inferred", empty.limitations)
+        with patch("os.open", side_effect=AssertionError("Invalid context cannot read")):
+            for context in ({"host_id": "invalid"}, {"observed_at": "not-time"}):
+                with self.assertRaisesRegex(ValueError, "^invalid_observation_context$"):
+                    self.observe(**context)
 
     def test_validate_all_target_identities_and_bounds_before_any_filesystem_reads(self):
         variants = [[self.resource(), self.resource(name="fixture")],
@@ -282,6 +330,18 @@ desired={{{fields}}}
         for evidence, now in variants:
             result = build_report(declaration, store.current(), evidence, host_id=HOST, now=now).as_dict()
             self.assertEqual(result["resources"][0]["properties"][0]["comparison"], "unknown")
+
+    def test_metadata_source_cannot_claim_content_agreement(self):
+        declaration = self.declaration([self.resource(desired={"content": "SECRET_CONTENT_SENTINEL\n"})])
+        store = self.store()
+        store.adopt(declaration, 0, ["fixture"])
+        wire = self.observe().as_dict()
+        for fact in wire["facts"]:
+            if fact["property"] == "content":
+                fact.update(state="known", value="SECRET_CONTENT_SENTINEL\n", limitations=[])
+        result = build_report(declaration, store.current(), wire, host_id=HOST, now=NOW).as_dict()
+        self.assertEqual(result["resources"][0]["properties"][0]["comparison"], "unknown")
+        self.assertIn("observation_property_unsupported", result["blockers"])
 
 
 if __name__ == "__main__":

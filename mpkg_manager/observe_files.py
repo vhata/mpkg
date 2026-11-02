@@ -211,14 +211,14 @@ def observe_files(resources, *, host_id, observed_at=None, identities=None):
         values, error = _snapshot(resource, identities)
         properties = _PROPERTIES + (("target",) if resource["kind"] == "symlink" else ())
         if resource["kind"] == "file":
-            properties += ("content_input",)
+            properties += ("content", "content_input")
         for prop in properties:
             value = values.get(prop)
             if error == "absent":
                 state, value, reason = ("known", False, None) if prop == "present" else ("absent", None, None)
             elif error:
                 state, value, reason = "unknown", None, error
-            elif prop == "content_input":
+            elif prop in ("content", "content_input"):
                 state, value, reason = "unknown", None, "file_content_not_observed"
             elif value is None:
                 state, reason = "unknown", "identity_name_unavailable" if prop in ("owner", "group") else "symlink_target_unavailable"

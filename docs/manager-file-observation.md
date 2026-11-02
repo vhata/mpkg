@@ -46,7 +46,9 @@ The adapter observes `present`, integer Unix `mode`, `owner` and `group`.
 Symlinks also expose their literal `target`, including dangling targets;
 the destination is never opened. Symlink mode is observed metadata, not
 an assertion that the tool can or should chmod a symlink. File
-`content_input` remains unknown. Directories describe the directory
+`content` and `content_input` remain unknown, including when a supplied
+projection tries to claim known content from the metadata source.
+Directories describe the directory
 itself, not its descendants. Metadata does not establish consumer access,
 ACLs, application health or input content freshness.
 
