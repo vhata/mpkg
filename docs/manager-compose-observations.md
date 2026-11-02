@@ -64,6 +64,14 @@ transitions leave it unknown. These state facts do not establish useful
 application behavior or health. `input_closure`, image intent resolution
 and `health` always remain unknown in this adapter.
 
+The planner accepts this inventory source only for `present`,
+`container_count` and `running` comparisons. Supplied scalar claims for
+profiles, services or image intent remain unknown even with matching
+engine context; the inventory does not observe those declaration
+properties. Unobserved health or input-closure claims cannot remove
+functional and input-verification blockers. Existing accepted grants
+remain separate from evidence availability.
+
 Every scalar fact carries an immutable `ComposeContext` with the engine
 ID checked by this collection, rather than relying on the declaration's
 symbolic engine alias. Known facts still require the existing engine
