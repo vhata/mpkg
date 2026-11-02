@@ -73,6 +73,11 @@ measured against the first-release contract and acceptance scenarios.
 
 ### Unprioritized
 
+- [NATIVE] `stop-query-descendants-on-nonzero-exit` — **Terminate a failed query's surviving descendants before returning.** A nonzero leader can close its pipes while a child continues running, violating the documented failure cleanup contract.
+  - Source: [bounded query runner](mpkg_manager/query_process.py), [observer failure contract](docs/manager-observations.md), independent temporary-process reproduction, 2026-11-02.
+  - Reproduction: a Python fixture forks, the leader exits 7, and the child closes both output pipes then writes a marker after 0.4 seconds. The runner returns command_failed in about 0.01 seconds, but the marker appears after return.
+  - Preserve fixed diagnostics, hidden output, bounded cleanup and cancellation semantics. Add a real private-process regression proving the surviving child is terminated; avoid touching production processes or changing successful-query behavior.
+
 - [NATIVE] `report-protected-input-freshness` — **Expose protected-input freshness in comparison reports.** The recorder can compare authenticated captures, while reports still lack input evidence and always retain the full-input freshness blocker.
   - Source: [protected comparison requirements](docs/specs/2026-10-31-first-release-contract.md#6-compose-inputs-and-privileges), [comparison implementation](mpkg_manager/planning.py), PR #15 and follow-up investigation, 2026-11-01.
   - Define immutable evidence bound to host, exact recorded source/model snapshot, management revision, collection-start time and complete protected-entry coverage. Report only same/changed/unavailable using input IDs and file positions; exclude capture references, private paths, bytes and protected digests.
