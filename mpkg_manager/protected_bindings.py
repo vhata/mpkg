@@ -4,6 +4,7 @@ This library is not an installed helper or Python privilege containment.
 Capture and freshness reads run outside SQLite write transactions.
 """
 from dataclasses import dataclass, field
+import hashlib
 import hmac
 import json
 import os
@@ -13,6 +14,7 @@ import uuid
 
 from .declarations import DeclarationError, validate_model
 from .host_policy import LoadedHostPolicy, PolicyError
+from .input_evidence import ProtectedInputEvidence, InputEvidenceError, collection_time, SOURCE, SCOPE
 from .protected_capture import CaptureError, capture_protected
 from .store import (HostStore, ProtectedInput, StoreError, MAX_INPUT_BYTES,
                     _PREPARATION_DOMAIN, _bound_name, _captures, _declaration,
@@ -85,7 +87,7 @@ class ProtectedRecorder:
         except (PolicyError, AttributeError):
             raise BindingError("policy_unavailable") from None
 
-    def _capture(self, entry):
+    def _capture(self, entry, *, max_bytes=None):
         context = self._policy_context()
         source = posixpath.join(entry["base_directory"], entry["path"])
         roots = [root for root in context["allowed_input_roots"]
@@ -96,8 +98,11 @@ class ProtectedRecorder:
         relative = posixpath.relpath(source, root)
         try:
             return capture_protected(self._policy, root=root, relative_path=relative,
-                                     name=_bound_name(entry["input_id"], entry["path"]), purpose=_PURPOSE)
+                                     name=_bound_name(entry["input_id"], entry["path"]), purpose=_PURPOSE,
+                                     max_bytes=MAX_INPUT_BYTES if max_bytes is None else max_bytes)
         except CaptureError as error:
+            if max_bytes is not None and error.code == "input_too_large":
+                raise BindingError("protected_input_limit") from None
             code = "policy_unavailable" if error.code == "policy_unavailable" else "input_unavailable"
             raise BindingError(code) from None
 
@@ -276,3 +281,81 @@ class ProtectedRecorder:
             return self._store.compare_protected(row[4], row[5], fresh.raw, fresh.source_identity)
         except (BindingError, StoreError):
             return "unavailable"
+
+    def observe_inputs(self, *, revision, snapshot_id, observed_at=None):
+        """Compare the current exact snapshot, exporting only bound summaries.
+
+        The timestamp is collection start, not completion. Reads have no
+        wall-clock deadline and neither lock out writers nor authorize apply.
+        """
+        try:
+            when = collection_time(observed_at)
+        except InputEvidenceError:
+            raise BindingError("invalid_input_observation_request") from None
+        if (type(revision) is not int or not 1 <= revision < 2**63
+                or type(snapshot_id) is not str or not _HASH.fullmatch(snapshot_id)):
+            raise BindingError("invalid_input_observation_request")
+        try:
+            with self._store._read():
+                decision = self._store._db.execute(
+                    "SELECT snapshot_id FROM decisions WHERE revision=?", (revision,)).fetchone()
+                if self._store._revision() != revision or decision is None or decision[0] != snapshot_id:
+                    raise BindingError("input_observation_target_unavailable")
+                declaration = self._store._load_snapshot(snapshot_id)
+        except StoreError:
+            raise BindingError("input_observation_unavailable") from None
+        entries = [(bundle, index, item) for bundle in declaration.model["inputs"]
+                   for index, item in enumerate(bundle["files"]) if item["classification"] == "protected"]
+        if len(entries) > MAX_PROTECTED_ENTRIES:
+            raise BindingError("protected_input_limit")
+        reason = "collected"
+        try:
+            policy_context = self._policy_context()
+        except BindingError:
+            policy_context, reason = None, "policy_unavailable"
+        results = [{"input_id": bundle["id"], "file_index": index, "state": "unavailable"}
+                   for bundle, index, item in entries]
+        remaining = MAX_PROTECTED_BYTES
+        for result, (bundle, index, item) in zip(results, entries):
+            if reason != "collected":
+                break
+            try:
+                with self._store._read():
+                    row = self._store._bound_capture(item["reference"], snapshot_id, revision)
+                if row is None:
+                    continue
+                entry = {"input_id": bundle["id"], "base_directory": bundle["base_directory"], **item}
+                fresh = self._capture(entry, max_bytes=min(MAX_INPUT_BYTES, remaining))
+                remaining -= len(fresh.raw)
+                result["state"] = self._store.compare_protected(row[4], row[5], fresh.raw, fresh.source_identity)
+            except BindingError as error:
+                if error.code in ("policy_unavailable", "protected_input_limit"):
+                    reason = error.code
+                # A failed read may have consumed part of its allowance. Stop
+                # further reads rather than pretending those bytes were free.
+                break
+            except StoreError:
+                reason = "store_unavailable"
+                break
+        try:
+            with self._store._read():
+                if self._store._revision() != revision:
+                    reason = "target_changed"
+        except StoreError:
+            reason = "store_unavailable"
+        try:
+            if self._policy_context() != policy_context:
+                reason = "policy_unavailable"
+        except BindingError:
+            reason = "policy_unavailable"
+        if reason != "collected":
+            for result in results:
+                result["state"] = "unavailable"
+        return ProtectedInputEvidence(_json({"schema_version": 1, "host_id": self._store.host_id,
+            "revision": revision, "snapshot": {"id": snapshot_id,
+                "source_sha256": hashlib.sha256(declaration.source_bytes).hexdigest(),
+                "canonical_sha256": declaration.sha256, "schema_version": declaration.schema_version,
+                "normalization_version": declaration.normalization_version},
+            "observed_at": when, "source": SOURCE, "scope": SCOPE,
+            "state": "complete" if reason == "collected" else "unavailable", "reason": reason,
+            "entries": results}))
