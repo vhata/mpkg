@@ -21,6 +21,14 @@ No provider identity, installed version, installation reason, repository/AUR
 provenance or management authority is inferred. Source-specific facts must
 not be relabelled as direct installed-package inventory.
 
+The [pure planner](manager-planning.md) accepts this source only for positive
+`present` comparisons after its usual host, coverage, identity and freshness
+checks. It rejects stronger property claims and fabricated false, integer or
+other non-true presence values. Positive request evidence cannot satisfy the
+direct inventory prerequisite for version or installation-reason comparison.
+Reports remain non-executable and retain native transaction and application
+blockers. Supplying the wire projection does not authenticate its origin.
+
 ## Native protocol and limits
 
 The closed query is `/usr/bin/pacman -T --` followed by deduplicated names.
