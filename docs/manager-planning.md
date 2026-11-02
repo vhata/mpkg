@@ -107,6 +107,10 @@ approving a repository/AUR source. A matching installed version cannot
 prove an AUR recipe revision. Absence of a direct installed package name
 does not prove that a virtual dependency request is unsatisfied. Version
 and install-reason comparisons require a direct presence observation.
+The installed inventory source supports only presence, version and
+install-reason comparisons. A supplied known source or provider claim
+cannot expand that capability; unsupported properties stay unknown.
+Source validation does not authenticate a caller-supplied projection.
 Native dependency and provider resolution remain explicit capability
 limits.
 
