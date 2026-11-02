@@ -142,6 +142,28 @@ impossible revision/snapshot bindings fail projection validation. The
 store validates historical linkage before projecting it; arbitrary JSON
 cannot authenticate an adoption snapshot merely by having valid fields.
 
+## Recorded endpoint route evidence
+
+The optional `endpoint_observations` argument accepts only an immutable
+`EndpointCheckBatch` produced by the [recorded endpoint collector](manager-endpoint-checks.md).
+The planner never collects endpoint evidence or imports public JSON as a
+batch. Invalid typed evidence raises `invalid_endpoint_observation`.
+
+The top-level `endpoint_checks` summary validates complete current and
+retained accepted coverage independently of component selection. It binds
+the requested host, current revision, exact recorded source/model/snapshot,
+original adopted predicates and physical targets, and collection-start
+freshness. Missing, foreign, stale, future, incomplete or context-mismatched
+evidence makes every route unavailable. Empty protected-input or ordinary
+property coverage cannot replace this endpoint coverage.
+
+Endpoint check rows keep `result: unknown` and add separate `route_result`
+and `route_reason` fields. Their `functional_result` is always `unverified`,
+with explicit listener-attribution and application-identity limitations.
+A route match does not clear required-check, health or application blockers.
+The [endpoint reporting guide](manager-endpoint-reporting.md) defines role
+coverage, bounds, retained/renamed resources, diagnostics and privacy.
+
 ## Protected input freshness
 
 The optional `input_observations` argument accepts immutable evidence from

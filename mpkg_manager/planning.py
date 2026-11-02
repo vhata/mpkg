@@ -9,6 +9,8 @@ import uuid
 from .declarations import (Declaration, DeclarationError, canonical_json, load_declaration,
                            physical_key, validate_model)
 from .input_evidence import input_evidence
+from .endpoint_checks import (EndpointCheckBatch, EndpointCollectionError, MAX_CHECKS,
+                              LIMITATIONS as ENDPOINT_LIMITATIONS, _scopes as _endpoint_scopes)
 
 
 MAX_PROJECTION_BYTES = 16 * 1024 * 1024
@@ -223,7 +225,8 @@ def _constraints_valid(model, resource, constraints):
 
 
 def build_report(declaration, current, observations, *, host_id, engine_aliases=None,
-                 selected_components=None, now=None, max_age_seconds=60, input_observations=None):
+                 selected_components=None, now=None, max_age_seconds=60, input_observations=None,
+                 endpoint_observations=None):
     """Compare trusted helper projections without reading, recording or applying.
 
     Projection dictionaries are not authentication. A caller must obtain them
@@ -260,8 +263,16 @@ def build_report(declaration, current, observations, *, host_id, engine_aliases=
     except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
         raise PlanningError("invalid_input_observation_projection") from None
     try:
+        endpoints = endpoint_observations
+        if endpoints is not None:
+            _require(type(endpoints) is EndpointCheckBatch)
+            endpoints = EndpointCheckBatch(endpoints.host_id, endpoints.revision, endpoints._snapshot_id,
+                                           endpoints.observed_at, endpoints.checks, endpoints.probe_count)
+    except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
+        raise PlanningError("invalid_endpoint_observation") from None
+    try:
         return _build(validated, model, current, observations, host_id, aliases,
-                      selected_components, now, max_age_seconds, inputs)
+                      selected_components, now, max_age_seconds, inputs, endpoints)
     except (ValueError, TypeError, AttributeError, KeyError, RecursionError):
         raise PlanningError("invalid_report_inputs") from None
 
@@ -304,7 +315,100 @@ def _input_summary(model, current, evidence, recorded, host_id, now, max_age):
             "full_input_closure": "unverified"}
 
 
-def _build(declaration, model, current, observations, host_id, aliases, selection, now, max_age, inputs):
+
+def _endpoint_summary(model, current, evidence, recorded, host_id, aliases, now, max_age):
+    # Scope is global even for selected-component reports. Keep original
+    # accepted labels here; native property comparison may use a renamed label.
+    expected, required_count, missing_definitions = [], 0, False
+
+    def append(check, role, record=None):
+        nonlocal required_count
+        if check["kind"] != "endpoint":
+            return
+        required_count += 1
+        if required_count <= MAX_CHECKS:
+            expected.append((check, role, record))
+
+    for record in current["resources"] if current else ():
+        if "accepted_checks" not in record:
+            missing_definitions = True
+            continue
+        for check in record["accepted_checks"]["definitions"]:
+            append(check, "accepted", record)
+    checks = {check["id"]: check for check in model["checks"]}
+    for resource in model["resources"]:
+        for name in resource["checks"]:
+            append(checks[name], "current")
+
+    reason = "collected"
+    if current is None:
+        reason = "history_unavailable"
+    elif not recorded:
+        reason = "intent_not_recorded"
+    elif evidence is None:
+        reason = "not_observed"
+    elif evidence.host_id != host_id:
+        reason = "host_mismatch"
+    elif not evidence.matches_context(host_id=host_id, revision=current["revision"],
+                                      snapshot_id=current["snapshot_id"]):
+        reason = "target_mismatch"
+    elif missing_definitions:
+        reason = "accepted_check_definition_unavailable"
+    else:
+        age = (now - _time(evidence.observed_at)).total_seconds()
+        if age < 0:
+            reason = "from_future"
+        elif age > max_age:
+            reason = "stale"
+    if required_count > MAX_CHECKS:
+        reason = "coverage_limit"
+        expected = []  # No truncated inventory can claim complete coverage.
+
+    found = {}
+    if reason == "collected":
+        try:
+            scopes = _endpoint_scopes(current, model, aliases)
+        except EndpointCollectionError as error:
+            reason = "coverage_limit" if error.code == "endpoint_coverage_limit" else "context_mismatch"
+        else:
+            supplied = {row._scope: row for row in evidence.checks}
+            if set(scopes) != set(supplied):
+                def role_key(raw):
+                    scope = json.loads(raw)
+                    return scope["role"], scope["stable_id"], scope["context"]["check"]["id"]
+                reason = ("coverage_incomplete" if {role_key(raw) for raw in scopes}
+                          != {role_key(raw) for raw in supplied} else "context_mismatch")
+            else:
+                # ID lookup is safe only after complete private scopes matched,
+                # including every predicate, physical target and adoption.
+                for raw, row in supplied.items():
+                    scope = json.loads(raw)
+                    key = scope["role"], scope["stable_id"], scope["context"]["check"]["id"]
+                    found[key] = row.as_dict()
+    entries, by_role = [], {}
+    for check, role, record in expected:
+        stable_id = record["stable_id"] if record else None
+        key = role, stable_id, check["id"]
+        value = found.get(key)
+        entry = {"id": check["id"], "resource_id": check["resource"], "role": role,
+                 "stable_id": stable_id, "management": record["management"] if record else None,
+                 "adoption_revision": record["accepted_checks"]["adoption_revision"] if record else None,
+                 "route_result": value["route_result"] if value else "unavailable",
+                 "route_reason": value["reason"] if value else reason,
+                 "functional_result": "unverified", "limitations": list(ENDPOINT_LIMITATIONS)}
+        entries.append(entry)
+        by_role[key] = entry
+    summary = {"state": "available" if reason == "collected" else "unavailable", "reason": reason,
+               "observed_at": evidence.observed_at if evidence else None,
+               "source": "recorded_loopback_endpoint_checks" if evidence else None,
+               "scope": "current_and_retained_required_endpoint_checks",
+               "coverage": "complete" if reason == "collected" else "unavailable",
+               "required_checks": required_count, "entries": entries,
+               "functional_result": "unverified", "limitations": list(ENDPOINT_LIMITATIONS)}
+    return summary, by_role
+
+
+def _build(declaration, model, current, observations, host_id, aliases, selection, now, max_age, inputs, endpoints):
     resources = {item["id"]: item for item in model["resources"]}
     components = {item["id"]: item for item in model["components"]}
     if selection is None:
@@ -335,6 +439,8 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
     if not recorded:
         blocks.add("intent_not_recorded")
     input_summary = _input_summary(model, current, inputs, recorded, host_id, now, max_age)
+    endpoint_summary, endpoint_results = _endpoint_summary(
+        model, current, endpoints, recorded, host_id, aliases, now, max_age)
     for entry in input_summary["entries"]:
         if entry["state"] != "same":
             blocks.add("protected_input_" + entry["state"])
@@ -420,10 +526,12 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
         limitations = ["observation_scope_limited"] if fact["limitations"] else []
         return ("agreement" if same else "difference"), limitations, source
 
-    def check_results(resource, definitions, role, binding=None, expected_key=None):
+    def check_results(resource, definitions, role, binding=None, expected_key=None, endpoint_record=None):
         results, reasons = [], set()
         for check in sorted(definitions, key=lambda item: item["id"]):
-            if check["kind"] not in ("package", "service"):
+            if check["kind"] == "endpoint":
+                result, reason = "unknown", "functional_verification_unavailable"
+            elif check["kind"] not in ("package", "service"):
                 result, reason = "unknown", "check_not_implemented"
             else:
                 states = [compare(resource, "install_reason" if prop == "reason" else prop,
@@ -433,6 +541,12 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
                           "unknown" if any(state != "agreement" for state in states) else "passed")
                 reason = "property_predicates_only"
             entry = {"id": check["id"], "role": role, "result": result, "reason": reason}
+            if check["kind"] == "endpoint":
+                key = role, endpoint_record["stable_id"] if endpoint_record else None, check["id"]
+                route = endpoint_results.get(key)
+                entry.update({"route_result": route["route_result"] if route else "unavailable",
+                              "route_reason": route["route_reason"] if route else endpoint_summary["reason"],
+                              "functional_result": "unverified", "limitations": list(ENDPOINT_LIMITATIONS)})
             if binding is not None:
                 entry.update({"adoption_revision": binding["adoption_revision"],
                               "snapshot_id": binding["snapshot_id"]})
@@ -456,7 +570,7 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
             # current observation label without replacing their expectations.
             target = target | {"id": resource["id"]}
         return check_results(target, binding["definitions"], "accepted", binding,
-                             tuple(record["physical_key"]))
+                             tuple(record["physical_key"]), endpoint_record=record)
 
     check_definitions = {item["id"]: item for item in model["checks"]}
     rows = []
@@ -567,7 +681,7 @@ def _build(declaration, model, current, observations, host_id, aliases, selectio
                               "scope_limited": bool(observations and observations["limitations"])},
               "selected_components": selected, "resources": rows, "retained_resources": retained,
               "unselected_resources": unselected,
-              "protected_inputs": input_summary,
+              "protected_inputs": input_summary, "endpoint_checks": endpoint_summary,
               "executable": False, "blockers": sorted(blocks),
               "limitations": ["time_bounded_observation_not_atomic_host_snapshot",
                               "no_attempt_history_or_input_replay_verification",
