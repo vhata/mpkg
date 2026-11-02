@@ -152,15 +152,17 @@ chains upgrades. Version-3 receipts authenticate the preceding receipt
 seal; complete ordered chains and existing version-2 receipts remain
 verifiable.
 
-Commit errors can occur after a proposal persisted. A
-`commit_outcome_unknown` error closes the store handle; reopen read-only
-and list proposals to inspect durable evidence. No retry or deletion is
-automatic. The separate
-[store cleanup uncertainty task](../TODO.md#unprioritized) tracks a
-preexisting case where a post-commit lock-release error is misclassified
-as `store_write_failed`; an error must never be treated as proof that no
-proposal persisted. File or policy changes after capture also do not
-undo proposal storage. All proposals remain blocked regardless.
+Commit and lock-release errors can occur after a proposal persisted.
+`commit_outcome_unknown` makes the store handle unusable; an error never
+proves that no proposal persisted. Cleanup preserves cancellation and
+resolves any live SQLite transaction before releasing the store lock.
+Repeated cleanup failure can retain the lock until explicit cleanup or
+process exit; see [store failure reporting](manager-store.md#protected-capture-and-failure-reporting).
+After releasing any retained failed handle safely, reopen read-only and
+list proposals to inspect durable evidence. No retry or deletion is
+automatic. A separate context-final `store_close_failed` also does not
+undo completed writes. File or policy changes after capture do not undo
+proposal storage. All proposals remain blocked regardless.
 
 Private fixtures exercise candidate preservation, retained/current
 scope separation, consumer conflicts, stale input/decision/policy,

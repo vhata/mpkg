@@ -156,12 +156,30 @@ claimed. Protected database contents are plaintext behind access
 controls, not encryption at rest.
 
 Public failures contain fixed `StoreError.code` values, never raw SQLite
-or filesystem errors. A failed commit reports `commit_outcome_unknown`
-and closes the handle: the commit may have persisted before its error
-was observed. Cancellation during commit preserves the original
-interrupt and also closes the transaction before releasing the store
-lock. Reopen and inspect the revision/history before deciding
-what to do next; do not blindly retry. No external effect is invoked.
+or filesystem errors. Once COMMIT is attempted, ordinary commit or
+lock-release failures report `commit_outcome_unknown`: the decision may
+already be durable. The handle becomes unusable. Write cancellation
+preserves the original interrupt even when cleanup also fails. Pre-commit failures
+remain distinct and do not acquire a commit-uncertainty classification.
+
+Write-failure and explicit-close cleanup resolve the SQLite transaction
+before releasing the store lock,
+including a bounded rollback/close attempt after an initial close error.
+If repeated cleanup failures leave a live or uninspectable transaction,
+the poisoned handle retains the lock descriptor until a later explicit
+`close()` succeeds or the process exits. Other safe cleanup is attempted.
+No operation may reuse that handle, and competing opens remain blocked.
+Descriptor numbers are detached before closing so an error after release
+cannot make a repeated close affect an unrelated reused descriptor.
+
+A separate explicit or context-final close failure reports
+`store_close_failed`; it does not undo writes that already returned.
+Context cleanup does not replace an existing operation error or
+cancellation. The installed helper maps request-final close failures to
+`record_outcome_unknown` for recording and `internal_error` for reads.
+After uncertainty, release any retained failed handle safely, then reopen
+read-only and inspect revision/history before deciding what to do next;
+do not blindly retry. No external effect is invoked.
 
 The focused tests cover real temporary SQLite transactions, competing
 revisions, failure before/after commit, storage exhaustion, retained

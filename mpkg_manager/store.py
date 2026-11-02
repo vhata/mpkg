@@ -116,6 +116,13 @@ def _fail(code):
     raise StoreError(code)
 
 
+def _cleanup_failure(primary, cleanup):
+    """Keep the first failure, giving interruption priority over ordinary errors."""
+    if primary is None or (isinstance(primary, Exception) and not isinstance(cleanup, Exception)):
+        return cleanup
+    return primary
+
+
 def _json(value):
     try:
         return canonical_json(value)
@@ -365,14 +372,13 @@ class HostStore:
                 store._engine_aliases = aliases
             return store
         except FileExistsError:
-            store.close()
-            raise StoreError("store_exists") from None
-        except StoreError:
-            store.close()
-            raise
+            raise store._close_preserving(StoreError("store_exists")) from None
+        except StoreError as error:
+            raise store._close_preserving(error)
         except (OSError, sqlite3.Error):
-            store.close()
-            raise StoreError("store_creation_failed") from None
+            raise store._close_preserving(StoreError("store_creation_failed")) from None
+        except BaseException as error:
+            raise store._close_preserving(error)
         finally:
             if parentfd is not None:
                 os.close(parentfd)
@@ -393,15 +399,14 @@ class HostStore:
             store._attach(_store_path(directory), host_id, owner_uid, readonly,
                           allow_legacy=allow_legacy)
             return store
-        except StoreError:
-            store.close()
-            raise
+        except StoreError as error:
+            raise store._close_preserving(error)
         except FileNotFoundError:
-            store.close()
-            raise StoreError("store_missing") from None
+            raise store._close_preserving(StoreError("store_missing")) from None
         except (OSError, sqlite3.Error):
-            store.close()
-            raise StoreError("store_unavailable") from None
+            raise store._close_preserving(StoreError("store_unavailable")) from None
+        except BaseException as error:
+            raise store._close_preserving(error)
 
     def _attach(self, path, host_id, owner_uid, readonly, initializing=False, allow_legacy=False):
         if owner_uid != os.geteuid():
@@ -700,6 +705,7 @@ class HostStore:
             fcntl.flock(self._lockfd, (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
         except BlockingIOError:
             raise StoreError("store_busy") from None
+        failure = None
         try:
             checkfd = _directory(self.directory, self.owner_uid)
             try:
@@ -725,8 +731,23 @@ class HostStore:
                 if (info.st_dev, info.st_ino) != self._database_key:
                     _fail("store_identity_changed")
             yield
-        finally:
+        except BaseException as error:
+            failure = error
+        if self._closed:
+            try:
+                idle = self._database_idle()
+            except BaseException as error:
+                failure, idle = _cleanup_failure(failure, error), False
+            if not idle:
+                # A failed close/rollback must not expose a live transaction
+                # outside this lock. The poisoned handle retains it for cleanup.
+                raise failure if failure is not None else StoreError("store_close_failed")
+        try:
             fcntl.flock(self._lockfd, fcntl.LOCK_UN)
+        except BaseException as error:
+            failure = self._close_preserving(_cleanup_failure(failure, error))
+        if failure is not None:
+            raise failure
 
     def _commit(self):
         self._db.execute("COMMIT")
@@ -738,45 +759,56 @@ class HostStore:
     def _write(self, expected_revision):
         if type(expected_revision) is not int or not 0 <= expected_revision < 2**63 - 1:
             _fail("invalid_revision")
-        uncertain = False
+        commit_attempted = False
         try:
             with self._locked(exclusive=True):
-                self._db.execute("BEGIN IMMEDIATE")
                 try:
+                    self._db.execute("BEGIN IMMEDIATE")
                     self._verify_schema()
                     if self._schema_version != SCHEMA_VERSION:
                         _fail("store_migration_required")
                     if self._revision() != expected_revision:
                         _fail("revision_conflict")
                     yield
-                except BaseException:
-                    if self._db.in_transaction:
-                        self._db.execute("ROLLBACK")
-                    raise
+                except BaseException as error:
+                    try:
+                        if self._db.in_transaction:
+                            self._db.execute("ROLLBACK")
+                    except BaseException as cleanup:
+                        error = _cleanup_failure(error, cleanup)
+                        self._closed = True
+                        try:
+                            self._close_database()
+                        except BaseException as cleanup:
+                            error = _cleanup_failure(error, cleanup)
+                    raise error
+                commit_attempted = True
                 try:
                     self._commit()
                 except BaseException as error:
-                    uncertain = True
                     # Close the transaction while flock still protects it.
-                    # Cancellation is preserved but can never return a usable
-                    # handle with an uncertain commit or a live transaction.
                     self._closed = True
-                    self._db.close()
-                    self._db = None
-                    if isinstance(error, (OSError, sqlite3.Error)):
-                        raise StoreError("commit_outcome_unknown") from None
-                    raise
-        except StoreError:
-            raise
-        except (OSError, sqlite3.Error):
-            raise StoreError("store_write_failed") from None
-        except (TypeError, ValueError, KeyError, OverflowError, RecursionError):
-            raise StoreError("invalid_store_record") from None
-        finally:
-            if uncertain:
-                # COMMIT may have persisted before an error reached the caller.
-                # Closing never returns an accepted revision; reopen and inspect.
-                self.close()
+                    try:
+                        self._close_database()
+                    except BaseException as cleanup:
+                        error = _cleanup_failure(error, cleanup)
+                    raise error
+        except BaseException as error:
+            # The uncertainty boundary includes lock release and cleanup, not
+            # just the COMMIT call. Never reuse a handle after those failures.
+            if commit_attempted or self._closed:
+                error = self._close_preserving(error)
+            if not isinstance(error, Exception):
+                raise error
+            if commit_attempted:
+                raise StoreError("commit_outcome_unknown") from None
+            if isinstance(error, StoreError):
+                raise error
+            if isinstance(error, (OSError, sqlite3.Error)):
+                raise StoreError("store_write_failed") from None
+            if isinstance(error, (TypeError, ValueError, KeyError, OverflowError, RecursionError)):
+                raise StoreError("invalid_store_record") from None
+            raise error
 
     @contextmanager
     def _read(self):
@@ -1138,21 +1170,89 @@ class HostStore:
                 token = domain + _framed_mac(row[4], domain, context, raw)
             return "same" if hmac.compare_digest(row[3], token) else "changed"
 
-    def close(self):
-        if self._db is not None:
-            self._db.close()
+    def _close_database(self):
+        db = self._db
+        if db is None:
+            return
+        try:
+            db.close()
+        except BaseException as error:
+            # A failed close may leave a write transaction alive. Resolve it
+            # before releasing flock; never infer that COMMIT did not persist.
+            try:
+                if not self._database_idle():
+                    db.execute("ROLLBACK")
+            except BaseException as cleanup:
+                error = _cleanup_failure(error, cleanup)
+            try:
+                db.close()
+            except BaseException as cleanup:
+                error = _cleanup_failure(error, cleanup)
+                try:
+                    self._database_idle()
+                except BaseException as cleanup:
+                    error = _cleanup_failure(error, cleanup)
+            else:
+                self._db = None
+            raise error
+        else:
             self._db = None
+
+    def _database_idle(self):
+        if self._db is None:
+            return True
+        try:
+            return not self._db.in_transaction
+        except sqlite3.ProgrammingError:
+            # sqlite3.Connection.in_transaction raises this for a closed
+            # connection, including a close that completed before reporting.
+            self._db = None
+            return True
+
+    def _close_preserving(self, primary):
+        try:
+            self.close()
+        except BaseException as cleanup:
+            return _cleanup_failure(primary, cleanup)
+        return primary
+
+    def close(self):
+        self._closed = True
+        failure = None
+        try:
+            self._close_database()
+        except BaseException as error:
+            failure = error
+        try:
+            idle = self._database_idle()
+        except BaseException as error:
+            failure, idle = _cleanup_failure(failure, error), False
         for name in ("_lockfd", "_dirfd"):
             fd = getattr(self, name)
             if fd is not None:
-                os.close(fd)
+                if name == "_lockfd" and not idle:
+                    continue
+                # Linux close errors can follow actual descriptor release.
+                # Never retry a number that could already belong to someone else.
                 setattr(self, name, None)
-        self._closed = True
+                try:
+                    os.close(fd)
+                except BaseException as error:
+                    failure = _cleanup_failure(failure, error)
+        if failure is not None:
+            if isinstance(failure, Exception):
+                raise StoreError("store_close_failed") from None
+            raise failure
 
     def __enter__(self):
         if self._closed:
             _fail("store_closed")
         return self
 
-    def __exit__(self, *args):
-        self.close()
+    def __exit__(self, kind, error, traceback):
+        if error is None:
+            self.close()
+        else:
+            failure = self._close_preserving(error)
+            if failure is not error:
+                raise failure

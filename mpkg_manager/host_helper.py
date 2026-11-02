@@ -245,7 +245,11 @@ def handle_request(raw, *, boundary=None):
     except BindingError:
         response = _error("input_capture_rejected")
     except StoreError as error:
-        response = _error(error.code if error.code in _STORE_ERRORS else "record_rejected")
+        if error.code == "store_close_failed":
+            response = _error("record_outcome_unknown" if request is not None
+                              and request.verb == "record" else "internal_error")
+        else:
+            response = _error(error.code if error.code in _STORE_ERRORS else "record_rejected")
     except BoundaryError as error:
         response = _error(error.code)
     except Exception:
