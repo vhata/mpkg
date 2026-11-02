@@ -17,6 +17,7 @@ report = build_report(
     selected_components=None,
     now=aware_datetime,
     max_age_seconds=60,
+    input_observations=protected_input_evidence,
 )
 ```
 
@@ -135,6 +136,39 @@ impossible revision/snapshot bindings fail projection validation. The
 store validates historical linkage before projecting it; arbitrary JSON
 cannot authenticate an adoption snapshot merely by having valid fields.
 
+## Protected input freshness
+
+The optional `input_observations` argument accepts immutable evidence from
+[`ProtectedRecorder.observe_inputs`](manager-protected-bindings.md#protected-input-status-evidence)
+or its wire dictionary. It never initiates captures itself. The closed
+projection is limited to 64 KiB and 64 entries. Invalid shape produces
+the fixed `invalid_input_observation_projection` diagnostic. Importing a
+dictionary does not authenticate its origin or confer apply authority.
+
+The top-level `protected_inputs` summary binds evidence to the requested
+host, current management revision and exact recorded snapshot, including
+source comments. It requires every protected declaration slot, independently
+of component selection. A shared bundle occurs once. Missing, partial,
+foreign, stale or future evidence makes every expected slot unavailable;
+matching property observations remain independently useful. Age is measured
+from collection start using the same `now` and `max_age_seconds` context as
+host observations. The exact maximum age is accepted.
+
+Entry states are `same`, `changed` or `unavailable`. Changed/unavailable
+entries add corresponding `protected_input_changed` or
+`protected_input_unavailable` blockers. The summary preserves evidence
+source, collection time and current-recorded-snapshot scope, but exposes
+only input IDs and file indexes rather than private paths, references,
+content or protected digests. Coverage completeness does not imply every
+entry matched.
+
+`historical_coverage` remains `unavailable`, including for accepted resources
+removed from the working declaration. `nonsecret_entries_unchecked` counts
+the current nonsecret subset, and `full_input_closure` stays `unverified`.
+An empty protected set does not prove nonsecret/Compose bundle closure.
+Existing `input_freshness_unverified`, application and attempt-history
+blockers remain in force; this narrow evidence is not an executable plan.
+
 ## Output and limits
 
 `ComparisonReport.canonical_bytes` and `.sha256` bind the report's
@@ -148,7 +182,7 @@ Every report has `executable: false` and explicit
 `application_not_implemented` and `attempt_history_unavailable` blockers.
 It includes no commands, effects, action graph or apply authorization.
 Current observations are time-bounded evidence, not an atomic host
-snapshot. Attempt history, protected input replay, native solving and
+snapshot. Attempt history, full input-bundle closure, native solving and
 functional verification require separate
 implementations before a complete application proposal is possible.
 

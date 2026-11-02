@@ -35,7 +35,7 @@ def _arguments(root, relative_path, name, purpose):
         raise CaptureError("invalid_capture_request") from None
 
 
-def _regular(info, device):
+def _regular(info, device, maximum):
     if type(info.st_mode) is not int or not 0 <= info.st_mode < 2**63:
         raise CaptureError("input_metadata_unsupported")
     try:
@@ -48,7 +48,7 @@ def _regular(info, device):
         raise CaptureError("input_hardlinked")
     if info.st_dev != device:
         raise CaptureError("input_device_changed")
-    if info.st_size > MAX_INPUT_BYTES:
+    if info.st_size > maximum:
         raise CaptureError("input_too_large")
 
 
@@ -66,13 +66,15 @@ def _source_identity(info, path):
     return identity
 
 
-def capture_protected(policy, *, root, relative_path, name, purpose):
+def capture_protected(policy, *, root, relative_path, name, purpose, max_bytes=MAX_INPUT_BYTES):
     """Capture one regular file without following links or changing the host.
 
     Before/after identity checks detect observed replacement and writes; they
     do not exclude concurrent writers or detect same-device bind mounts.
     """
     _arguments(root, relative_path, name, purpose)
+    if type(max_bytes) is not int or not 0 <= max_bytes <= MAX_INPUT_BYTES:
+        raise CaptureError("invalid_capture_request")
     if type(policy) is not LoadedHostPolicy:
         raise CaptureError("policy_unavailable")
     try:
@@ -90,19 +92,19 @@ def capture_protected(policy, *, root, relative_path, name, purpose):
         path = root + "/" + relative_path
         parents = _DirectoryChain(parts[:-1], start_fd=roots.fd, device=device)
         before = os.stat(parts[-1], dir_fd=parents.fd, follow_symlinks=False)
-        _regular(before, device)
+        _regular(before, device, max_bytes)
         _source_identity(before, path)
         descriptor = os.open(parts[-1], _OPEN_FILE, dir_fd=parents.fd)
         opened = os.fstat(descriptor)
-        _regular(opened, device)
+        _regular(opened, device, max_bytes)
         identity = _source_identity(opened, path)
         if _fingerprint(opened) != _fingerprint(before):
             raise CaptureError("input_changed")
-        raw = _read_bounded(descriptor, MAX_INPUT_BYTES)
+        raw = _read_bounded(descriptor, max_bytes)
         after = os.fstat(descriptor)
         linked = os.stat(parts[-1], dir_fd=parents.fd, follow_symlinks=False)
-        _regular(after, device)
-        _regular(linked, device)
+        _regular(after, device, max_bytes)
+        _regular(linked, device, max_bytes)
         if (_fingerprint(opened) != _fingerprint(after)
                 or _fingerprint(opened) != _fingerprint(linked) or len(raw) != opened.st_size):
             raise CaptureError("input_changed")

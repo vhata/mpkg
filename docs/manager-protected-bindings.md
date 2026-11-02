@@ -85,6 +85,63 @@ Corrupt or unavailable stores leave comparisons unavailable. Direct store
 operations continue to report fixed integrity errors; no comparison claims
 clean or available evidence from a failed store read.
 
+## Protected input status evidence
+
+```python
+evidence = recorder.observe_inputs(
+    revision=decision["revision"],
+    snapshot_id=decision["snapshot_id"],
+)
+report = build_report(
+    declaration, store.current(), host_observations,
+    host_id=accepted_host_uuid,
+    input_observations=evidence,
+)
+```
+
+`observe_inputs` performs fresh policy-authorized comparisons for every
+protected entry of the exact **current recorded** decision. A historical
+revision or mismatched snapshot is refused, even though `compare_input`
+can compare individual historical bindings. It reads the stored source,
+not a working declaration or a caller-supplied list of references. Shared
+bundles are visited once. Nonsecret entries are not read. A legacy unbound
+reference remains unavailable rather than becoming authenticated by its
+presence in a declaration.
+
+The result is an immutable `ProtectedInputEvidence` with canonical bytes
+and an `as_dict()` copy. Its closed version 1 projection binds the host,
+decision revision, exact source and canonical snapshot hashes, versions,
+UTC collection-start time, fixed evidence source and scope. Each entry
+contains only `input_id`, zero-based `file_index` within the full declared
+bundle and `state`: `same`, `changed` or `unavailable`. It exports no
+opaque references, source paths, captured content, protected hashes or
+authentication tokens. Only declaration snapshot hashes are public.
+
+The optional `observed_at` keyword supplies a UTC `Z` collection-start
+timestamp for deterministic trusted callers. The default samples the clock
+before any store or filesystem reads. Collection does not refresh the
+timestamp after slow reads. The planner applies its own age/future checks.
+Evidence shape validation is not authentication; trusted embedding must
+preserve the provenance of both object and wire forms.
+
+Collection permits at most 64 protected entries, 64 MiB total and 16 MiB
+per file. Each capture receives the remaining byte allowance. Aggregate
+overflow makes the entire batch unavailable, including previous matches.
+After another failed capture, subsequent entries stay unavailable and no
+more files are read: a failed read may already have consumed its allowance.
+`complete` denotes complete entry coverage, not that all entries matched.
+
+The collector rechecks the current management revision and whole policy
+after the last comparison, including an empty protected set. A changed
+revision, unavailable store or revoked policy invalidates the whole batch.
+Reads occur outside SQLite transactions; they write no decisions or store
+files. These final checks do not eliminate subsequent writer races.
+
+The [pure comparison report](manager-planning.md#protected-input-freshness)
+keeps historical protected coverage unavailable and nonsecret/full input
+closure unverified. This evidence cannot authorize apply, turn a property
+match into functional health or remove application capability blockers.
+
 ## Durable authentication and compatibility
 
 The SQL schema remains version 1. Existing 32-byte protected tokens keep
