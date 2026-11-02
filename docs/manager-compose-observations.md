@@ -64,6 +64,30 @@ transitions leave it unknown. These state facts do not establish useful
 application behavior or health. `input_closure`, image intent resolution
 and `health` always remain unknown in this adapter.
 
+Every scalar fact carries an immutable `ComposeContext` with the engine
+ID checked by this collection, rather than relying on the declaration's
+symbolic engine alias. Known facts still require the existing engine
+checks before and after inventory collection. Unavailable facts cannot
+become known merely because their attempted target context is present.
+
+Running facts additionally bind the canonical service set used for
+aggregation. The observer copies the resource label, project identity
+and service set before queries; mutating the caller's declaration
+during collection cannot relabel the result. Service order is
+nonsemantic. Context stores at most 64 distinct service names, matching
+the container bound. An oversized service set leaves running unknown
+without discarding other independently inspected facts.
+
+The private observation wire adds optional `compose_context` with an
+`engine_id` string and, only for running, a `services` list. Its closed
+shape and bounded names are validated. The pure planner requires the
+observed engine to match the actual bound target and requires running
+scope to match the current nonempty declared service set. A declaration
+change cannot reuse an earlier aggregate for different services.
+Legacy facts lacking context remain readable but compare as unknown.
+Context does not authenticate imported projections, prove input closure
+or grant authority. Public comparison reports omit this private context.
+
 Permission failures, missing tools or objects, malformed/incomplete
 metadata, missing image platform, identity changes, bounds and timeouts
 produce fixed unknown reasons with no partial inventory or raw output.
