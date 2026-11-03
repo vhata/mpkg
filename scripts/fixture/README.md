@@ -123,7 +123,11 @@ checkpoint authorization. `guest_native_adoption.py` requires that record,
 the exact native-change versions and functioning fixture SSH/data checks
 before adding only frozen `tmux`, `ripgrep` and `libutempter` archives.
 It retains every existing installation reason, marks the new runtime
-dependency appropriately and verifies all ten exact `vhata-cli` requests.
+dependency appropriately and verifies all ten requests in the
+[frozen `vhata-cli` recipe](../../docs/fixtures/2026-10-31-vhata-cli/PKGBUILD).
+The [fixture specification](../../docs/specs/2026-10-31-first-release-fixture.md#exact-cli-adoption-and-recursive-aur-dependencies)
+records its provenance; later edits to the live collection do not change
+these frozen requests or their evidence bindings.
 Its durable result describes a separate bootstrap-only adoption baseline;
 it creates no product state or product attempt. The ack build likewise
 marks `perl-file-next` as the dependency of the explicit ack request.

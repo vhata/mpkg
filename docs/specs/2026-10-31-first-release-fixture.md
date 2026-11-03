@@ -141,9 +141,16 @@ inspection does not establish a successful or safe runtime build.
 
 ### Exact CLI adoption and recursive AUR dependencies
 
-Preserve every request in [vhata-cli](../../vhata-cli/PKGBUILD), including
-`ack`. The frozen repositories supply every other request; they contain
-neither `ack` nor its runtime dependency `perl-file-next`.
+Preserve all ten requests in the
+[frozen `vhata-cli` recipe](../fixtures/2026-10-31-vhata-cli/PKGBUILD),
+including `ack`. This is the byte-for-byte `vhata-cli/PKGBUILD` from
+commit `4bab3d5170dc2a06faee324cbbbad4e32b3710bc`, retained for the
+October 31 fixture with SHA-256
+`d2eebd174ab2dfc1a9a5323ca960311c8c1f0be279557a29f6221058c1d88032`.
+The live collection can evolve independently; existing fixture results
+remain bound to this snapshot. The frozen repositories supply every other
+request; they contain neither `ack` nor its runtime dependency
+`perl-file-next`.
 
 | Package base | Selected canonical AUR recipe | Version and prerequisites |
 | --- | --- | --- |

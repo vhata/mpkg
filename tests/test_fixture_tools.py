@@ -803,7 +803,7 @@ class FixtureNativeAdoptionTests(unittest.TestCase):
 
     def test_adoption_request_set_matches_the_bound_collection_without_executing_it(self):
         module=self.load();root=Path(__file__).resolve().parents[1]
-        raw=(root/'vhata-cli/PKGBUILD').read_bytes()
+        raw=(root/'docs/fixtures/2026-10-31-vhata-cli/PKGBUILD').read_bytes()
         self.assertEqual(hashlib.sha256(raw).hexdigest(),module.CLI_RECIPE_SHA256)
         body=re.search(r'depends=\((.*?)\)',raw.decode(),re.S).group(1)
         self.assertEqual(tuple(re.findall(r"'([^']+)'",body)),module.CLI_REQUESTS)
