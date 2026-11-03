@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'mpkg'
 
@@ -292,8 +293,12 @@ if '-T' in sys.argv:
         result = self.invoke('test', desc, 'git>=2', 'python')
         self.assertEqual(result.returncode, 0, result.stderr)
         build = self.repo / 'vhata-test/PKGBUILD'
-        actual = subprocess.check_output(['bash', '-c', 'source "$1"; printf "%s" "$pkgdesc"',
-                                          'test', str(build)], text=True)
+        startup = self.root / 'shell-startup'
+        startup.write_text('printf "unexpected shell startup\\n"\nexit 42\n')
+        with patch.dict(os.environ, {'BASH_ENV': str(startup), 'ENV': str(startup)}):
+            actual = subprocess.check_output(['bash', '-c', 'source "$1"; printf "%s" "$pkgdesc"',
+                                              'test', str(build)], text=True,
+                                             env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'})
         self.assertEqual(actual, desc)
         self.assertIn('set description to', self.git('log', '-1', '--format=%B'))
 
