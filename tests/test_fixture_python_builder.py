@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/fixture/guest-python-build.sh'
@@ -21,7 +22,8 @@ class PythonBuilderBoundaryTests(unittest.TestCase):
         return subprocess.run([
             '/usr/bin/bash', '-c', 'source "$1"; stage_guard "$2" "$3"',
             'fixture-test', str(SCRIPT), str(stage), str(listing),
-        ], capture_output=True, text=True, timeout=5)
+        ], env={'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'},
+           capture_output=True, text=True, timeout=5)
 
     def test_publication_accepts_empty_files_and_internal_links(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -32,7 +34,10 @@ class PythonBuilderBoundaryTests(unittest.TestCase):
             (stage / 'module.py').write_text('value = 1\n')
             (stage / 'module.py').chmod(0o644)
             (stage / 'alias.py').symlink_to('module.py')
-            result = self.check_tree(stage, base / 'paths')
+            startup = base / 'shell-startup'
+            startup.write_text('printf "unexpected shell startup\\n"\nexit 42\n')
+            with patch.dict(os.environ, {'BASH_ENV': str(startup), 'ENV': str(startup)}):
+                result = self.check_tree(stage, base / 'paths')
             self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_publication_refuses_escaping_links_and_privileged_files(self):

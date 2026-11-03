@@ -8,24 +8,41 @@ import stat
 import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / 'packages' / 'viminumrc'
+SHELL_ENV = {'PATH': '/usr/bin:/bin', 'LC_ALL': 'C'}
 
 
 class VimPackageTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        startup = Path(temporary.name) / 'shell-startup'
+        startup.write_text('printf "unexpected shell startup\\n"\nexit 42\n')
+        environment = patch.dict(os.environ, {'BASH_ENV': str(startup), 'ENV': str(startup)})
+        environment.start()
+        self.addCleanup(environment.stop)
+
     def test_payload_package_is_outside_metapackage_discovery(self):
-        packages = subprocess.check_output([str(ROOT / 'mpkg'), '--list'], text=True)
-        self.assertIn('vhata-dev', packages.splitlines())
-        self.assertNotIn('viminumrc', packages.splitlines())
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            shutil.copy2(ROOT / 'mpkg', root / 'mpkg')
+            for name in ('vhata-fixture', 'packages/viminumrc'):
+                package = root / name
+                package.mkdir(parents=True)
+                (package / 'PKGBUILD').write_text('pkgname=fixture\n')
+            packages = subprocess.check_output([str(root / 'mpkg'), '--list'], text=True)
+        self.assertEqual(packages.splitlines(), ['vhata-fixture'])
 
     def metadata(self, name):
         output = subprocess.check_output([
             'bash', '-c',
             'source "$1"; declare -n values="$2"; printf "%s\\0" "${values[@]}"',
             'metadata', str(PACKAGE / 'PKGBUILD'), name,
-        ])
+        ], env=SHELL_ENV)
         return output.decode().removesuffix('\0').split('\0')
 
     def test_payload_checksums_permissions_and_backup_paths(self):
@@ -49,7 +66,7 @@ class VimPackageTests(unittest.TestCase):
                 'bash', '-euc',
                 'source "$1"; srcdir=$2; pkgdir=$3; umask 0022; package',
                 'stage', str(PACKAGE / 'PKGBUILD'), str(srcdir), str(pkgdir),
-            ], cwd=root, check=True)
+            ], cwd=root, env=SHELL_ENV, check=True)
             expected = {
                 'usr/local/etc/vimrc/vimrc': 'vimrc',
                 'usr/local/etc/vimrc/README.md': 'README.vimrc',
@@ -79,8 +96,7 @@ class VimPackageTests(unittest.TestCase):
     def test_profile_exports_shared_config_to_child_processes(self):
         for previous in (None, 'source /some/other/vimrc'):
             with self.subTest(previous=previous):
-                env = dict(os.environ)
-                env.pop('VIMINIT', None)
+                env = dict(SHELL_ENV)
                 if previous is not None:
                     env['VIMINIT'] = previous
                 output = subprocess.check_output([
