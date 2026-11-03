@@ -1,21 +1,26 @@
 pkgname=vhata-admin
 pkgver=1
-pkgrel=3
-pkgdesc=Admin\ utilities
+pkgrel=4
+pkgdesc="Admin utilities"
 arch=('any')
 
 depends=(
-  'docker'
-  'docker-compose'
-  'inetutils'
-  'lostfiles'
-  'man-db'
-  'net-tools'
-  'pacman-contrib'
-  'pkgfile'
-  'smartmontools'
-  'tailscale'
-  'yay-bin'
+  docker
+  docker-compose
+  iftop
+  inetutils
+  ipcalc
+  iwd
+  lostfiles
+  man-db
+  net-tools
+  pacman-contrib
+  parted
+  pkgfile
+  samba
+  smartmontools
+  tailscale
+  yay-bin
 )
 
 package() {
