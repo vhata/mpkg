@@ -1,7 +1,7 @@
 pkgname=vhata-dev
 pkgver=1
-pkgrel=3
-pkgdesc=Development\ utilities
+pkgrel=4
+pkgdesc='Development utilities'
 arch=('any')
 
 depends=(
@@ -13,8 +13,10 @@ depends=(
   neovim
   npm
   openai-codex
+  pnpm
   python
   rust
+  strace
   vim
 )
 
