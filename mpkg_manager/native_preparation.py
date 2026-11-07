@@ -263,6 +263,28 @@ def _copy_file(source, destination, digest, limit):
         os.close(fd)
 
 
+def _verify_control(path, expected):
+    parent = _open_directory(path.parent)
+    try:
+        fd = os.open(path.name, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW | os.O_CLOEXEC,
+                     dir_fd=parent)
+    finally:
+        os.close(parent)
+    try:
+        before = os.fstat(fd)
+        _require(stat.S_ISREG(before.st_mode) and before.st_nlink == 1
+                 and stat.S_IMODE(before.st_mode) == 0o600
+                 and before.st_size == len(expected), "native_control_changed")
+        raw = bytearray()
+        while chunk := os.read(fd, min(65536, len(expected) + 1 - len(raw))):
+            raw.extend(chunk)
+            _require(len(raw) <= len(expected), "native_control_changed")
+        _require(bytes(raw) == expected and _identity(os.fstat(fd)) == _identity(before),
+                 "native_control_changed")
+    finally:
+        os.close(fd)
+
+
 def _validate_inputs(host_id, repositories, artifacts, requests, architecture):
     try:
         _require(type(host_id) is str and str(uuid.UUID(host_id)) == host_id)
@@ -378,6 +400,9 @@ def _parse(raw, requests, artifacts, repositories):
     for name, value in added.items():
         value["reason"] = ("explicit" if name in requested_providers
                            or installed.get(name, {}).get("reason") == "explicit"
+                           or any(kind == "replacement" and target == name
+                                  and installed.get(source, {}).get("reason") == "explicit"
+                                  for kind, source, target in groups["Q"])
                            else "dependency")
     for parent, dependency, provider in groups["D"]:
         _require(parent in added and provider in final, "invalid_native_bridge_result")
@@ -463,12 +488,15 @@ def prepare_native_transaction(*, host_id, installed_database, keyring,
             _require(total <= MAX_ARTIFACT_TOTAL, "native_input_limit")
             artifact_lines.append("\t".join((artifact.name, artifact.version,
                                              artifact.repository, name, artifact.sha256)))
-        _write(stage / "repositories", ("\n".join(repo_lines) + "\n").encode("ascii"))
-        _write(stage / "artifacts.list", ("\n".join(artifact_lines)
-                                         + ("\n" if artifact_lines else "")).encode("ascii"))
-        _write(stage / "requests", ("\n".join(item.name + "\t" + (item.version or "-")
-                                             for item in requests) + "\n").encode("ascii"))
-        _write(stage / "protocol", ("1\t" + LIBALPM_VERSION + "\t" + architecture + "\n").encode())
+        controls = {
+            "repositories": ("\n".join(repo_lines) + "\n").encode("ascii"),
+            "artifacts.list": ("\n".join(artifact_lines)
+                               + ("\n" if artifact_lines else "")).encode("ascii"),
+            "requests": ("\n".join(item.name + "\t" + (item.version or "-")
+                                   for item in requests) + "\n").encode("ascii"),
+            "protocol": ("1\t" + LIBALPM_VERSION + "\t" + architecture + "\n").encode()}
+        for name, raw in controls.items():
+            _write(stage / name, raw)
         before_stage = _tree(stage / "db/local")[2]
         before_sync = _tree(stage / "db/sync")[2]
         before_keys = _tree(stage / "gpg")[2]
@@ -478,6 +506,8 @@ def prepare_native_transaction(*, host_id, installed_database, keyring,
         _require(type(result) is QueryResult and result.code == "ok"
                  and result.returncode == 0, "native_bridge_unavailable")
         transaction = _parse(result.output, requests, artifacts, repositories)
+        for name, raw in controls.items():
+            _verify_control(stage / name, raw)
         _require(_tree(installed_database) == inventory, "installed_snapshot_unstable")
         _require(_tree(keyring) == keys, "native_keyring_changed")
         _require(_tree(stage / "gpg")[2] == before_keys, "native_staged_keyring_changed")

@@ -39,7 +39,8 @@ request already satisfied by the proposed final package inventory causes
 no redundant archive reinstall. Existing dependency packages explicitly
 requested by the caller have a separate dependency-to-explicit reason
 change in the manifest. Pre-existing independent explicit reasons remain
-explicit; newly selected dependencies remain dependencies.
+explicit, including the replacement of an independently selected package;
+newly selected dependencies remain dependencies.
 
 Repository ordering controls native selection. If native resolution asks
 for a provider, the bridge proposes its first native candidate and records
@@ -65,6 +66,8 @@ after native preparation. Source and staged keyring changes also refuse the
 result, including automatic trustdb changes by native verification. A
 keyring needing such maintenance must be prepared explicitly before this
 operation; a changed trust result is never bound to the original keyring.
+The exact bridge protocol, repository policy, requests and archive-map
+control files must also remain unchanged before publishing the manifest.
 This detects observed changes; it is not an atomic snapshot or reservation
 against an independently operating package manager.
 

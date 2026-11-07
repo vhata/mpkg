@@ -198,6 +198,13 @@ class NativePreparationTests(unittest.TestCase):
         self.refused("unexplained_native_removal", runner=lambda _: QueryResult(
             "ok", raw.replace(b"Q\treplacement\told\tnew\n", b""), 0))
 
+    def test_replacement_retains_preexisting_independent_explicit_reason(self):
+        raw = self.output(extra=("I\told\t1\t0", "R\told\t1\t0",
+                                 self.add_row("new"), "Q\treplacement\told\tnew"))
+        result = self.prepare(runner=lambda _: QueryResult("ok", raw, 0))
+        self.assertEqual(next(item for item in result.manifest["add"]
+                              if item["name"] == "new")["reason"], "explicit")
+
     def test_preserves_independently_explicit_dependency_reason(self):
         result = self.prepare(runner=lambda _: QueryResult("ok", self.output(
             extra=("I\tdep\t1\t0",)), 0))
@@ -277,6 +284,15 @@ class NativePreparationTests(unittest.TestCase):
 
                 self.refused("native_staged_keyring_changed", runner=changed)
         self.assertFalse(any(self.stages.glob("*/manifest.json")))
+
+    def test_changed_native_policy_or_requests_cannot_use_original_bindings(self):
+        for name in ("protocol", "repositories", "requests", "artifacts.list"):
+            with self.subTest(name=name):
+                def changed(stage):
+                    (stage / name).write_bytes(b"different native controls")
+                    return QueryResult("ok", self.output(), 0)
+
+                self.refused("native_control_changed", runner=changed)
 
     def test_symlinks_and_special_inputs_are_not_followed(self):
         original = self.artifacts[0]
