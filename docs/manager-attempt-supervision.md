@@ -90,8 +90,10 @@ Worker failure appends `unresolved` when it can; interrupted journal writes
 may leave the earlier ownership event instead. Either remains blocking even
 when the worker has exited and the advisory lock is free. This slice does
 not delete locks, kill existing workers, infer daemon quiescence, roll back
-external effects or automatically retry. Evidence-backed recovery and
-production adapter completion rules are separate work. The fixture runner
+external effects or automatically retry. The separate
+[recovery boundary](manager-attempt-recovery.md) requires complete trusted
+evidence before releasing ownership without rewriting action outcomes.
+Production adapter completion rules remain separate work. The fixture runner
 is not evidence that a real package transaction or application is healthy.
 
 ## Evidence and limits

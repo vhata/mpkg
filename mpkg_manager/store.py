@@ -23,7 +23,7 @@ from .declarations import (Declaration, DeclarationError, canonical_json,
                            load_declaration, physical_key, validate_model)
 
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 APPLICATION_ID = 0x4D504B47
 MAX_INPUT_BYTES = 16 * 1024 * 1024
 _BOUND_TOKEN_PREFIX = b"MPKGBND\x00\x01"
@@ -93,6 +93,14 @@ _TABLES["attempt_events"] = """CREATE TABLE attempt_events(
         created_at TEXT NOT NULL, outcome TEXT NOT NULL, seal BLOB NOT NULL,
         PRIMARY KEY(attempt_id,sequence),
         FOREIGN KEY(attempt_id,action_id) REFERENCES attempt_actions(attempt_id,id)) STRICT"""
+_V4_TABLES = dict(_TABLES)
+_TABLES["execution_plans"] = """CREATE TABLE execution_plans(
+        id TEXT PRIMARY KEY, revision INTEGER NOT NULL REFERENCES decisions(revision),
+        snapshot_id TEXT NOT NULL REFERENCES snapshots(id), created_at TEXT NOT NULL,
+        context BLOB NOT NULL, seal BLOB NOT NULL) STRICT"""
+_TABLES["plan_acceptances"] = """CREATE TABLE plan_acceptances(
+        id TEXT PRIMARY KEY, plan_id TEXT NOT NULL UNIQUE REFERENCES execution_plans(id),
+        operator_uid INTEGER NOT NULL, created_at TEXT NOT NULL, seal BLOB NOT NULL) STRICT"""
 _TRIGGERS = {
     f"{table}_{operation.lower()}": (
         f"CREATE TRIGGER {table}_{operation.lower()} BEFORE {operation} ON {table} "
@@ -108,9 +116,12 @@ _V2_TRIGGERS = {name: sql for name, sql in _TRIGGERS.items()
 _V3_TRIGGERS = {name: sql for name, sql in _TRIGGERS.items()
                 if any(name == f"{table}_{operation}" for table in _V3_TABLES
                        for operation in ("update", "delete"))}
+_V4_TRIGGERS = {name: sql for name, sql in _TRIGGERS.items()
+                if any(name == f"{table}_{operation}" for table in _V4_TABLES
+                       for operation in ("update", "delete"))}
 _SCHEMAS = {1: _LEGACY_TABLES | _LEGACY_TRIGGERS,
             2: _V2_TABLES | _V2_TRIGGERS, 3: _V3_TABLES | _V3_TRIGGERS,
-            4: _TABLES | _TRIGGERS}
+            4: _V4_TABLES | _V4_TRIGGERS, 5: _TABLES | _TRIGGERS}
 _MIGRATION_DOMAIN = b"MPKGMIGRATION\x00\x01"
 
 
@@ -501,6 +512,9 @@ class HostStore:
             if version >= 4:
                 from .attempt_journal import _verify_journal
                 _verify_journal(self)
+            if version >= 5:
+                from .execution_plans import _verify_plans
+                _verify_plans(self)
             self._schema_version = version
         except (StoreError, DeclarationError, TypeError, ValueError, KeyError,
                 OverflowError, RecursionError):
@@ -534,10 +548,10 @@ class HostStore:
                 _fail("store_corrupt")
             backup = None if raw is None else _decode(raw)
             if kind == "created":
-                if previous is not None or before != 0 or after not in (2, 3, 4) or revision != 0 or backup is not None:
+                if previous is not None or before != 0 or after not in (2, 3, 4, 5) or revision != 0 or backup is not None:
                     _fail("store_corrupt")
             elif kind == "migrated":
-                if ((before, after) not in ((1, 2), (2, 3), (3, 4))
+                if ((before, after) not in ((1, 2), (2, 3), (3, 4), (4, 5))
                         or (previous is None and before != 1)
                         or (previous is not None and before != previous_version)):
                     _fail("store_corrupt")

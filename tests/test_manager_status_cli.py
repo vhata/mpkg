@@ -461,7 +461,8 @@ desired={present=true}
         self.assertIn("working-tree (unrecorded)", text)
         self.assertIn("retained; accepted", text)
         self.assertIn("accepted check check: passed", text)
-        self.assertIn("attempt history remain unavailable", text)
+        self.assertIn("Attempt history at revision 1", text)
+        self.assertIn("Application remains unavailable", text)
 
     def test_collection_rejects_invalid_modes_and_revision_before_queries(self):
         with HostStore.open_readonly(self.store_path, HOST, owner_uid=os.geteuid()) as store:

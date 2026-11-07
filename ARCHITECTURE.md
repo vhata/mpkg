@@ -24,6 +24,13 @@ checks and product acceptance.
 
 ## Current boundaries
 
+- `mpkg_manager.attempt_reporting` exposes bounded read-only attempt and
+  event pages through the installed helper, CLI and default status output.
+  The [reporting guide](docs/manager-attempt-reporting.md) preserves exact
+  historical references, redacted target/check predicates, retry ancestry
+  and separate command/observation outcomes. Explicit cursors disclose
+  remaining history; inspection never starts recovery or takes the host
+  application lock.
 - `mpkg_manager.declarations` owns the Python 3.12 replacement's typed
   nonsecret model, contextual consumer constraints and exact snapshots.
   `mpkg_manager.cli` exposes local declaration validation plus explicit
@@ -52,11 +59,11 @@ checks and product acceptance.
   ownership checks and their concurrency limits. Trusted fixture path/UID
   overrides are not a production privilege boundary.
 - `mpkg_manager.attempt_journal` preserves authenticated immutable attempt
-  targets and append-only action events in store schema v4. Its
+  targets and append-only action events introduced in store schema v4. Its
   [journal guide](docs/manager-attempt-journal.md) defines original input,
   decision, check and worker bindings, separate command/observation outcomes,
   and explicit migration. The creation harness accepts inert fixtures only;
-  production attempts, recovery and CLI reporting remain separate.
+  production attempts remain separate.
 - `mpkg_manager.attempt_supervisor` and `attempt_worker` add durable launch
   reservations and worker ownership using the fixed staged worker entrypoint.
   The [supervision guide](docs/manager-attempt-supervision.md) describes
@@ -64,6 +71,12 @@ checks and product acceptance.
   Owned inert workers and a controlled system-manager transport exercise
   these boundaries; production effects and real systemd acceptance remain
   unavailable.
+- `mpkg_manager.attempt_recovery` records authenticated quiescence
+  evidence under the host lock without changing original action outcomes.
+  Its [recovery guide](docs/manager-attempt-recovery.md) defines complete
+  dispatch, unit/cgroup, boot, package-lock and engine/resource evidence,
+  the durable mutation gate and sealed retry ancestry. Inert collectors
+  exercise the contract; production collectors and requests remain absent.
 - `mpkg_manager.observe_native` and `mpkg_manager.observe_compose` collect
   time-bounded observations through closed read-only queries. Their
   [native](docs/manager-observations.md) and
@@ -132,6 +145,13 @@ checks and product acceptance.
   [collection](docs/manager-endpoint-checks.md) guides distinguish route
   agreement from listener attribution and application health. Recording
   intent or removing a resource never initiates a probe.
+- `mpkg_manager.execution_plans` persists authenticated plans and explicit
+  operator acceptance in schema v5, with verified-backup migration.
+  Its [authorization guide](docs/manager-execution-plans.md) binds original
+  authority, inputs, checks, artifacts and expected action progression.
+  Closed inert adapters exercise derivation and boundary revalidation;
+  production adapters and requests remain unavailable. Existing blocked
+  Sonarr proposals retain their original non-executable meaning.
 - `mpkg_manager.planning` compares validated intent, trusted store
   projections and current facts without reads or effects. The
   [comparison guide](docs/manager-planning.md) owns source/identity

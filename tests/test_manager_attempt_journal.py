@@ -507,7 +507,7 @@ class JournalMigrationTests(unittest.TestCase):
     def test_verified_v4_migration_preserves_old_history_and_readable_backup(self):
         receipt = self.migrate()
         self.assertEqual((receipt.from_version, receipt.to_version), (3, 4))
-        with HostStore.open_existing(self.directory, HOST, owner_uid=os.geteuid()) as store:
+        with HostStore.open_readonly(self.directory, HOST, owner_uid=os.geteuid()) as store:
             self.assertEqual(store.current(), self.original)
             self.assertEqual(journal.list_attempts(store), [])
             self.assertEqual(store.schema_history()["schema_version"], 4)

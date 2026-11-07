@@ -115,16 +115,33 @@ can satisfy only that exact access predicate. Both preserve original
 retained roles and leave application functionality unverified. Edited
 intent keeps all recorded runtime roles unavailable without those reads.
 
+## Historical attempts
+
+Default CLI status includes the first [attempt-history page](manager-attempt-reporting.md).
+Original decision and adopted targets, required checks, partial outcomes
+and retry ancestry remain independent of the declaration or current
+observations selected for status. Unknown command completion stays
+unknown even when present observations match. Reading history never
+starts recovery or a retry and does not take the application lock.
+
+Use `mpkg-manager attempts --after UUID` to continue attempt pages and
+`mpkg-manager attempt UUID --after-event N` to page an attempt's events.
+Every response includes explicit completion bounds and next cursors.
+A missing or corrupt store and pre-journal schema are fixed errors rather
+than empty histories. A page has its own 1 MiB byte limit; an oversized
+single record fails explicitly without omitting targets or checks.
+
 ## Output and bounds
 
 Human output shows property comparisons, current and accepted checks,
-retained and unselected resources, per-role input results and blockers.
+retained and unselected resources, per-role input results, historical
+attempt outcomes and blockers.
 Requested target-content results list current/accepted and desired/consumer
 roles separately, without paths, bytes or content hashes.
 `--json` returns `{"ok": true, "result": {"report": ..., "collection": ...}}`.
 The report contains the full redacted comparison; collection states its
 manifest coverage, query count, reserved output allowance and gaps.
-Both remain `executable: false`, with application and attempt-history
+Both remain `executable: false`, with application and input-replay
 limitations. A zero exit means a complete valid response, not that all
 properties agree, checks pass, inputs match, or application is authorized.
 

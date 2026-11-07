@@ -80,11 +80,6 @@ measured against the first-release contract and acceptance scenarios.
   - Reproduction: `git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }'` returns pipeline statuses `141 0` in this checkout. Under `set -euo pipefail`, cleanup exits 141 after its dry-run heading, before examining any branch.
   - Verify large worktree inventories, correct main-worktree identification, and preservation of dirty worktrees and unique ignored evidence. No branches or worktrees were removed during the reproduction.
 
-- [TOOLING] `expose-execution-requests` — **Connect bounded plan, apply and recover requests.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#expose-execution-requests), 2026-11-07.
-  - Depends on: `recover-interrupted-attempts`, `report-attempt-outcomes`, `authorize-execution-plans`
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
 - [NATIVE] `apply-native-transactions` — **Commit only an exactly accepted native transaction.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#apply-native-transactions), 2026-11-07.
   - Depends on: `expose-execution-requests`
@@ -130,11 +125,6 @@ measured against the first-release contract and acceptance scenarios.
   - Depends on: `apply-native-service-configuration`, `apply-sonarr-port-change`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
-- [TOOLING] `record-retirement-dispositions` — **Require a fresh scoped data decision for every retirement.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#record-retirement-dispositions), 2026-11-07.
-  - Depends on: `authorize-execution-plans`
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
 - [TOOLING] `retire-workloads-with-retained-data` — **Stop and retire workloads while preserving usable retained data.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#retire-workloads-with-retained-data), 2026-11-07.
   - Depends on: `record-retirement-dispositions`, `apply-native-service-configuration`, `apply-compose-recreation`, `verify-runtime-consumer-access`
@@ -147,7 +137,7 @@ measured against the first-release contract and acceptance scenarios.
 
 - [TOOLING] `export-and-recover-host-history` — **Export complete redacted history and recover from verified backups.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#export-and-recover-host-history), 2026-11-07.
-  - Depends on: `recover-interrupted-attempts`, `record-retirement-dispositions`
+  - Depends on: `record-retirement-dispositions`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [TOOLING] `validate-installed-execution-boundary` — **Validate the installed privilege and worker boundary in a disposable guest.** Deliver the bounded scope and acceptance checks in the linked task.
@@ -164,13 +154,13 @@ measured against the first-release contract and acceptance scenarios.
 
 - [NATIVE] `accept-native-execution` — **Run native package, configuration and recovery acceptance.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#accept-native-execution), 2026-11-07.
-  - Depends on: `validate-installed-execution-boundary`, `install-aur-artifacts`, `apply-native-service-configuration`, `resolve-manual-configuration-drift`, `report-attempt-outcomes`
+  - Depends on: `validate-installed-execution-boundary`, `install-aur-artifacts`, `apply-native-service-configuration`, `resolve-manual-configuration-drift`
   - Blocked by: explicit approval of exact system commands, write contents and disposable target, and verified fixture/tool prerequisites.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [DOCKER] `accept-docker-execution` — **Run Docker configuration, update and recovery acceptance.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#accept-docker-execution), 2026-11-07.
-  - Depends on: `validate-installed-execution-boundary`, `apply-sonarr-port-change`, `apply-compose-recreation`, `resolve-manual-configuration-drift`, `report-attempt-outcomes`
+  - Depends on: `validate-installed-execution-boundary`, `apply-sonarr-port-change`, `apply-compose-recreation`, `resolve-manual-configuration-drift`
   - Blocked by: explicit approval of exact system commands, write contents and disposable target, and verified fixture/tool prerequisites.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
@@ -212,14 +202,10 @@ measured against the first-release contract and acceptance scenarios.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#render-compose-execution-bundles), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
-- [TOOLING] `report-attempt-outcomes` — **Expose attempt history and partial outcomes in status.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#report-attempt-outcomes), 2026-11-07.
+- [TOOLING] `record-retirement-dispositions` — **Require a fresh scoped data decision for every retirement.** Deliver the bounded scope and acceptance checks in the linked task.
+  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#record-retirement-dispositions), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
-- [TOOLING] `authorize-execution-plans` — **Bind accepted execution plans to exact authority and inputs.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#authorize-execution-plans), 2026-11-07.
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
-- [TOOLING] `recover-interrupted-attempts` — **Recover uncertain attempts without overlapping work.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#recover-interrupted-attempts), 2026-11-07.
+- [TOOLING] `expose-execution-requests` — **Connect bounded plan, apply and recover requests.** Deliver the bounded scope and acceptance checks in the linked task.
+  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#expose-execution-requests), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.

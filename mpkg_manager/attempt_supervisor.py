@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 
-from .attempt_journal import (JournalError, _FixtureJournal, _decode, _rows, _uuid,
+from .attempt_journal import (JournalError, _FixtureJournal, _decode, _replay, _rows, _uuid,
                               read_attempt, require_no_pending_launch)
 from .host_helper import MUTATION_LOCK, STORE_DIRECTORY, _mutation_lock
 from .host_policy import POLICY_PATH, load_host_policy
@@ -111,13 +111,15 @@ def _append(store, attempt_id, kind, outcome, action_id=None):
 
 def _worker_identity(store, attempt_id, boot_id, *, fixture):
     with store._read():
-        row, _, _ = _rows(store, attempt_id)
+        row, actions, events = _rows(store, attempt_id)
         context = _decode(row[6])
         _require(fixture and context["authority"] == "fixture_only", "execution_unavailable")
         worker = context["worker"]
         _require(worker["worker_uid"] == os.geteuid() and worker["boot_id"] == boot_id
                  and worker["unit"] == LaunchSpec(attempt_id).unit, "worker_identity_mismatch")
         _require(store._revision() == row[2], "attempt_target_changed")
+        _require(_replay(actions, events)[2]["recovery"] != "quiescent",
+                 "attempt_recovered")
         return worker
 
 
