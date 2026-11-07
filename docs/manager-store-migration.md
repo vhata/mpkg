@@ -1,22 +1,24 @@
 # Explicit host-store migration
 
-`mpkg_manager.store_migration` provides three fixed administrative library
-transitions: version 1 to 2, version 2 to 3 and version 3 to 4. Each needs a
+`mpkg_manager.store_migration` provides four fixed administrative library
+transitions: version 1 to 2, version 2 to 3, version 3 to 4 and version 4
+to 5. Each needs a
 verified private backup. Version 2 adds immutable, host-bound maintenance
 receipts; version 3 adds [blocked Sonarr proposals](manager-effect-proposals.md)
 and chained maintenance receipts. Version 4 adds the authenticated
-[attempt journal](manager-attempt-journal.md). Upgrades preserve decision revisions,
+[attempt journal](manager-attempt-journal.md); version 5 adds immutable
+[execution plans and acceptances](manager-execution-plans.md). Upgrades preserve decision revisions,
 snapshots, accepted resources, protected captures and the private key.
 It changes no package, file managed by a declaration, account, service
 or container. Plan execution remains unsupported.
 
 ## Compatibility and trusted entry point
 
-New stores use version 4 and contain a sealed creation receipt. New
-readers accept exact version-1 through version-4 schemas. Ordinary
-writes require version 4; opening an older version for recording returns the fixed
+New stores use version 5 and contain a sealed creation receipt. New
+readers accept exact version-1 through version-5 schemas. Ordinary
+writes require version 5; opening an older version for recording returns the fixed
 `store_migration_required` error through the helper and client. Existing
-`current()` and `history()` projections work unchanged on all four
+`current()` and `history()` projections work unchanged on all five
 versions. Older readers reject unsupported newer schemas. Unknown schemas,
 modified schema SQL, unsafe paths and leftover journal/WAL/shared-memory
 files fail before migration; no open silently upgrades or repairs them.
@@ -47,6 +49,14 @@ migrate_store_to_v4(
     backup_directory=unused_v3_backup_directory,
     owner_uid=0,
 )
+# A fourth operation preserves all version-4 attempt history:
+migrate_store_to_v5(
+    directory,
+    host_id,
+    expected_revision=revision,
+    backup_directory=unused_v4_backup_directory,
+    owner_uid=0,
+)
 ```
 
 All paths and the ownership override are trusted embedding parameters.
@@ -58,9 +68,10 @@ point still needs its own fixed policy and authorization boundary.
 The expected revision is mandatory. `migrate_store` accepts exactly
 version 1 and produces version 2. `migrate_store_to_v3` accepts exactly
 version 2 and produces version 3. `migrate_store_to_v4` accepts exactly
-version 3 and produces version 4. No operation silently performs another
+version 3 and produces version 4. `migrate_store_to_v5` accepts exactly
+version 4 and produces version 5. No operation silently performs another
 transition. Intermediate stores remain valid and readable; ordinary
-writes require all three transitions to version 4. Each operation
+writes require all four transitions to version 5. Each operation
 refuses a stale revision or an incompatible source version. The destination
 must be a new absolute directory beneath an already safe parent, outside
 the source store. Existing destinations, including empty directories,
@@ -123,9 +134,9 @@ acceptance and power-loss testing remain separate work.
 ## Receipt validation and recovery evidence
 
 Version 2 requires exactly one sealed creation or migration receipt.
-Versions 3 and 4 require a complete ordered chain ending at their version: a fresh
+Versions 3 through 5 require a complete ordered chain ending at their version: a fresh
 creation receipt, or the preserved version-2 receipt followed by the
-explicit version-2-to-3 receipt, then the version-3-to-4 receipt if upgraded.
+explicit version-2-to-3 receipt, then the version-3-to-4 and version-4-to-5 receipts if upgraded.
 Each migration seal includes the preceding
 receipt seal; replacing even an otherwise valid predecessor is rejected.
 Receipt revisions and timestamps must not decrease through the chain.
@@ -133,7 +144,7 @@ An omitted receipt cannot masquerade as a freshly created store. The
 seal binds the host UUID, receipt UUID and kind, source and destination
 versions, decision revision, timestamp and complete private backup
 metadata to the store's private key. Migration receipts require the
-exact 1-to-2, 2-to-3 or 3-to-4 transition; creation receipts require revision zero and no
+exact 1-to-2, 2-to-3, 3-to-4 or 4-to-5 transition; creation receipts require revision zero and no
 backup. SQL triggers refuse updates and deletion. Every store read or
 write validates these invariants alongside existing history checks.
 These are corruption checks, not authentication against an
@@ -142,7 +153,7 @@ administrator who owns the database and key.
 A successful call returns a frozen `MigrationReceipt`. Its `as_dict()`
 contains only host/receipt/backup UUIDs, revision, versions and fixed
 outcome flags. `HostStore.schema_history()` supplies the durable redacted
-evidence after reopening. For versions 2 through 4 it reports `receipt_evidence`
+evidence after reopening. For versions 2 through 5 it reports `receipt_evidence`
 as `verified` and returns bounded receipt fields without backup paths,
 digests, source identities, seals or protected bytes. The verification
 describes the backup at migration time; it does not assert the backup

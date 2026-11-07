@@ -23,7 +23,8 @@ _ORDER = {"host": "singleton", "snapshots": "id", "decisions": "revision",
           "resources": "stable_id,revision", "protected_inputs": "id",
           "decision_inputs": "revision,name", "schema_migrations": "to_version",
           "sonarr_port_proposals": "id", "attempts": "id",
-          "attempt_actions": "attempt_id,ordinal", "attempt_events": "attempt_id,sequence"}
+          "attempt_actions": "attempt_id,ordinal", "attempt_events": "attempt_id,sequence",
+          "execution_plans": "id", "plan_acceptances": "id"}
 _DIRECTORY = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 _READ = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
 
@@ -309,6 +310,12 @@ def migrate_store_to_v4(directory, host_id, *, expected_revision, backup_directo
     """Upgrade exactly v3 to v4 after verifying a private backup of all history."""
     return _migrate_store(directory, host_id, expected_revision=expected_revision,
                           backup_directory=backup_directory, owner_uid=owner_uid, before=3)
+
+
+def migrate_store_to_v5(directory, host_id, *, expected_revision, backup_directory, owner_uid=0):
+    """Upgrade exactly v4 to v5, preserving attempts and blocked proposals."""
+    return _migrate_store(directory, host_id, expected_revision=expected_revision,
+                          backup_directory=backup_directory, owner_uid=owner_uid, before=4)
 
 
 def _migrate_store(directory, host_id, *, expected_revision, backup_directory, owner_uid, before):
