@@ -186,6 +186,13 @@ def _descriptor(history, prepared):
     return actions
 
 
+def _observation_satisfied(action, observed):
+    count = sum(len(role["definitions"]) for role in action["checks"])
+    return (type(observed) is dict and set(observed) == {"desired", "checks"}
+        and observed["desired"] == "satisfied" and type(observed["checks"]) is list
+        and observed["checks"] == ["satisfied"] * count)
+
+
 def _hash(value):
     return type(value) is str and len(value) == 64 and all(character in "0123456789abcdef" for character in value)
 
@@ -308,7 +315,10 @@ class _FixturePlanner(ExecutionPlanner):
                 _require(self.recorder._same_capture(fresh, raw, identity), "execution_plan_stale")
             _require(self.recorder._policy_context() == context["policy"], "execution_plan_stale")
             for action in context["actions"]:
-                _require(self.adapter.revalidate(action, completed=action["stable_id"] in completed), "execution_plan_stale")
+                done = action["stable_id"] in completed
+                _require(self.adapter.revalidate(action, completed=done), "execution_plan_stale")
+                if done:
+                    _require(_observation_satisfied(action, self.adapter.observe(action)), "execution_plan_stale")
         except BindingError:
             raise ExecutionPlanError("execution_plan_stale") from None
 
@@ -359,8 +369,14 @@ class _FixturePlanner(ExecutionPlanner):
                 acceptance[2], _digest(context), _digest(context["history"]["target"]))
 
     def validate(self, binding, *, completed=()):
-        _require(type(binding) is AcceptedPlanBinding and binding == self.binding(binding.acceptance_id),
-                 "plan_acceptance_mismatch")
+        _require(type(binding) is AcceptedPlanBinding
+                 and all(_uuid(value) for value in (binding.plan_id, binding.acceptance_id, binding.host_id))
+                 and type(binding.revision) is int and 1 <= binding.revision < 2**63 - 1
+                 and _uid(binding.operator_uid) and _hash(binding.snapshot_id)
+                 and _hash(binding.descriptor_digest) and _hash(binding.target_digest)
+                 and type(binding.contract_version) is int and binding.contract_version == 1
+                 and binding.authority == "fixture_only"
+                 and binding == self.binding(binding.acceptance_id), "plan_acceptance_mismatch")
         with self.store._read():
             context = _verified(self.store, _row(self.store, binding.plan_id))
         self._fresh(context, completed=completed)
@@ -371,6 +387,18 @@ class _FixturePlanner(ExecutionPlanner):
         context = self.validate(binding)
         _require(type(worker) is WorkerIdentity and worker.operator_uid == binding.operator_uid,
                  "plan_operator_mismatch")
+        if predecessor is not None:
+            _require(_uuid(predecessor))
+            with self.store._read():
+                # Journal validation owns eligibility of the disposition; this
+                # bridge additionally refuses a spare acceptance predating it.
+                terminal = self.store._db.execute("""SELECT created_at FROM attempt_events
+                    WHERE attempt_id=? AND kind IN ('attempt_finished','recovery_recorded')
+                    ORDER BY sequence DESC LIMIT 1""", (predecessor,)).fetchone()
+                _require(terminal is not None, "plan_retry_unavailable")
+                _require(_row(self.store, binding.plan_id)[3] >= terminal[0]
+                         and _acceptance(self.store, binding.acceptance_id)[3] >= terminal[0],
+                         "plan_predates_recovery")
         plan = PlanReference(binding.plan_id, binding.host_id, binding.revision,
                              binding.snapshot_id, binding.target_digest)
         return _FixtureJournal(self.store).create(plan, worker,
@@ -404,10 +432,7 @@ class _FixturePlanner(ExecutionPlanner):
                     append("command_completed", command, action_id)
                     try:
                         observed = self.adapter.observe(action)
-                        count = sum(len(role["definitions"]) for role in action["checks"])
-                        good = (type(observed) is dict and set(observed) == {"desired", "checks"}
-                            and observed["desired"] == "satisfied" and type(observed["checks"]) is list
-                            and observed["checks"] == ["satisfied"] * count)
+                        good = _observation_satisfied(action, observed)
                     except Exception:
                         good = False
                     current = append("observation_completed", "satisfied" if good else "unavailable", action_id)

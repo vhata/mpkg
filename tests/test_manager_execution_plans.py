@@ -108,7 +108,8 @@ class ExecutionPlanTests(unittest.TestCase):
     def test_forged_binding_or_operator_never_creates_attempt(self):
         binding = self.accept()
         for changed in (replace(binding, host_id=str(uuid.uuid4())), replace(binding, descriptor_digest='0'*64),
-                        replace(binding, authority='production'), replace(binding, operator_uid=binding.operator_uid+1)):
+                        replace(binding, authority='production'), replace(binding, operator_uid=binding.operator_uid+1),
+                        replace(binding, revision=True), replace(binding, contract_version=True)):
             self.error('plan_acceptance_mismatch', lambda: self.run_plan(changed))
         self.error('plan_operator_mismatch', lambda: self.planner.create_attempt(binding,
             replace(self.worker, operator_uid=self.worker.operator_uid+1)))
@@ -198,6 +199,21 @@ class ExecutionPlanTests(unittest.TestCase):
         self.assertEqual(result['state'], 'unverified')
         self.assertEqual(result['actions'][1]['state'], 'planned')
         self.assertFalse(result['supervision']['released'])
+
+    def test_completed_dependency_checks_are_revalidated_before_next_effect(self):
+        self.with_checks()
+        binding = self.accept(self.prepare(2))
+        observe = self.adapter.observe
+        def changes_after_observation(action):
+            result = observe(action)
+            self.adapter.facts[self.ids['first']]['checks'] = False
+            return result
+        with patch.object(self.adapter, 'observe', changes_after_observation):
+            self.error('execution_plan_stale', lambda: self.run_plan(binding))
+        self.assertEqual(self.adapter.executions, [self.ids['first']])
+        attempt = journal.list_attempts(self.store)[0].as_dict()
+        self.assertEqual(attempt['actions'][1]['state'], 'planned')
+        self.assertFalse(attempt['supervision']['released'])
 
     def test_missing_required_check_cannot_be_claimed_as_success(self):
         self.with_checks()
@@ -328,6 +344,201 @@ class ExecutionPlanTests(unittest.TestCase):
         with load_host_policy(path=self.policy_path, owner_uid=os.geteuid()) as policy:
             other = plans._FixturePlanner(ProtectedRecorder(self.store, policy), self.adapter)
             self.error('execution_plan_stale', lambda: other.validate(binding))
+
+
+
+    def test_preaccepted_spare_plan_cannot_retry_later_failure(self):
+        spare = self.accept()
+        preprepared = self.prepare()
+        plan = journal._fixture_plan(self.store, expected_revision=1, stable_resource_ids=[self.ids['first']])
+        writer = journal._FixtureJournal(self.store)
+        attempt = writer.create(plan, self.worker, stable_resource_ids=[self.ids['first']]).as_dict()
+        for kind, outcome, action_id in (('action_started', 'started', attempt['actions'][0]['action_id']),
+                ('command_completed', 'failed', attempt['actions'][0]['action_id']),
+                ('attempt_finished', 'failed', None)):
+            attempt = writer.append(attempt['attempt_id'], expected_sequence=attempt['sequence'],
+                action_id=action_id, kind=kind, outcome=outcome).as_dict()
+        self.error('plan_predates_recovery', lambda: self.planner.create_attempt(spare, self.worker,
+            predecessor=attempt['attempt_id']))
+        accepted_later = self.accept(preprepared)
+        self.error('plan_predates_recovery', lambda: self.planner.create_attempt(accepted_later, self.worker,
+            predecessor=attempt['attempt_id']))
+        fresh = self.accept()
+        retry = self.planner.create_attempt(fresh, self.worker, predecessor=attempt['attempt_id']).as_dict()
+        self.assertEqual(retry['predecessor'], attempt['attempt_id'])
+        self.assertNotEqual(retry['plan_id'], attempt['plan_id'])
+
+    def test_replay_requires_new_plan_even_when_noop_facts_still_match(self):
+        for identity in self.ids.values():
+            self.adapter.seed(identity, satisfied=True)
+        binding = self.accept()
+        self.run_plan(binding)
+        self.error('attempt_plan_already_used', lambda: self.run_plan(binding))
+
+    def test_source_identity_change_with_equal_bytes_invalidates_plan(self):
+        source = self.root / 'private.env'
+        source.write_text(PRIVATE)
+        prepared = self.recorder.prepare(expected_revision=1, input_id='input',
+            base_directory=str(self.root), path='private.env')
+        declaration = load_declaration(SOURCE + f'''\n[[inputs]]
+ id="input"
+ base_directory={json.dumps(str(self.root))}
+ files=[{{path="private.env",classification="protected",reference="{prepared.reference}"}}]
+'''.encode())
+        self.recorder.record_intent(declaration, 1, prepared_inputs=[prepared])
+        binding = self.accept(self.prepare(2))
+        replacement = self.root / 'replacement'
+        replacement.write_bytes(source.read_bytes())
+        replacement.replace(source)
+        self.error('execution_plan_stale', lambda: self.run_plan(binding))
+
+    def test_missing_legacy_input_cannot_become_an_accepted_plan(self):
+        declaration = load_declaration(SOURCE + f'''\n[[inputs]]
+ id="input"
+ base_directory={json.dumps(str(self.root))}
+ files=[{{path="missing.env",classification="nonsecret"}}]
+'''.encode())
+        self.store.record_intent(declaration, 1)
+        self.error('plan_input_unavailable', lambda: self.prepare(2))
+
+    def test_retained_consumers_prevent_conflicting_target(self):
+        source = SOURCE.replace(b'components=[]', b'''[[components]]
+ id="consumer"
+ purpose="Keep installed"
+ resources=["first"]
+ requirements=[{resource="first",property="present",value=true}]
+''').replace(b'id="first"', b'id="first"\nconsumers=["consumer"]')
+        self.store.adopt(load_declaration(source), 1, ['first', 'second'])
+        self.store.record_intent(load_declaration(SOURCE.replace(b'desired={present=true}',
+            b'desired={present=false}', 1)), 2)
+        self.error('consumer_requirement_conflict', lambda: self.prepare(3))
+
+    def test_unavailable_resource_effect_cannot_be_accepted(self):
+        declaration = load_declaration(b'''schema=1
+ components=[]
+ [[resources]]
+ id="service"
+ kind="service"
+ identity={manager="system",unit="fixture.service"}
+ manage=["running"]
+ desired={running=true}
+''')
+        self.store.adopt(declaration, 1, ['service'])
+        stable = next(row['stable_id'] for row in self.store.current()['resources'] if row['logical_id']=='service')
+        self.adapter.seed(stable)
+        self.error('plan_effect_unsupported', lambda: self.planner.prepare(expected_revision=2,
+            stable_resource_ids=[stable]))
+
+
+    def test_lost_action_start_commit_keeps_unknown_without_execution(self):
+        binding = self.accept()
+        commit = HostStore._commit
+        def lost_start(store):
+            last = store._db.execute('SELECT kind FROM attempt_events ORDER BY rowid DESC LIMIT 1').fetchone()
+            commit(store)
+            if last == ('action_started',):
+                raise OSError(PRIVATE)
+        with patch.object(HostStore, '_commit', lost_start):
+            self.error('commit_outcome_unknown', lambda: self.run_plan(binding))
+        self.assertEqual(self.adapter.executions, [])
+        with HostStore.open_readonly(self.directory, HOST, owner_uid=os.geteuid()) as reopened:
+            attempt = journal.list_attempts(reopened)[0].as_dict()
+            self.assertEqual(attempt['state'], 'unknown')
+            self.assertTrue(attempt['actions'][0]['attempted'])
+            self.assertFalse(attempt['supervision']['released'])
+
+    def test_another_host_cannot_load_accepted_binding(self):
+        binding = self.accept()
+        host = str(uuid.uuid4())
+        policy_path = self.root / 'other-policy'
+        policy_path.write_text(f'schema=1\nhost_id="{host}"\nengine_aliases={{}}\nallowed_input_roots={json.dumps([str(self.root)])}\n')
+        policy_path.chmod(0o600)
+        with HostStore.create(self.root / 'other-store', host, owner_uid=os.geteuid()) as other:
+            other.adopt(DECLARATION, 0, ['first', 'second'])
+            with load_host_policy(path=policy_path, owner_uid=os.geteuid()) as policy:
+                planner = plans._FixturePlanner(ProtectedRecorder(other, policy), plans._InertAdapter())
+                self.error('plan_acceptance_missing', lambda: planner.validate(binding))
+            self.assertEqual(journal.list_attempts(other), [])
+
+
+
+class ExecutionPlanMigrationTests(unittest.TestCase):
+    def setUp(self):
+        import test_manager_effect_plans as proposal_fixtures
+        self.fixture = proposal_fixtures.ProposalTests()
+        self.addCleanup(self.fixture.doCleanups)
+        with patch('mpkg_manager.store.SCHEMA_VERSION', 4):
+            self.fixture.setUp()
+            self.proposal = self.fixture.propose().as_dict()
+            store = self.fixture.store
+            plan = journal._fixture_plan(store, expected_revision=1, stable_resource_ids=[self.fixture.stable])
+            worker = journal.WorkerIdentity(os.geteuid(), os.geteuid(), str(uuid.uuid4()), str(uuid.uuid4()))
+            self.attempt = journal._FixtureJournal(store).create(plan, worker,
+                stable_resource_ids=[self.fixture.stable]).as_dict()
+            self.tables = {name: store._db.execute(f'SELECT * FROM {name}').fetchall()
+                for name in ('decisions', 'snapshots', 'resources', 'protected_inputs', 'decision_inputs',
+                             'sonarr_port_proposals', 'attempts', 'attempt_actions', 'attempt_events')}
+            self.key = store._db.execute('SELECT private_key FROM host').fetchone()[0]
+        self.fixture.store.close()
+        self.directory = self.fixture.directory
+        self.backup = self.fixture.root / 'v4-backup'
+
+    def migrate(self):
+        return migration.migrate_store_to_v5(self.directory, HOST, expected_revision=1,
+            backup_directory=self.backup, owner_uid=os.geteuid())
+
+    def test_v4_remains_readable_without_silent_upgrade(self):
+        before = (self.directory / 'state.sqlite3').read_bytes()
+        with HostStore.open_readonly(self.directory, HOST, owner_uid=os.geteuid()) as store:
+            self.assertEqual(journal.read_attempt(store, self.attempt['attempt_id']).as_dict(), self.attempt)
+            with self.assertRaisesRegex(plans.ExecutionPlanError, 'execution_plan_migration_required'):
+                plans.read_execution_plan(store, str(uuid.uuid4()))
+        with self.assertRaisesRegex(StoreError, 'store_migration_required'):
+            HostStore.open_existing(self.directory, HOST, owner_uid=os.geteuid())
+        self.assertEqual((self.directory / 'state.sqlite3').read_bytes(), before)
+        self.assertFalse(self.backup.exists())
+
+    def test_v5_preserves_proposals_attempts_captures_and_verified_v4_backup(self):
+        from mpkg_manager.effect_plans import read_sonarr_port_proposal
+        receipt = self.migrate()
+        self.assertEqual((receipt.from_version, receipt.to_version), (4, 5))
+        for path, version in ((self.directory, 5), (self.backup, 4)):
+            with HostStore.open_readonly(path, HOST, owner_uid=os.geteuid()) as store:
+                self.assertEqual(store._schema_version, version)
+                self.assertEqual(store._db.execute('SELECT private_key FROM host').fetchone()[0], self.key)
+                for table, rows in self.tables.items():
+                    self.assertEqual(store._db.execute(f'SELECT * FROM {table}').fetchall(), rows)
+                self.assertEqual(read_sonarr_port_proposal(store, self.proposal['proposal_id']).as_dict(), self.proposal)
+                self.assertEqual(journal.read_attempt(store, self.attempt['attempt_id']).as_dict(), self.attempt)
+        with HostStore.open_existing(self.directory, HOST, owner_uid=os.geteuid()) as store:
+            self.assertEqual(store._db.execute('SELECT count(*) FROM execution_plans').fetchone()[0], 0)
+            self.assertEqual(store._db.execute('SELECT count(*) FROM plan_acceptances').fetchone()[0], 0)
+            self.assertEqual([row['to_version'] for row in store.schema_history()['receipts']], [4, 5])
+            planner = plans._FixturePlanner(ProtectedRecorder(store, self.fixture.policy), plans._InertAdapter())
+            with self.assertRaisesRegex(plans.ExecutionPlanError, 'execution_plan_missing'):
+                planner.accept(self.proposal['proposal_id'], operator_uid=os.geteuid())
+
+    def test_backup_failure_preserves_v4_and_never_creates_acceptance(self):
+        with patch.object(migration._Backup, 'capture', side_effect=OSError(PRIVATE)):
+            with self.assertRaisesRegex(migration.MigrationError, 'migration_failed'):
+                self.migrate()
+        with HostStore.open_readonly(self.directory, HOST, owner_uid=os.geteuid()) as store:
+            self.assertEqual(store._schema_version, 4)
+            self.assertEqual(journal.read_attempt(store, self.attempt['attempt_id']).as_dict(), self.attempt)
+
+    def test_lost_migration_commit_is_inspectable_and_preserves_backup(self):
+        commit = HostStore._commit
+        def lost(store):
+            commit(store)
+            raise OSError(PRIVATE)
+        with patch.object(HostStore, '_commit', lost):
+            with self.assertRaisesRegex(migration.MigrationError, 'migration_outcome_unknown'):
+                self.migrate()
+        with HostStore.open_readonly(self.directory, HOST, owner_uid=os.geteuid()) as store:
+            self.assertEqual(store._schema_version, 5)
+            self.assertEqual(store.schema_history()['receipts'][-1]['from_version'], 4)
+        with HostStore.open_readonly(self.backup, HOST, owner_uid=os.geteuid()) as store:
+            self.assertEqual(store._schema_version, 4)
 
 
 

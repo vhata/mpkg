@@ -52,7 +52,7 @@ checks and product acceptance.
   ownership checks and their concurrency limits. Trusted fixture path/UID
   overrides are not a production privilege boundary.
 - `mpkg_manager.attempt_journal` preserves authenticated immutable attempt
-  targets and append-only action events in store schema v4. Its
+  targets and append-only action events introduced in store schema v4. Its
   [journal guide](docs/manager-attempt-journal.md) defines original input,
   decision, check and worker bindings, separate command/observation outcomes,
   and explicit migration. The creation harness accepts inert fixtures only;
@@ -138,6 +138,13 @@ checks and product acceptance.
   [collection](docs/manager-endpoint-checks.md) guides distinguish route
   agreement from listener attribution and application health. Recording
   intent or removing a resource never initiates a probe.
+- `mpkg_manager.execution_plans` persists authenticated plans and explicit
+  operator acceptance in schema v5, with verified-backup migration.
+  Its [authorization guide](docs/manager-execution-plans.md) binds original
+  authority, inputs, checks, artifacts and expected action progression.
+  Closed inert adapters exercise derivation and boundary revalidation;
+  production adapters and requests remain unavailable. Existing blocked
+  Sonarr proposals retain their original non-executable meaning.
 - `mpkg_manager.planning` compares validated intent, trusted store
   projections and current facts without reads or effects. The
   [comparison guide](docs/manager-planning.md) owns source/identity

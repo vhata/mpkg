@@ -90,10 +90,12 @@ appends remain available after its last cursor, while each page has one
 consistent read transaction. Missing cursors fail explicitly. Neither read
 writes events nor starts recovery. CLI/status reporting remains separate.
 
-Version-3 stores remain readable and require the explicit
-`migrate_store_to_v4` library operation before writes. It verifies a new
-private backup, preserves existing decisions/proposals/captures and adds
-journal tables plus a chained maintenance receipt. See
+Version-3 and version-4 stores remain readable. The explicit
+`migrate_store_to_v4` library operation adds the journal after verifying a
+new private backup, preserving existing decisions/proposals/captures and
+appending a chained maintenance receipt. Current writes also require
+`migrate_store_to_v5`, which adds immutable
+[execution plans and acceptances](manager-execution-plans.md). See
 [store migration](manager-store-migration.md). Old history never acquires
 invented attempts. Ordinary opens do not upgrade the store.
 

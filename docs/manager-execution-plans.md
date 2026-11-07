@@ -64,7 +64,10 @@ operator UID and private descriptor/target digests for later integration.
 The fixture bridge reloads durable acceptance and compares every field before
 creating a journal attempt. It checks the worker's operator identity and
 preserves the existing `PlanReference` fixture-only contract. The journal's
-unique plan ID prevents replay through a second attempt. Existing blocked
+unique plan ID prevents replay through a second attempt. A retry additionally
+requires proposal and acceptance timestamps after the predecessor
+completion/recovery disposition; a spare older acceptance is insufficient.
+Live evidence is revalidated again. Existing blocked
 Sonarr proposals are never modified or promoted; a new plan is a separate
 record derived by its own registered adapter.
 

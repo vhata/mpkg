@@ -82,7 +82,7 @@ measured against the first-release contract and acceptance scenarios.
 
 - [TOOLING] `expose-execution-requests` — **Connect bounded plan, apply and recover requests.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#expose-execution-requests), 2026-11-07.
-  - Depends on: `report-attempt-outcomes`, `authorize-execution-plans`
+  - Depends on: `report-attempt-outcomes`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [NATIVE] `apply-native-transactions` — **Commit only an exactly accepted native transaction.** Deliver the bounded scope and acceptance checks in the linked task.
@@ -128,11 +128,6 @@ measured against the first-release contract and acceptance scenarios.
 - [TOOLING] `resolve-manual-configuration-drift` — **Expose separate keep and restore decisions for manual edits.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#resolve-manual-configuration-drift), 2026-11-07.
   - Depends on: `apply-native-service-configuration`, `apply-sonarr-port-change`
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
-- [TOOLING] `record-retirement-dispositions` — **Require a fresh scoped data decision for every retirement.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#record-retirement-dispositions), 2026-11-07.
-  - Depends on: `authorize-execution-plans`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [TOOLING] `retire-workloads-with-retained-data` — **Stop and retire workloads while preserving usable retained data.** Deliver the bounded scope and acceptance checks in the linked task.
@@ -216,6 +211,6 @@ measured against the first-release contract and acceptance scenarios.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#report-attempt-outcomes), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
-- [TOOLING] `authorize-execution-plans` — **Bind accepted execution plans to exact authority and inputs.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#authorize-execution-plans), 2026-11-07.
+- [TOOLING] `record-retirement-dispositions` — **Require a fresh scoped data decision for every retirement.** Deliver the bounded scope and acceptance checks in the linked task.
+  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#record-retirement-dispositions), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.

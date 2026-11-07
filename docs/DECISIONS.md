@@ -11,6 +11,14 @@ design, including parallel work and reviewable PRs while unattended.
 Final review and landing remain with the user; this does not authorize
 production package, service or Docker operations.
 
+[Execution-plan authorization](manager-execution-plans.md) introduces
+immutable plans and separate authenticated operator acceptance in schema
+v5. Closed inert adapters bind dependency order, original consumers/checks,
+policy, inputs, artifacts and before-evidence. Each boundary revalidates
+that accepted target; changed facts require new acceptance. Production
+adapter registration and request dispatch remain unavailable, and old
+blocked Sonarr proposals never gain execution authority.
+
 Native [transaction preparation](manager-native-preparation.md) uses a fixed
 libalpm bridge with copied installed metadata and isolated repository inputs.
 It binds the complete proposed upgrade, artifacts, provider/replacement
@@ -83,7 +91,7 @@ mechanism experiments and A1–A12 acceptance. Real installed-helper and
 sudo acceptance, an apply protocol, public attempt
 reporting and real native/Docker acceptance remain separate implementation
 and validation work. The [internal attempt journal](manager-attempt-journal.md)
-retains original targets and append-only outcomes in schema v4; its inert
+retains original targets and append-only outcomes introduced in v4; its inert
 fixture writer grants no production execution authority.
 [Attempt supervision](manager-attempt-supervision.md) adds durable launch
 reservations and a fixed staged worker. Recording checks pending ownership

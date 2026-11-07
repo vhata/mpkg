@@ -193,6 +193,9 @@ history. A private backup primitive test also preserves schema-3
 proposals while later source decisions advance; no new public backup or
 version-3 backup operation is implied. Version-4 journal tests additionally
 cover explicit 3-to-4 migration, failed backups and ambiguous commits, and
-verify backups preserve attempt/action/event records. These fixtures do not migrate
+verify backups preserve attempt/action/event records. Version-5 tests preserve
+blocked proposals, attempts, captures and keys through explicit 4-to-5
+migration and exercise failed backups and lost commit responses. These
+fixtures do not migrate
 the actual host or establish an installed maintenance authorization
 boundary.
