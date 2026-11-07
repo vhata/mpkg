@@ -40,6 +40,11 @@ class HostRequest:
     attribute_endpoints: bool = False
     check_consumer_access: bool = False
     preparation_id: str | None = field(default=None, repr=False)
+    include_attempts: bool = False
+    page_limit: int = 20
+    after_id: str | None = None
+    attempt_id: str | None = None
+    after_event: int = 0
 
 
 def _object(pairs):
@@ -76,7 +81,7 @@ def _status(arguments):
         raise RequestError("operation_unsupported")
     keys = {"operation", "expected_revision", "source", "source_is_nonsecret",
             "selected_components", "probe_endpoints"}
-    keys.update(name for name in ("check_file_content", "attribute_endpoints", "check_consumer_access")
+    keys.update(name for name in ("check_file_content", "attribute_endpoints", "check_consumer_access", "include_attempts")
                 if name in arguments)
     if set(arguments) != keys:
         raise RequestError("invalid_request")
@@ -86,7 +91,7 @@ def _status(arguments):
     if type(arguments["probe_endpoints"]) is not bool:
         raise RequestError("invalid_request")
     options = {name: arguments.get(name, False) for name in
-               ("check_file_content", "attribute_endpoints", "check_consumer_access")}
+               ("check_file_content", "attribute_endpoints", "check_consumer_access", "include_attempts")}
     if any(type(value) is not bool for value in options.values()):
         raise RequestError("invalid_request")
     selection = arguments["selected_components"]
@@ -148,6 +153,22 @@ def parse_request(raw):
                        for entry in bundle["files"]):
                 raise RequestError("invalid_request")
             return HostRequest(verb, operation, revision, source)
+        if verb == "export" and operation in {"attempts", "attempt"}:
+            keys = ({"operation", "limit", "after_id"} if operation == "attempts" else
+                    {"operation", "attempt_id", "after_event", "limit"})
+            if set(arguments) != keys or type(arguments["limit"]) is not int or not 1 <= arguments["limit"] <= 100:
+                raise RequestError("invalid_request")
+            if operation == "attempts":
+                cursor = arguments["after_id"]
+                if cursor is not None:
+                    _selection([cursor], stable=True)
+                return HostRequest(verb, operation, page_limit=arguments["limit"], after_id=cursor)
+            _selection([arguments["attempt_id"]], stable=True)
+            after = arguments["after_event"]
+            if type(after) is not int or not 0 <= after < 2**63 - 1:
+                raise RequestError("invalid_request")
+            return HostRequest(verb, operation, page_limit=arguments["limit"],
+                               attempt_id=arguments["attempt_id"], after_event=after)
         if verb == "export":
             if set(arguments) != {"operation"} or operation not in {"current", "history"}:
                 raise RequestError("invalid_request")
