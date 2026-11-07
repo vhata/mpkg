@@ -316,9 +316,13 @@ class _FixturePlanner(ExecutionPlanner):
             _require(self.recorder._policy_context() == context["policy"], "execution_plan_stale")
             for action in context["actions"]:
                 done = action["stable_id"] in completed
-                _require(self.adapter.revalidate(action, completed=done), "execution_plan_stale")
-                if done:
-                    _require(_observation_satisfied(action, self.adapter.observe(action)), "execution_plan_stale")
+                try:
+                    valid = self.adapter.revalidate(action, completed=done)
+                    if done:
+                        valid = valid and _observation_satisfied(action, self.adapter.observe(action))
+                except Exception:
+                    raise ExecutionPlanError("execution_plan_stale") from None
+                _require(valid, "execution_plan_stale")
         except BindingError:
             raise ExecutionPlanError("execution_plan_stale") from None
 
@@ -406,6 +410,14 @@ class _FixturePlanner(ExecutionPlanner):
 
     def run_inert(self, binding, worker, *, mutation_lock):
         """Owned fixture harness: durable starts and no effects outside registry."""
+        try:
+            return self._run_inert(binding, worker, mutation_lock=mutation_lock)
+        except OSError:
+            # Outer application-lock cleanup can fail after durable completion.
+            # Never expose its text or imply that earlier work rolled back.
+            raise ExecutionPlanError("execution_outcome_unknown") from None
+
+    def _run_inert(self, binding, worker, *, mutation_lock):
         with _mutation_lock(mutation_lock, self.store.owner_uid):
             attempt = self.create_attempt(binding, worker).as_dict()
             identity = attempt["attempt_id"]

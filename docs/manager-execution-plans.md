@@ -92,8 +92,11 @@ The [explicit migration library](manager-store-migration.md) upgrades
 version 4 to 5 only after a verified private backup of all prior history.
 Legacy readers do not silently acquire plans or acceptances. Existing
 proposals and attempt outcomes remain unchanged. Store or commit failures
-can have uncertain outcomes; inspect durable history instead of assuming
-rollback or repeating execution.
+can have uncertain outcomes, including outer host-lock cleanup after
+durable completion. Such cleanup reports `execution_outcome_unknown`
+without raw exception text. Inspect durable history instead of assuming
+rollback or repeating execution. Adapter errors while rechecking completed
+prerequisites stop later effects with a fixed stale-plan diagnostic.
 
 Temporary fixtures and inert adapters establish this library contract.
 They do not establish installed authorization, native/package/AUR/Compose

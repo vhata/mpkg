@@ -1,4 +1,5 @@
 """Accepted inert plans, owned temporary histories and no host operations."""
+from contextlib import contextmanager
 from dataclasses import replace
 import json
 import os
@@ -459,6 +460,40 @@ class ExecutionPlanTests(unittest.TestCase):
                 planner = plans._FixturePlanner(ProtectedRecorder(other, policy), plans._InertAdapter())
                 self.error('plan_acceptance_missing', lambda: planner.validate(binding))
             self.assertEqual(journal.list_attempts(other), [])
+
+
+
+    def test_outer_lock_cleanup_reports_uncertainty_without_private_error(self):
+        binding = self.accept()
+        original = plans._mutation_lock
+        @contextmanager
+        def failed_cleanup(*arguments):
+            with original(*arguments):
+                yield
+            raise OSError(PRIVATE)
+        with patch.object(plans, '_mutation_lock', failed_cleanup):
+            self.error('execution_outcome_unknown', lambda: self.run_plan(binding))
+        attempt = journal.list_attempts(self.store)[0].as_dict()
+        self.assertEqual(attempt['state'], 'observed-complete')
+        self.assertTrue(attempt['supervision']['released'])
+        self.assertEqual(self.adapter.executions, [self.ids['first'], self.ids['second']])
+
+    def test_completed_check_exception_is_private_and_stops_next_effect(self):
+        self.with_checks()
+        binding = self.accept(self.prepare(2))
+        observe, calls = self.adapter.observe, []
+        def interrupted_check(action):
+            calls.append(action['stable_id'])
+            if len(calls) > 1:
+                raise RuntimeError(PRIVATE)
+            return observe(action)
+        with patch.object(self.adapter, 'observe', interrupted_check):
+            self.error('execution_plan_stale', lambda: self.run_plan(binding))
+        attempt = journal.list_attempts(self.store)[0].as_dict()
+        self.assertEqual(self.adapter.executions, [self.ids['first']])
+        self.assertEqual(attempt['actions'][1]['state'], 'planned')
+        self.assertNotIn(PRIVATE, json.dumps(attempt))
+        self.assertFalse(attempt['supervision']['released'])
 
 
 
