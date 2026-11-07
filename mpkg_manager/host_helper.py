@@ -21,6 +21,7 @@ from .status_collection import StatusCollectionError, collect_status
 from .status_wire import validate_status
 from .protected_bindings import BindingError, ProtectedRecorder
 from .protected_preparation import consume_recording, prepare_recording
+from .attempt_journal import require_no_pending_launch
 
 
 STORE_DIRECTORY = Path("/var/lib/mpkg")
@@ -36,13 +37,13 @@ _ERROR_CODES = frozenset({
     "commit_outcome_unknown", "store_write_failed", "store_read_failed", "record_rejected",
     "record_outcome_unknown", "internal_error", "invalid_status_selection",
     "status_no_recorded_snapshot", "status_unavailable", "status_context_changed", "status_scope_limit",
-    "input_capture_rejected", "store_migration_required",
+    "input_capture_rejected", "store_migration_required", "attempt_recovery_required",
 })
 _STORE_ERRORS = _ERROR_CODES & frozenset({
     "store_missing", "store_exists", "store_busy", "store_recovery_required", "store_corrupt",
     "store_unavailable", "store_creation_failed", "store_permissions", "store_identity_changed",
     "revision_conflict", "commit_outcome_unknown", "store_write_failed", "store_read_failed",
-    "store_migration_required",
+    "store_migration_required", "attempt_recovery_required",
 })
 
 
@@ -203,6 +204,7 @@ class HostBoundary:
                     with HostStore.open_existing(self._store_directory, accepted_policy.host_id,
                                                  owner_uid=self._owner_uid) as store:
                         self._bound(store, accepted_policy)
+                        require_no_pending_launch(store)
                         if request.verb == "prepare" and request.operation == "protected-inputs":
                             try:
                                 return prepare_recording(ProtectedRecorder(store, policy),

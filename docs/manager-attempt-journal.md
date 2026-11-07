@@ -29,8 +29,9 @@ Trusted embedding arguments supply operator UID, worker UID, boot UUID and
 worker UUID. The unit identity is derived as
 `mpkg-attempt-<attempt UUID>.service`; callers cannot select a unit body,
 command or environment through this journal. Persisting this name does not
-launch a worker, reserve ownership or establish quiescence. The separate
-supervisor and execution-boundary tasks own those operations.
+launch a worker, reserve ownership or establish quiescence. The
+[supervisor](manager-attempt-supervision.md) owns the durable launch and
+worker handoff; production execution authorization remains separate.
 
 Actions have stable random IDs, fixed fixture operation descriptors and a
 bounded order. This slice accepts at most 128 actions and 4 MiB of private
@@ -67,8 +68,10 @@ writers receive a conflict. Events carry authenticated predecessor seals,
 and reads verify row authentication, exact historical derivation and the
 state machine. SQL triggers reject updates and deletions. Completion is a
 separate append, preserves unattempted actions and refuses unknown running
-work. A newer intent revision can coexist with prior outcomes; this slice
-does not implement the supervisor's unresolved-attempt mutation gate.
+work. A newer intent revision can coexist with prior outcomes. Once a launch
+reservation exists, the [supervisor](manager-attempt-supervision.md) blocks
+ordinary mutations until verified inert completion; interrupted or failed
+workers retain the reservation for explicit recovery.
 
 These checks detect schema/record corruption and invalid transitions. They
 are not protection against an administrator owning the database and key,
@@ -103,6 +106,6 @@ failure preserve the started record and unattempted work. Migration tests
 cover refusal, verified backup, preserved original history and ambiguous
 commit outcomes.
 
-No native adapter, package operation, Docker lifecycle command, installed
-worker or systemd service runs in these tests. Real crash/power-loss,
+No native adapter, package operation, Docker lifecycle command, root
+installed worker or real systemd service runs in these tests. Real crash/power-loss,
 privilege, supervision, recovery and A1–A12 acceptance remain separate.

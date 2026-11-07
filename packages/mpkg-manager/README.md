@@ -7,9 +7,10 @@ The helper requires `/usr/bin/python3.12`; substituting another Python
 minor is unsupported. A release package and real installation validation
 remain separate work.
 
-The resulting files belong to root. The entrypoint is
-`/usr/lib/mpkg/host-helper.py`, started through its isolated Python
-shebang under explicit operator authorization. Never run a checkout or
+The resulting files belong to root. `/usr/lib/mpkg/host-helper.py` serves
+requests under explicit operator authorization. The fixed
+`/usr/lib/mpkg/attempt-worker.py` accepts only one attempt UUID. Both use
+the same hardened bootstrap source and isolated Python shebang. Never run a checkout or
 caller-supplied Python module with sudo. The launcher refuses another
 entrypoint path, non-root invocation, non-isolated Python, writable or
 symlinked code, and any Python minor other than 3.12. The installed
@@ -22,3 +23,7 @@ an explicit `record/initialize` request and refuses existing state.
 
 See the [host-helper protocol](../../docs/manager-host-helper.md) for
 supported requests, output redaction, transport limits and validation.
+
+The [attempt supervisor](../../docs/manager-attempt-supervision.md) owns
+the fixed service specification and durable reservation handoff. Staging
+does not launch workers; production execution remains unavailable.

@@ -782,7 +782,7 @@ class HostStore:
         return self._db.execute("SELECT coalesce(max(revision),0) FROM decisions").fetchone()[0]
 
     @contextmanager
-    def _write(self, expected_revision):
+    def _write(self, expected_revision, *, _journal_event=False):
         if type(expected_revision) is not int or not 0 <= expected_revision < 2**63 - 1:
             _fail("invalid_revision")
         commit_attempted = False
@@ -795,6 +795,10 @@ class HostStore:
                         _fail("store_migration_required")
                     if self._revision() != expected_revision:
                         _fail("revision_conflict")
+                    if not _journal_event:
+                        from .attempt_journal import _pending_launches
+                        if _pending_launches(self):
+                            _fail("attempt_recovery_required")
                     yield
                 except BaseException as error:
                     try:

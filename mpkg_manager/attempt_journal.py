@@ -17,7 +17,7 @@ from .store import (HostStore, StoreError, _decode, _declared_nonsecret,
 
 
 MAX_ACTIONS = 128
-MAX_EVENTS = 4 * MAX_ACTIONS + 1
+MAX_EVENTS = 4 * MAX_ACTIONS + 5
 MAX_CONTEXT_BYTES = 4 * 1024 * 1024
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 _DOMAIN = b"MPKGATTEMPT\x00\x01"
@@ -219,14 +219,43 @@ def _replay(actions, events):
              for row in actions]
     by_id = {action["action_id"]: action for action in state}
     finished, previous_time, seen = False, None, set()
+    launch = {"reserved": False, "dispatch": "not_recorded", "worker": "not_started", "released": False}
     for expected, row in enumerate(events, 1):
         _, sequence, event_id, action_id, kind, created_at, outcome, _ = row
         _require(type(sequence) is int and sequence == expected and _uuid(event_id)
-                 and event_id not in seen and not finished, "attempt_transition_invalid")
+                 and event_id not in seen
+                 and (not finished or kind in ("launch_result", "worker_completed")), "attempt_transition_invalid")
         seen.add(event_id)
         timestamp = _time(created_at)
         _require(previous_time is None or timestamp >= previous_time, "attempt_transition_invalid")
         previous_time = timestamp
+        if kind == "launch_reserved":
+            _require(action_id is None and outcome == "reserved" and expected == 1,
+                     "attempt_transition_invalid")
+            launch["reserved"] = True
+            continue
+        if kind == "launch_result":
+            _require(action_id is None and launch["reserved"] and launch["dispatch"] == "not_recorded"
+                     and outcome in ("accepted", "rejected", "unknown")
+                     and (outcome != "rejected" or launch["worker"] == "not_started"),
+                     "attempt_transition_invalid")
+            launch["dispatch"] = outcome
+            continue
+        if kind == "worker_started":
+            _require(action_id is None and outcome == "owned" and launch["reserved"]
+                     and launch["worker"] == "not_started" and launch["dispatch"] != "rejected",
+                     "attempt_transition_invalid")
+            launch["worker"] = "owned"
+            continue
+        if kind == "worker_completed":
+            _require(action_id is None and launch["worker"] == "owned"
+                     and outcome in ("verified_complete", "unresolved")
+                     and (outcome != "verified_complete" or (finished and _overall(state) == "observed-complete")),
+                     "attempt_transition_invalid")
+            launch["worker"] = outcome
+            launch["released"] = outcome == "verified_complete"
+            continue
+        _require(not launch["reserved"] or launch["worker"] == "owned", "attempt_transition_invalid")
         if kind == "attempt_finished":
             _require(action_id is None and outcome == _overall(state)
                      and outcome in ("observed-complete", "failed", "unverified")
@@ -252,7 +281,7 @@ def _replay(actions, events):
             action["observation_outcome"] = outcome
         else:
             raise JournalError("attempt_transition_invalid")
-    return state, finished
+    return state, finished, launch
 
 
 def _rows(store, attempt_id):
@@ -321,7 +350,7 @@ def _verify_journal(store):
 
 def _projection(row, actions, events, current_revision):
     context = _decode(row[6])
-    state, finished = _replay(actions, events)
+    state, finished, launch = _replay(actions, events)
     for action, record in zip(state, context["target"]["resources"]):
         action.update({"stable_resource_id": record["stable_id"], "state": _action_state(action),
                        "attempted": action["started"], "required_check_count": len(record["checks"])})
@@ -329,6 +358,7 @@ def _projection(row, actions, events, current_revision):
         "revision": row[2], "snapshot_id": row[3], "predecessor": row[4], "created_at": row[5],
         "ordinal": row[8],
         "authority": "fixture_only", "executable": False, "finished": finished,
+        "supervision": launch,
         "state": _overall(state), "decision_state": "current" if row[2] == current_revision else "superseded",
         "sequence": len(events), "actions": state,
         "events": [{"event_id": event[2], "sequence": event[1], "action_id": event[3],
@@ -362,6 +392,27 @@ def list_attempts(store, *, limit=100, after_id=None):
         rows = store._db.execute("SELECT id FROM attempts WHERE ordinal>? ORDER BY ordinal LIMIT ?",
                                  (after, limit)).fetchall()
         return [_projection(*_rows(store, row[0]), store._revision()) for row in rows]
+
+
+def _pending_launches(store):
+    """Caller holds a verified store transaction; inactive fixtures do not block."""
+    if store._schema_version < 4:
+        return []
+    pending = []
+    for (identity,) in store._db.execute("SELECT id FROM attempts ORDER BY ordinal"):
+        _, actions, events = _rows(store, identity)
+        _, _, launch = _replay(actions, events)
+        if launch["reserved"] and not launch["released"]:
+            pending.append(identity)
+    return pending
+
+
+def require_no_pending_launch(store):
+    """Read-only gate before recording/capture, while the caller holds host lock."""
+    _require(type(store) is HostStore)
+    with store._read():
+        if _pending_launches(store):
+            raise StoreError("attempt_recovery_required")
 
 
 class _FixtureJournal:
@@ -411,9 +462,11 @@ class _FixtureJournal:
         # intent may exist. The store's short write transaction serializes both.
         with self.store._read():
             revision = self.store._revision()
-        with self.store._write(revision):
+        with self.store._write(revision, _journal_event=True):
             row, actions, events = _rows(self.store, attempt_id)
             _require(len(events) == expected_sequence, "attempt_sequence_conflict")
+            if kind == "launch_reserved":
+                _require(not _pending_launches(self.store), "attempt_launch_conflict")
             values = [attempt_id, expected_sequence + 1, str(uuid.uuid4()), action_id, kind, _now(), outcome]
             previous = events[-1][-1] if events else row[7]
             event = tuple(values) + (_seal(self.store, "event", values, previous),)

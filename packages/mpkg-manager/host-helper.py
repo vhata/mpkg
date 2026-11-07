@@ -4,10 +4,12 @@ import os
 import resource
 import stat
 import sys
+import uuid
 
 
 INSTALL_ROOT = "/usr/lib/mpkg"
 ENTRYPOINT = INSTALL_ROOT + "/host-helper.py"
+WORKER_ENTRYPOINT = INSTALL_ROOT + "/attempt-worker.py"
 _FAILURE = b'{"error":{"code":"installed_helper_unavailable"},"ok":false,"version":1}\n'
 
 
@@ -37,11 +39,12 @@ def _verified_installation(root, *, owner_uid=0):
             os.close(directory)
             directory = child
             _permission(os.fstat(directory), owner_uid, directory=True)
-        _permission(os.stat("host-helper.py", dir_fd=directory, follow_symlinks=False), owner_uid)
+        for entrypoint in ("host-helper.py", "attempt-worker.py"):
+            _permission(os.stat(entrypoint, dir_fd=directory, follow_symlinks=False), owner_uid)
         package = os.open("mpkg_manager", flags, dir_fd=directory)
         _permission(os.fstat(package), owner_uid, directory=True)
         names = os.listdir(package)
-        if not {"__init__.py", "host_helper.py", "host_protocol.py"} <= set(names) or len(names) > 128:
+        if not {"__init__.py", "host_helper.py", "host_protocol.py", "attempt_worker.py"} <= set(names) or len(names) > 128:
             raise ValueError
         total = 0
         for name in names:
@@ -62,9 +65,13 @@ def _verified_installation(root, *, owner_uid=0):
 
 def main():
     try:
+        worker = __file__ == WORKER_ENTRYPOINT
         if (sys.version_info[:2] != (3, 12) or not sys.flags.isolated
                 or os.geteuid() != 0 or os.getuid() != 0
-                or __file__ != ENTRYPOINT or len(sys.argv) != 1):
+                or __file__ not in (ENTRYPOINT, WORKER_ENTRYPOINT)
+                or len(sys.argv) != (2 if worker else 1)):
+            raise ValueError
+        if worker and str(uuid.UUID(sys.argv[1])) != sys.argv[1]:
             raise ValueError
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         os.umask(0o077)
@@ -74,6 +81,9 @@ def main():
         _verified_installation(INSTALL_ROOT)
         sys.dont_write_bytecode = True
         sys.path.insert(0, INSTALL_ROOT)
+        if worker:
+            from mpkg_manager.attempt_worker import main as dispatch_worker
+            return dispatch_worker(sys.argv[1])
         from mpkg_manager.host_helper import main as dispatch
         return dispatch()
     except BaseException:

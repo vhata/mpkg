@@ -56,7 +56,14 @@ checks and product acceptance.
   [journal guide](docs/manager-attempt-journal.md) defines original input,
   decision, check and worker bindings, separate command/observation outcomes,
   and explicit migration. The creation harness accepts inert fixtures only;
-  production attempts, supervision, recovery and CLI reporting remain separate.
+  production attempts, recovery and CLI reporting remain separate.
+- `mpkg_manager.attempt_supervisor` and `attempt_worker` add durable launch
+  reservations and worker ownership using the fixed staged worker entrypoint.
+  The [supervision guide](docs/manager-attempt-supervision.md) describes
+  the host-lock handoff, recording gates and bounded private child output.
+  Owned inert workers and a controlled system-manager transport exercise
+  these boundaries; production effects and real systemd acceptance remain
+  unavailable.
 - `mpkg_manager.observe_native` and `mpkg_manager.observe_compose` collect
   time-bounded observations through closed read-only queries. Their
   [native](docs/manager-observations.md) and

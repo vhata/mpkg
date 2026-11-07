@@ -26,8 +26,10 @@ this is not containment against a hostile administrator.
 Enter the installed helper through explicit operator authorization, such
 as interactive sudo. Never invoke repository code or a caller-selected
 Python module as root. There is no passwordless sudo rule, Docker-group
-grant or request-controlled operator identity. The existing store schema
-does not yet record initiating-operator attribution.
+grant or request-controlled operator identity. The attempt journal retains
+trusted fixture operator/worker identity.
+The recording protocol does not yet attribute initiating operators, and
+no request can launch a production attempt.
 
 Production construction fixes the private policy at
 `/etc/mpkg/host-policy.toml`, the store at `/var/lib/mpkg`, and the host
@@ -135,6 +137,10 @@ text is returned.
 Mutations take the pre-existing verified host lock nonblockingly, then
 use the store's own revision/transaction checks. A competing mutation
 returns `mutation_busy`; read-only status and exports do not take that host lock.
+A durable launch reservation also blocks recording with
+`attempt_recovery_required`, including the gap before a worker takes the
+lock. Ordinary store writes enforce the same gate; see
+[attempt supervision](manager-attempt-supervision.md).
 Store locking still applies. Policy is rechecked before recording and
 afterward, and stored host/engine bindings must match it. This is not an
 atomic lock against an administrator changing policy or external tools.
