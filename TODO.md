@@ -74,24 +74,9 @@ measured against the first-release contract and acceptance scenarios.
   - Reproduction: with the claimed entry and its Findings present in both snapshots, the consumer finds the finding and exits successfully, but the producer receives SIGPIPE (`141 0` pipeline statuses), so valid Claims review finding markers are reported as absent. A draining consumer returns `0 0` on the same input.
   - Verify strict Claims and Resolves cases, retain rejection of absent findings, and preserve the original Claims input and reproduction evidence. This work does not authorize a gate or hooks-policy change.
 
-- [TOOLING] `supervise-attempt-workers` — **Give attempts durable worker ownership.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#supervise-attempt-workers), 2026-11-07.
-  - Depends on: `persist-attempt-journal`
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
 - [TOOLING] `recover-interrupted-attempts` — **Recover uncertain attempts without overlapping work.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#recover-interrupted-attempts), 2026-11-07.
   - Depends on: `supervise-attempt-workers`
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
-- [TOOLING] `report-attempt-outcomes` — **Expose attempt history and partial outcomes in status.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#report-attempt-outcomes), 2026-11-07.
-  - Depends on: `persist-attempt-journal`
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
-- [TOOLING] `authorize-execution-plans` — **Bind accepted execution plans to exact authority and inputs.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#authorize-execution-plans), 2026-11-07.
-  - Depends on: `persist-attempt-journal`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [TOOLING] `expose-execution-requests` — **Connect bounded plan, apply and recover requests.** Deliver the bounded scope and acceptance checks in the linked task.
@@ -206,10 +191,6 @@ measured against the first-release contract and acceptance scenarios.
 
 ### Unprioritized
 
-- [TOOLING] `persist-attempt-journal` — **Persist durable attempts and action events.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#persist-attempt-journal), 2026-11-07.
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
 - [NATIVE] `prepare-aur-recipes` — **Capture reviewed AUR recipes and their dependency inputs.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#prepare-aur-recipes), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
@@ -236,4 +217,16 @@ measured against the first-release contract and acceptance scenarios.
 
 - [DOCKER] `render-compose-execution-bundles` — **Render a complete authenticated Compose input bundle.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#render-compose-execution-bundles), 2026-11-07.
+  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
+
+- [TOOLING] `supervise-attempt-workers` — **Give attempts durable worker ownership.** Deliver the bounded scope and acceptance checks in the linked task.
+  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#supervise-attempt-workers), 2026-11-07.
+  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
+
+- [TOOLING] `report-attempt-outcomes` — **Expose attempt history and partial outcomes in status.** Deliver the bounded scope and acceptance checks in the linked task.
+  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#report-attempt-outcomes), 2026-11-07.
+  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
+
+- [TOOLING] `authorize-execution-plans` — **Bind accepted execution plans to exact authority and inputs.** Deliver the bounded scope and acceptance checks in the linked task.
+  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#authorize-execution-plans), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.

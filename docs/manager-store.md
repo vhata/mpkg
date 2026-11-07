@@ -57,9 +57,10 @@ Any leftover rollback journal, WAL or shared-memory sidecar causes an
 explicit recovery-required error before SQLite opens. Recovery and
 restoration require separate maintenance. The
 [explicit migration library](manager-store-migration.md) provides separate
-verified-backup transitions from version 1 to 2 and from version 2 to 3.
-Ordinary opens never upgrade: versions 1 and 2 remain readable, while
-recording requires version 3 and otherwise fails with
+verified-backup transitions from version 1 to 2, version 2 to 3 and
+version 3 to 4. Version 4 adds the [attempt journal](manager-attempt-journal.md).
+Ordinary opens never upgrade: versions 1 through 3 remain readable, while
+recording requires version 4 and otherwise fails with
 `store_migration_required`. An interrupted
 creation can leave an incomplete private directory, which is retained
 and refused rather than silently repaired.

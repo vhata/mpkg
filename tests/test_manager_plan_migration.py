@@ -67,6 +67,8 @@ class PlanMigrationTests(unittest.TestCase):
         self.assertEqual([(row["from_version"], row["to_version"])
                           for row in after[0]["receipts"]], [(0, 2), (2, 3)])
         self.assertEqual((receipt.from_version, receipt.to_version), (2, 3))
+        migration.migrate_store_to_v4(self.source, HOST, expected_revision=1,
+            backup_directory=self.root / "v3-backup", owner_uid=self.owner)
         with HostStore.open_existing(self.source, HOST, owner_uid=self.owner) as store:
             self.assertEqual(store._db.execute("SELECT raw FROM protected_inputs").fetchone()[0],
                              b"PRIVATE_LEGACY_FIXTURE_SENTINEL")

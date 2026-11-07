@@ -68,9 +68,11 @@ Combined library checks use private temporary stores and synthetic query
 responses, including unavailable evidence, retained data, relinquishment
 and changed check declarations. This evidence is separate from disposable
 mechanism experiments and A1–A12 acceptance. Real installed-helper and
-sudo acceptance, an application worker, apply protocol, attempt history
-and real native/Docker acceptance remain separate implementation and
-validation work. The
+sudo acceptance, an application worker, apply protocol, public attempt
+reporting and real native/Docker acceptance remain separate implementation
+and validation work. The [internal attempt journal](manager-attempt-journal.md)
+retains original targets and append-only outcomes in schema v4; its inert
+fixture writer grants no production execution authority. The
 [declaration guide](manager-declarations.md) owns the schema; the original
 first-release contract and acceptance evidence requirements remain in
 force.

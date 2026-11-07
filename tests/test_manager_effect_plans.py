@@ -16,7 +16,7 @@ from mpkg_manager import effect_plans as plans
 from mpkg_manager import store_migration as migration
 from mpkg_manager.host_policy import load_host_policy
 from mpkg_manager.protected_bindings import ProtectedRecorder
-from mpkg_manager.store import HostStore, StoreError, _TRIGGERS, _json
+from mpkg_manager.store import HostStore, SCHEMA_VERSION, StoreError, _TRIGGERS, _json
 
 
 HOST = "12345678-1234-4234-8234-123456789abc"
@@ -366,7 +366,7 @@ files=[{{path={json.dumps(self.xml.name)},classification="protected",reference="
                     metadata = backup.capture(self.store, 1)
             finally:
                 self.store._db.execute("ROLLBACK")
-        self.assertEqual(metadata["schema_version"], 3)
+        self.assertEqual(metadata["schema_version"], SCHEMA_VERSION)
         self.store.record_intent(EMPTY, 1)
         with HostStore.open_readonly(destination, HOST, owner_uid=os.geteuid()) as backup:
             restored = read_sonarr_port_proposal(backup, proposal["proposal_id"]).as_dict()

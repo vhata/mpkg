@@ -51,6 +51,12 @@ checks and product acceptance.
   [capture guide](docs/manager-capture.md) defines path, metadata and
   ownership checks and their concurrency limits. Trusted fixture path/UID
   overrides are not a production privilege boundary.
+- `mpkg_manager.attempt_journal` preserves authenticated immutable attempt
+  targets and append-only action events in store schema v4. Its
+  [journal guide](docs/manager-attempt-journal.md) defines original input,
+  decision, check and worker bindings, separate command/observation outcomes,
+  and explicit migration. The creation harness accepts inert fixtures only;
+  production attempts, supervision, recovery and CLI reporting remain separate.
 - `mpkg_manager.observe_native` and `mpkg_manager.observe_compose` collect
   time-bounded observations through closed read-only queries. Their
   [native](docs/manager-observations.md) and
