@@ -78,7 +78,9 @@ def _nullable(schema):
     return lambda value: None if value is None else _validate(value, schema)
 
 
-def _list(schema, limit=4096):
+# Nested history lists have no lower arbitrary count cap than the page byte
+# budget. Explicit semantic limits still bound actions, pages and predicates.
+def _list(schema, limit=MAX_PAGE_BYTES):
     def check(value):
         _require(type(value) is list and len(value) <= limit)
         for item in value:

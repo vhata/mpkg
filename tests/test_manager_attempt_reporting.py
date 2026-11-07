@@ -481,5 +481,23 @@ class AttemptReportingTests(unittest.TestCase):
         self.assertIn('Continue: mpkg-manager attempt', text)
 
 
+
+    def test_complete_nested_scope_within_byte_budget_exceeds_legacy_count_limit(self):
+        consumers = ['external:consumer' + str(index) for index in range(4100)]
+        source = SOURCE.replace('checks=["original"]',
+                                'checks=["original"]\nconsumers=' + json.dumps(consumers))
+        fixture = AttemptReportingTests()
+        with patch(__name__ + '.SOURCE', source):
+            fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        attempt = fixture.create()
+        page = fixture.page()
+        self.assertLess(reporting._size(page), reporting.MAX_PAGE_BYTES)
+        action = page['attempts'][0]['actions'][0]
+        self.assertEqual(action['target']['consumers'], consumers)
+        self.assertEqual(action['decision_target']['consumers'], consumers)
+        self.assertEqual(fixture.detail(attempt)['attempt'], page['attempts'][0])
+
+
 if __name__ == '__main__':
     unittest.main()
