@@ -1,9 +1,11 @@
 """Copied fixture inputs and controlled bridge replies; no native operations."""
 from dataclasses import FrozenInstanceError, replace
+from contextlib import contextmanager
 import hashlib
 import os
 from pathlib import Path
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import uuid
@@ -204,6 +206,9 @@ class NativePreparationTests(unittest.TestCase):
         result = self.prepare(runner=lambda _: QueryResult("ok", raw, 0))
         self.assertEqual(next(item for item in result.manifest["add"]
                               if item["name"] == "new")["reason"], "explicit")
+        result = self.prepare(runner=lambda _: QueryResult("ok", raw + b"I\tnew\t0\t1\n", 0))
+        self.assertEqual(result.manifest["reason_changes"],
+                         [{"name": "new", "from": "dependency", "to": "explicit"}])
 
     def test_preserves_independently_explicit_dependency_reason(self):
         result = self.prepare(runner=lambda _: QueryResult("ok", self.output(
@@ -334,6 +339,48 @@ class NativePreparationTests(unittest.TestCase):
         entries, _, digest = native._tree(artifact_dir, capture=False, limit=512)
         self.assertEqual(entries, (("file", hashlib.sha256(b"x" * 256).hexdigest()),))
         self.assertEqual(digest, native._tree(artifact_dir)[2])
+
+    def test_directory_entry_limit_stops_iteration_before_full_enumeration(self):
+        seen = []
+
+        @contextmanager
+        def oversized(_):
+            def entries():
+                for index in range(100):
+                    seen.append(index)
+                    if len(seen) > 3:
+                        raise AssertionError("enumerated past entry budget")
+                    yield SimpleNamespace(name="entry-" + str(index))
+            yield entries()
+
+        with patch.object(native, "MAX_FILES", 3), \
+                patch.object(native.os, "scandir", side_effect=oversized):
+            self.refused("native_input_limit")
+        self.assertEqual(seen, [0, 1, 2])
+
+    def test_directory_recheck_stops_after_first_unexpected_entry(self):
+        original = os.scandir
+        seen = []
+        calls = 0
+
+        @contextmanager
+        def changed(fd):
+            nonlocal calls
+            calls += 1
+            if calls == 3:  # Final enumeration of the one-file base directory.
+                def entries():
+                    for name in ("desc", "extra", "never-enumerate"):
+                        seen.append(name)
+                        yield SimpleNamespace(name=name)
+                yield entries()
+            else:
+                with original(fd) as entries:
+                    yield entries
+
+        # First root enumeration, then child enumeration, then its recheck.
+        with patch.object(native.os, "scandir", side_effect=changed):
+            self.refused("native_input_changed")
+        self.assertEqual(seen, ["desc", "extra"])
 
     def test_source_hardlinks_and_writable_inputs_are_rejected(self):
         os.link(self.artifacts[0].path, self.source / "hardlink")

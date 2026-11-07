@@ -146,14 +146,22 @@ def _tree(path, *, capture=True, limit=MAX_TREE_BYTES):
     """Capture a bounded regular-file tree, retaining directory identities."""
     entries, identities = [], []
     total = 0
+    reserved = 1
+
+    def names_bounded(fd, allowance, code):
+        names = []
+        with os.scandir(fd) as iterator:
+            for entry in iterator:
+                _require(len(names) < allowance, code)
+                names.append(entry.name)
+        return sorted(names)
 
     def visit(fd, prefix):
-        nonlocal total
+        nonlocal total, reserved
         before = os.fstat(fd)
         identities.append((prefix, _identity(before)))
-        names = sorted(os.listdir(fd))
-        _require(len(entries) + len(identities) + len(names) <= MAX_FILES,
-                 "native_input_limit")
+        names = names_bounded(fd, MAX_FILES - reserved, "native_input_limit")
+        reserved += len(names)
         for name in names:
             _require(_text(name) and name not in (".", ".."), "native_input_shape")
             rel = prefix + "/" + name if prefix else name
@@ -190,7 +198,7 @@ def _tree(path, *, capture=True, limit=MAX_TREE_BYTES):
                     os.close(child)
                 entries.append((rel, bytes(raw) if capture else file_digest.hexdigest()))
                 identities.append((rel, _identity(info)))
-        _require(sorted(os.listdir(fd)) == names
+        _require(names_bounded(fd, len(names), "native_input_changed") == names
                  and _identity(os.fstat(fd)) == _identity(before),
                  "native_input_changed")
 
@@ -394,9 +402,6 @@ def _parse(raw, requests, artifacts, repositories):
                  or mapped[request.name]["version"] == request.version,
                  "native_pin_unavailable")
     requested_providers = {item["provider"] for item in mapped.values()}
-    reason_changes = [{"name": name, "from": "dependency", "to": "explicit"}
-                      for name in sorted(requested_providers)
-                      if installed.get(name, {}).get("reason") == "dependency"]
     for name, value in added.items():
         value["reason"] = ("explicit" if name in requested_providers
                            or installed.get(name, {}).get("reason") == "explicit"
@@ -404,6 +409,11 @@ def _parse(raw, requests, artifacts, repositories):
                                   and installed.get(source, {}).get("reason") == "explicit"
                                   for kind, source, target in groups["Q"])
                            else "dependency")
+    explicit = requested_providers | {name for name, value in added.items()
+                                      if value["reason"] == "explicit"}
+    reason_changes = [{"name": name, "from": "dependency", "to": "explicit"}
+                      for name in sorted(explicit)
+                      if installed.get(name, {}).get("reason") == "dependency"]
     for parent, dependency, provider in groups["D"]:
         _require(parent in added and provider in final, "invalid_native_bridge_result")
     for parent, provided in groups["P"]:
