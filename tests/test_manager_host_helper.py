@@ -109,14 +109,14 @@ class ProtocolTests(unittest.TestCase):
         bad["arguments"]["source"] = '\ud800'
         self.assert_invalid(json.dumps(bad).encode())
 
-    def test_protected_declarations_are_explicitly_unsupported(self):
+    def test_protected_declarations_require_explicit_preparation(self):
         source = EMPTY + f'''[[inputs]]
 id="private"
 base_directory="/PRIVATE_SENTINEL"
 files=[{{path="secret.env",classification="protected",reference="{HOST}"}}]
 '''
         self.assert_invalid(request("record", "intent", source=source, expected_revision=0,
-                                    source_is_nonsecret=True), "protected_recording_unsupported")
+                                    source_is_nonsecret=True), "protected_preparation_required")
 
     def test_selection_and_size_bounds_do_not_accept_coercion(self):
         for selection in ([], ["a", "a"], "a", [1], ["bad/path"], ["a"] * 4097):

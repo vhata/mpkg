@@ -5,6 +5,9 @@ entries of an exact declaration snapshot to authenticated captures. It
 uses caller-owned `HostStore` and `LoadedHostPolicy` handles. It is a
 trusted recording library, not an installed privileged helper, a Python
 containment boundary, or application authorization.
+The separate [installed preparation flow](manager-protected-recording.md)
+uses these primitives behind closed requests and authenticated private
+staging; its preparations can span helper invocations.
 
 ## Preparation and recording
 

@@ -51,8 +51,12 @@ a separate boundary. Explicit [runtime/access status options](manager-runtime-ch
 collect original current and retained predicates without equating socket
 ownership or a local-user operation with application functionality.
 Legacy missing input captures remain unavailable. Recording commands can
-[explicitly capture declared nonsecret files](manager-recording-capture.md);
-protected capture preparation remains a trusted library API.
+[explicitly capture declared nonsecret files](manager-recording-capture.md).
+[Protected preparation and recording](manager-protected-recording.md) now
+cross the staged installed boundary through an opaque one-use receipt.
+It binds exact declarations, revisions, policy and freshly captured inputs;
+recording consumes it before the atomic decision transaction. Public
+responses expose neither captured bytes nor private comparison tokens.
 
 Combined library checks use private temporary stores and synthetic query
 responses, including unavailable evidence, retained data, relinquishment

@@ -114,11 +114,6 @@ measured against the first-release contract and acceptance scenarios.
   - Depends on: `build-aur-artifacts`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
-- [DOCKER] `render-compose-execution-bundles` — **Render a complete authenticated Compose input bundle.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#render-compose-execution-bundles), 2026-11-07.
-  - Depends on: `record-protected-inputs`
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
 - [DOCKER] `prepare-compose-images` — **Bind explicitly acquired Docker images to digest and platform.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#prepare-compose-images), 2026-11-07.
   - Depends on: `render-compose-execution-bundles`
@@ -146,7 +141,7 @@ measured against the first-release contract and acceptance scenarios.
 
 - [TOOLING] `resolve-manual-configuration-drift` — **Expose separate keep and restore decisions for manual edits.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#resolve-manual-configuration-drift), 2026-11-07.
-  - Depends on: `record-protected-inputs`, `apply-native-service-configuration`, `apply-sonarr-port-change`
+  - Depends on: `apply-native-service-configuration`, `apply-sonarr-port-change`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [TOOLING] `record-retirement-dispositions` — **Require a fresh scoped data decision for every retirement.** Deliver the bounded scope and acceptance checks in the linked task.
@@ -171,13 +166,13 @@ measured against the first-release contract and acceptance scenarios.
 
 - [TOOLING] `validate-installed-execution-boundary` — **Validate the installed privilege and worker boundary in a disposable guest.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#validate-installed-execution-boundary), 2026-11-07.
-  - Depends on: `expose-execution-requests`, `record-protected-inputs`, `export-and-recover-host-history`
+  - Depends on: `expose-execution-requests`, `export-and-recover-host-history`
   - Blocked by: explicit approval of exact system commands, write contents and disposable target, and verified fixture/tool prerequisites.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [TOOLING] `accept-recording-and-accountability` — **Run first-release adoption and accountability scenarios.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#accept-recording-and-accountability), 2026-11-07.
-  - Depends on: `validate-installed-execution-boundary`, `record-protected-inputs`, `render-compose-execution-bundles`, `compare-package-file-baselines`, `verify-container-application-health`, `verify-native-application-health`, `verify-runtime-consumer-access`
+  - Depends on: `validate-installed-execution-boundary`, `render-compose-execution-bundles`, `compare-package-file-baselines`, `verify-container-application-health`, `verify-native-application-health`, `verify-runtime-consumer-access`
   - Blocked by: explicit approval of exact system commands, write contents and disposable target, and verified fixture/tool prerequisites.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
@@ -223,10 +218,6 @@ measured against the first-release contract and acceptance scenarios.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#prepare-aur-recipes), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
-- [TOOLING] `record-protected-inputs` — **Record protected configuration through the installed boundary.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#record-protected-inputs), 2026-11-07.
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
 - [DOCKER] `verify-container-application-health` — **Verify the selected Sonarr and Radarr application predicates.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#verify-container-application-health), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
@@ -245,4 +236,8 @@ measured against the first-release contract and acceptance scenarios.
 
 - [NATIVE] `compare-package-file-baselines` — **Explain package-supplied files and local configuration differences.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#compare-package-file-baselines), 2026-11-07.
+  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
+
+- [DOCKER] `render-compose-execution-bundles` — **Render a complete authenticated Compose input bundle.** Deliver the bounded scope and acceptance checks in the linked task.
+  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#render-compose-execution-bundles), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.

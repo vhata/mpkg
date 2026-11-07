@@ -88,8 +88,9 @@ Default status retains metadata and source-freshness behavior.
 The recording CLI's explicit
 [`--capture-inputs` option](manager-recording-capture.md) establishes
 nonsecret file baselines. Ordinary declaration-only records retain
-unavailable input baselines, and new protected recording declarations
-remain unsupported through the CLI. Status never creates missing captures
+unavailable input baselines. Protected baselines use the explicit
+[preparation and recording flow](manager-protected-recording.md).
+Status never creates missing captures
 or updates a baseline. Matching declared input files still leaves full
 Compose input closure unverified.
 

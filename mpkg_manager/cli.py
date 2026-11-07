@@ -60,6 +60,7 @@ def _parser():
     descriptions = {
         "init": "explicitly initialize the host store using installed policy",
         "record": "record intent without adopting or applying resources",
+        "prepare-inputs": "prepare protected input captures for an exact declaration and revision",
         "adopt": "accept responsibility for selected declaration resources without observing them",
         "relinquish": "relinquish selected stable resource UUIDs without removing anything",
         "current": "show recorded revision and responsibility, without live observation",
@@ -69,13 +70,16 @@ def _parser():
     for name, help_text in descriptions.items():
         command = commands.add_parser(name, help=help_text, description=help_text)
         command.add_argument("--json", action="store_true", help="emit a bounded JSON result")
-        if name in {"record", "adopt"}:
+        if name in {"record", "adopt", "prepare-inputs"}:
             command.add_argument("source", metavar="PATH")
             command.add_argument("--source-is-nonsecret", action="store_true", required=True,
                                  help="explicitly classify the complete TOML source as nonsecret")
+        if name in {"record", "adopt"}:
+            command.add_argument("--prepared-inputs", metavar="UUID",
+                                 help="consume an exact protected-input preparation once")
             command.add_argument("--capture-inputs", action="store_true",
                                  help="capture declared nonsecret files under installed host policy")
-        if name in {"record", "adopt", "relinquish"}:
+        if name in {"record", "adopt", "relinquish", "prepare-inputs"}:
             command.add_argument("--expected-revision", type=_revision, required=True, metavar="N",
                                  help="exact revision from current/history; stale decisions are refused")
         if name in {"adopt", "relinquish"}:
@@ -104,7 +108,8 @@ def _parser():
 
 def _request(options):
     command = options.command
-    arguments = {"operation": {"init": "initialize", "record": "intent"}.get(command, command)}
+    arguments = {"operation": {"init": "initialize", "record": "intent",
+                               "prepare-inputs": "protected-inputs"}.get(command, command)}
     if command == "status":
         if (options.source is not None) != options.source_is_nonsecret:
             raise RequestError("invalid_request")
@@ -121,9 +126,9 @@ def _request(options):
                 arguments[name] = True
         return json.dumps({"version": PROTOCOL_VERSION, "verb": "observe", "arguments": arguments},
                           ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-    if command in {"record", "adopt", "relinquish"}:
+    if command in {"record", "adopt", "relinquish", "prepare-inputs"}:
         arguments["expected_revision"] = options.expected_revision
-    if command in {"record", "adopt"}:
+    if command in {"record", "adopt", "prepare-inputs"}:
         raw = _source(options.source)
         declaration = load_declaration(raw)
         if command == "adopt":
@@ -131,18 +136,25 @@ def _request(options):
             if not set(options.resource) <= known:
                 raise RequestError("unknown_resource_selection")
         arguments.update(source=raw.decode("utf-8"), source_is_nonsecret=options.source_is_nonsecret)
-        if options.capture_inputs:
-            arguments["capture_inputs"] = True
+        if command in {"record", "adopt"}:
+            if options.capture_inputs:
+                arguments["capture_inputs"] = True
+            if options.prepared_inputs is not None:
+                arguments["preparation_id"] = options.prepared_inputs
     if command in {"adopt", "relinquish"}:
         arguments["resource_ids"] = options.resource
     return json.dumps({"version": PROTOCOL_VERSION,
-                       "verb": "export" if command in {"current", "history"} else "record",
+                       "verb": ("prepare" if command == "prepare-inputs" else
+                                "export" if command in {"current", "history"} else "record"),
                        "arguments": arguments}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
 
 def _human_result(command, result):
     if command == "init":
         print(f"Initialized host {result['host_id']} at revision 0.")
+    elif command == "prepare-inputs":
+        print(f"Prepared protected inputs at revision {result['revision']}: {result['preparation_id']}.")
+        print("This replaces the previous pending preparation; recording consumes it once.")
     elif command in {"record", "adopt", "relinquish"}:
         labels = {"record": "Recorded intent", "adopt": "Recorded adoption",
                   "relinquish": "Recorded relinquishment"}

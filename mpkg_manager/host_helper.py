@@ -20,6 +20,7 @@ from .store import HostStore, StoreError
 from .status_collection import StatusCollectionError, collect_status
 from .status_wire import validate_status
 from .protected_bindings import BindingError, ProtectedRecorder
+from .protected_preparation import consume_recording, prepare_recording
 
 
 STORE_DIRECTORY = Path("/var/lib/mpkg")
@@ -27,7 +28,7 @@ MUTATION_LOCK = Path("/run/mpkg/apply.lock")
 TRANSPORT_SECONDS = 5.0
 _ERROR_CODES = frozenset({
     "invalid_request", "request_size_limit", "protocol_unsupported", "operation_unsupported",
-    "invalid_declaration", "protected_recording_unsupported", "request_timeout",
+    "invalid_declaration", "protected_preparation_required", "request_timeout",
     "transport_unavailable", "response_size_limit", "host_owner_required", "policy_unavailable",
     "host_binding_conflict", "mutation_busy", "mutation_lock_unavailable", "store_missing",
     "store_exists", "store_busy", "store_recovery_required", "store_corrupt", "store_unavailable",
@@ -181,7 +182,7 @@ class HostBoundary:
                         raise BoundaryError("operation_unsupported")
                     policy.policy
                     return result
-            if request.verb != "record":
+            if request.verb not in {"record", "prepare"}:
                 raise BoundaryError("operation_unsupported")
             with _mutation_lock(self._mutation_lock, self._owner_uid):
                 policy.policy
@@ -202,14 +203,30 @@ class HostBoundary:
                     with HostStore.open_existing(self._store_directory, accepted_policy.host_id,
                                                  owner_uid=self._owner_uid) as store:
                         self._bound(store, accepted_policy)
-                        if request.operation in {"intent", "adopt"} and request.capture_inputs:
+                        if request.verb == "prepare" and request.operation == "protected-inputs":
+                            try:
+                                return prepare_recording(ProtectedRecorder(store, policy),
+                                    load_declaration(request.source), request.expected_revision)
+                            except (OSError, ValueError, TypeError, KeyError):
+                                raise BindingError("invalid_preparation") from None
+                        if request.operation in {"intent", "adopt"} and (request.capture_inputs
+                                                                                     or request.preparation_id):
                             recorder = ProtectedRecorder(store, policy)
                             declaration = load_declaration(request.source)
+                            prepared = ()
+                            if request.preparation_id is not None:
+                                try:
+                                    prepared = consume_recording(recorder, declaration,
+                                        request.expected_revision, request.preparation_id)
+                                except (OSError, ValueError, TypeError, KeyError):
+                                    raise BindingError("invalid_preparation") from None
                             if request.operation == "intent":
-                                result = recorder.record_all_inputs(declaration, request.expected_revision)
+                                method = recorder.record_all_inputs if request.capture_inputs else recorder.record_intent
+                                result = method(declaration, request.expected_revision, prepared_inputs=prepared)
                             else:
-                                result = recorder.adopt_all_inputs(declaration, request.expected_revision,
-                                                                   request.resource_ids)
+                                method = recorder.adopt_all_inputs if request.capture_inputs else recorder.adopt
+                                result = method(declaration, request.expected_revision,
+                                                request.resource_ids, prepared_inputs=prepared)
                         elif request.operation == "intent":
                             result = store.record_intent(load_declaration(request.source), request.expected_revision)
                         elif request.operation == "adopt":

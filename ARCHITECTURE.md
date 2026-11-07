@@ -41,8 +41,10 @@ checks and product acceptance.
   opening a legacy store does not silently upgrade it. `host_protocol` and `host_helper` provide closed recording
   and status requests, verified paths, serialization and sanitized output. The
   [host-helper guide](docs/manager-host-helper.md) describes the staged
-  installed launcher and its unverified real-host acceptance; protected
-  recording through requests and application remain separate work.
+  installed launcher and its unverified real-host acceptance.
+  [Protected recording](docs/manager-protected-recording.md) prepares
+  policy-approved inputs through a bounded private receipt and consumes it
+  during explicit recording or adoption. Application remains separate work.
 - `mpkg_manager.host_policy` loads and verifies host identity, engine
   aliases and allowed input roots. `mpkg_manager.protected_capture` reads
   bounded regular files beneath a verified policy handle. The
