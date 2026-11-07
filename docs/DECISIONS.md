@@ -11,6 +11,24 @@ design, including parallel work and reviewable PRs while unattended.
 Final review and landing remain with the user; this does not authorize
 production package, service or Docker operations.
 
+Native [transaction preparation](manager-native-preparation.md) uses a fixed
+libalpm bridge with copied installed metadata and isolated repository inputs.
+It binds the complete proposed upgrade, artifacts, provider/replacement
+choices and package reasons without changing the live package database.
+Exact ABI and committed transaction acceptance remain explicit gates.
+
+AUR [recipe preparation](manager-aur-preparation.md) acquires pinned inputs
+under an explicit recipe trust decision without evaluating `PKGBUILD` or
+installing dependencies. Recursive AUR inputs and native dependency requests
+retain their distinct provenance. Inspection does not establish generated
+metadata equivalence or authorize building or installing artifacts.
+
+Trusted [file publication](manager-file-publication.md) requires immutable
+input/candidate bindings and current adapter evidence for authority and
+writer exclusion. It preserves supported metadata through synchronized
+replacement and reports uncertainty after a possible publication. The
+primitive exposes no public apply request or automatic restart/rollback.
+
 Keep the existing `mpkg` helper usable while the replacement is developed
 in the `mpkg_manager` Python 3.12 namespace. The validation command
 validates a closed TOML model and produces an immutable nonsecret snapshot.
@@ -51,16 +69,26 @@ a separate boundary. Explicit [runtime/access status options](manager-runtime-ch
 collect original current and retained predicates without equating socket
 ownership or a local-user operation with application functionality.
 Legacy missing input captures remain unavailable. Recording commands can
-[explicitly capture declared nonsecret files](manager-recording-capture.md);
-protected capture preparation remains a trusted library API.
+[explicitly capture declared nonsecret files](manager-recording-capture.md).
+[Protected preparation and recording](manager-protected-recording.md) now
+cross the staged installed boundary through an opaque one-use receipt.
+It binds exact declarations, revisions, policy and freshly captured inputs;
+recording consumes it before the atomic decision transaction. Public
+responses expose neither captured bytes nor private comparison tokens.
 
 Combined library checks use private temporary stores and synthetic query
 responses, including unavailable evidence, retained data, relinquishment
 and changed check declarations. This evidence is separate from disposable
 mechanism experiments and A1–A12 acceptance. Real installed-helper and
-sudo acceptance, an application worker, apply protocol, attempt history
-and real native/Docker acceptance remain separate implementation and
-validation work. The
+sudo acceptance, an apply protocol, public attempt
+reporting and real native/Docker acceptance remain separate implementation
+and validation work. The [internal attempt journal](manager-attempt-journal.md)
+retains original targets and append-only outcomes in schema v4; its inert
+fixture writer grants no production execution authority.
+[Attempt supervision](manager-attempt-supervision.md) adds durable launch
+reservations and a fixed staged worker. Recording checks pending ownership
+through the host lock handoff; fake system-manager and owned inert-worker
+tests do not establish real systemd or application acceptance. The
 [declaration guide](manager-declarations.md) owns the schema; the original
 first-release contract and acceptance evidence requirements remain in
 force.

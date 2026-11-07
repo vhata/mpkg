@@ -191,7 +191,7 @@ base_directory="/{SENTINEL}"
 files=[{{path="secret.env",classification="protected",reference="{HOST}"}}]
 ''')
         code, result = self.record()
-        self.assertEqual((code, result["error"]["code"]), (2, "protected_recording_unsupported"))
+        self.assertEqual((code, result["error"]["code"]), (2, "protected_preparation_required"))
         self.assertEqual(self.sent, [])
 
     def test_selection_validation_rejects_duplicates_unknown_ids_and_logical_relinquishment(self):

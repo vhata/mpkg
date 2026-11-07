@@ -39,6 +39,7 @@ class HostRequest:
     check_file_content: bool = False
     attribute_endpoints: bool = False
     check_consumer_access: bool = False
+    preparation_id: str | None = field(default=None, repr=False)
 
 
 def _object(pairs):
@@ -124,11 +125,29 @@ def parse_request(raw):
             raise RequestError("invalid_request")
         if verb == "observe":
             return _status(arguments)
-        if verb not in {"record", "export"}:
+        if verb not in {"record", "export", "prepare"}:
             raise RequestError("operation_unsupported")
         operation = arguments.get("operation")
         if type(operation) is not str:
             raise RequestError("invalid_request")
+        if verb == "prepare":
+            if operation != "protected-inputs":
+                raise RequestError("operation_unsupported")
+            if set(arguments) != {"operation", "expected_revision", "source", "source_is_nonsecret"}:
+                raise RequestError("invalid_request")
+            revision = arguments["expected_revision"]
+            if (type(revision) is not int or not 0 <= revision < 2**63 - 1
+                    or arguments["source_is_nonsecret"] is not True
+                    or type(arguments["source"]) is not str):
+                raise RequestError("invalid_request")
+            source = arguments["source"].encode("utf-8")
+            if len(source) > MAX_DECLARATION_BYTES:
+                raise RequestError("request_size_limit")
+            declaration = load_declaration(source)
+            if not any(entry["classification"] == "protected" for bundle in declaration.model["inputs"]
+                       for entry in bundle["files"]):
+                raise RequestError("invalid_request")
+            return HostRequest(verb, operation, revision, source)
         if verb == "export":
             if set(arguments) != {"operation"} or operation not in {"current", "history"}:
                 raise RequestError("invalid_request")
@@ -144,6 +163,8 @@ def parse_request(raw):
             keys |= {"source", "source_is_nonsecret"}
             if "capture_inputs" in arguments:
                 keys.add("capture_inputs")
+            if "preparation_id" in arguments:
+                keys.add("preparation_id")
         if operation in {"adopt", "relinquish"}:
             keys.add("resource_ids")
         if set(arguments) != keys:
@@ -155,6 +176,9 @@ def parse_request(raw):
         if type(revision) is not int or not 0 <= revision < 2**63 - 1:
             raise RequestError("invalid_request")
         source = None
+        preparation = arguments.get("preparation_id")
+        if "preparation_id" in arguments:
+            _selection([preparation], stable=True)
         if operation in {"intent", "adopt"}:
             if arguments["source_is_nonsecret"] is not True or type(arguments["source"]) is not str:
                 raise RequestError("invalid_request")
@@ -162,12 +186,15 @@ def parse_request(raw):
             if len(source) > MAX_DECLARATION_BYTES:
                 raise RequestError("request_size_limit")
             declaration = load_declaration(source)
-            if any(entry["classification"] == "protected" for bundle in declaration.model["inputs"]
-                   for entry in bundle["files"]):
-                raise RequestError("protected_recording_unsupported")
+            protected = any(entry["classification"] == "protected" for bundle in declaration.model["inputs"]
+                            for entry in bundle["files"])
+            if protected and preparation is None:
+                raise RequestError("protected_preparation_required")
+            if not protected and preparation is not None:
+                raise RequestError("invalid_request")
         resources = _selection(arguments["resource_ids"], stable=operation == "relinquish") if "resource_ids" in arguments else ()
         return HostRequest(verb, operation, revision, source, resources,
-                           capture_inputs=capture_inputs)
+                           capture_inputs=capture_inputs, preparation_id=preparation)
     except RequestError:
         raise
     except DeclarationError:

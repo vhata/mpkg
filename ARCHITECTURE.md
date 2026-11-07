@@ -41,14 +41,29 @@ checks and product acceptance.
   opening a legacy store does not silently upgrade it. `host_protocol` and `host_helper` provide closed recording
   and status requests, verified paths, serialization and sanitized output. The
   [host-helper guide](docs/manager-host-helper.md) describes the staged
-  installed launcher and its unverified real-host acceptance; protected
-  recording through requests and application remain separate work.
+  installed launcher and its unverified real-host acceptance.
+  [Protected recording](docs/manager-protected-recording.md) prepares
+  policy-approved inputs through a bounded private receipt and consumes it
+  during explicit recording or adoption. Application remains separate work.
 - `mpkg_manager.host_policy` loads and verifies host identity, engine
   aliases and allowed input roots. `mpkg_manager.protected_capture` reads
   bounded regular files beneath a verified policy handle. The
   [capture guide](docs/manager-capture.md) defines path, metadata and
   ownership checks and their concurrency limits. Trusted fixture path/UID
   overrides are not a production privilege boundary.
+- `mpkg_manager.attempt_journal` preserves authenticated immutable attempt
+  targets and append-only action events in store schema v4. Its
+  [journal guide](docs/manager-attempt-journal.md) defines original input,
+  decision, check and worker bindings, separate command/observation outcomes,
+  and explicit migration. The creation harness accepts inert fixtures only;
+  production attempts, recovery and CLI reporting remain separate.
+- `mpkg_manager.attempt_supervisor` and `attempt_worker` add durable launch
+  reservations and worker ownership using the fixed staged worker entrypoint.
+  The [supervision guide](docs/manager-attempt-supervision.md) describes
+  the host-lock handoff, recording gates and bounded private child output.
+  Owned inert workers and a controlled system-manager transport exercise
+  these boundaries; production effects and real systemd acceptance remain
+  unavailable.
 - `mpkg_manager.observe_native` and `mpkg_manager.observe_compose` collect
   time-bounded observations through closed read-only queries. Their
   [native](docs/manager-observations.md) and
@@ -62,6 +77,18 @@ checks and product acceptance.
   cannot establish absence, provider identity or provenance. Planner
   source/property guards keep that evidence distinct from installed
   version and installation-reason facts.
+- `mpkg_manager.native_preparation` stages stable copied native metadata
+  and signed package artifacts for a fixed preparation-only libalpm bridge.
+  Its [preparation guide](docs/manager-native-preparation.md) describes exact
+  source, inventory, provider, replacement, upgrade and reason bindings.
+  The bridge source and explicit build entrypoint live under `native/`.
+  Preparation is a trusted library operation; installed request integration
+  and real native transaction acceptance remain separate work.
+- `mpkg_manager.aur_recipes` acquires explicitly trusted, digest-pinned
+  recipe and source bytes and parses `.SRCINFO` without executing recipes.
+  The [AUR preparation guide](docs/manager-aur-preparation.md) describes
+  recursive input closure and separate unresolved native dependency requests.
+  Generated metadata verification, builds and installation remain separate.
 - `mpkg_manager.observe_accounts` collects
   [local account scalar properties](docs/manager-account-observation.md)
   through bounded fixed queries and repeated local/default NSS checks.
@@ -112,8 +139,8 @@ checks and product acceptance.
   [Endpoint report binding](docs/manager-endpoint-reporting.md) requires
   typed complete role coverage, exact recorded context and freshness;
   every route result remains functionally unverified.
-  Reports are always non-executable; attempts, native preparation and
-  application are not supplied.
+  Reports are always non-executable; production attempts and application
+  are not supplied by comparison. Native preparation is a separate boundary.
 - `mpkg_manager.status_collection` coordinates fixed read-only adapters
   with live policy/history checks, bounded query scheduling and explicit
   gaps. The [collection guide](docs/manager-status-collection.md) defines
@@ -127,6 +154,12 @@ checks and product acceptance.
   [adapter guide](docs/manager-sonarr-xml.md) defines the supported subset
   and protected candidate interface. It performs no live file operation,
   writer coordination or restart, and grants no apply authority.
+- `mpkg_manager.file_publication` supplies a narrow trusted replacement
+  primitive for immutable configuration candidates. Its
+  [publication guide](docs/manager-file-publication.md) defines required
+  adapter authorization and writer exclusion, descriptor and mount checks,
+  supported metadata preservation, synchronization and uncertain outcomes.
+  It exposes no installed request, lifecycle adapter or apply authority.
 - `mpkg` contains the CLI, PKGBUILD metadata handling, dependency edits,
   package-tool calls, and scoped Git commits. Paths are resolved
   relative to the executable, including when invoked through a symlink.

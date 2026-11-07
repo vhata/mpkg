@@ -26,8 +26,10 @@ this is not containment against a hostile administrator.
 Enter the installed helper through explicit operator authorization, such
 as interactive sudo. Never invoke repository code or a caller-selected
 Python module as root. There is no passwordless sudo rule, Docker-group
-grant or request-controlled operator identity. The existing store schema
-does not yet record initiating-operator attribution.
+grant or request-controlled operator identity. The attempt journal retains
+trusted fixture operator/worker identity.
+The recording protocol does not yet attribute initiating operators, and
+no request can launch a production attempt.
 
 Production construction fixes the private policy at
 `/etc/mpkg/host-policy.toml`, the store at `/var/lib/mpkg`, and the host
@@ -63,6 +65,7 @@ The supported operations are:
 | `record` | `intent` | `expected_revision`, `source`, `source_is_nonsecret` |
 | `record` | `adopt` | The intent fields plus `resource_ids` |
 | `record` | `relinquish` | `expected_revision`, `resource_ids` |
+| `prepare` | `protected-inputs` | `expected_revision`, `source`, `source_is_nonsecret` |
 | `export` | `current` | None |
 | `export` | `history` | None |
 | `observe` | `status` | `expected_revision`, `source`, `source_is_nonsecret`, `selected_components`, `probe_endpoints`, optional `check_file_content`, `attribute_endpoints`, `check_consumer_access` |
@@ -75,15 +78,17 @@ and recording requests never initialize the store as a side effect.
 require the literal boolean `source_is_nonsecret: true`, reflecting the
 operator's explicit classification. This acknowledgement does not relax
 declaration validation and cannot automatically detect secret content.
-Protected recording declarations return `protected_recording_unsupported`; they
-cannot be downgraded to generic unbound captures. Authenticated capture
-preparation across helper requests remains separate work.
+Protected recording declarations require an opaque `preparation_id`
+issued for their exact source and revision by `prepare` /
+`protected-inputs`. The [protected recording guide](manager-protected-recording.md)
+defines private authenticated staging, current-policy recapture and
+durable one-shot consumption. Generic caller captures are never accepted.
 
 Intent and adoption additionally accept an optional boolean
 `capture_inputs`, defaulting to false. When true, the helper captures all
 declared nonsecret files through the verified host policy and publishes
 them with the decision using the authenticated recorder. Other operations
-reject this field. Protected declarations remain unsupported. Capture
+reject this field. Protected declarations also require preparation. Capture
 failure returns `input_capture_rejected` without advancing the decision;
 commit uncertainty retains its distinct outcome. See
 [explicit input capture](manager-recording-capture.md).
@@ -132,6 +137,10 @@ text is returned.
 Mutations take the pre-existing verified host lock nonblockingly, then
 use the store's own revision/transaction checks. A competing mutation
 returns `mutation_busy`; read-only status and exports do not take that host lock.
+A durable launch reservation also blocks recording with
+`attempt_recovery_required`, including the gap before a worker takes the
+lock. Ordinary store writes enforce the same gate; see
+[attempt supervision](manager-attempt-supervision.md).
 Store locking still applies. Policy is rechecked before recording and
 afterward, and stored host/engine bindings must match it. This is not an
 atomic lock against an administrator changing policy or external tools.

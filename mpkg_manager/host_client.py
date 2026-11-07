@@ -25,7 +25,7 @@ _AUTH_SECONDS = 120
 _REQUEST_SECONDS = 60
 _ERROR_CODES = frozenset({
     "invalid_request", "request_size_limit", "protocol_unsupported", "operation_unsupported",
-    "invalid_declaration", "protected_recording_unsupported", "request_timeout",
+    "invalid_declaration", "protected_preparation_required", "request_timeout",
     "transport_unavailable", "response_size_limit", "host_owner_required", "policy_unavailable",
     "host_binding_conflict", "mutation_busy", "mutation_lock_unavailable", "store_missing",
     "store_exists", "store_busy", "store_recovery_required", "store_corrupt", "store_unavailable",
@@ -33,7 +33,7 @@ _ERROR_CODES = frozenset({
     "commit_outcome_unknown", "store_write_failed", "store_read_failed", "record_rejected",
     "record_outcome_unknown", "internal_error", "installed_helper_unavailable", "invalid_status_selection",
     "status_no_recorded_snapshot", "status_unavailable", "status_context_changed", "status_scope_limit",
-    "input_capture_rejected", "store_migration_required",
+    "input_capture_rejected", "store_migration_required", "attempt_recovery_required",
 })
 _UNCERTAIN_CODES = {"commit_outcome_unknown", "record_outcome_unknown", "response_size_limit",
                     "internal_error", "installed_helper_unavailable"}
@@ -269,7 +269,14 @@ def _current(value):
 
 
 def _result(value, request):
-    if request.verb == "observe":
+    if request.verb == "prepare":
+        _keys(value, {"host_id", "revision", "preparation_id", "protected_count"})
+        _uuid(value["host_id"])
+        _uuid(value["preparation_id"])
+        _integer(value["revision"])
+        _require(value["revision"] == request.expected_revision
+                 and type(value["protected_count"]) is int and 1 <= value["protected_count"] <= 64)
+    elif request.verb == "observe":
         validate_status(value, request)
     elif request.operation == "initialize":
         _keys(value, {"host_id", "revision", "initialized"})

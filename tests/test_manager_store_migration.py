@@ -148,6 +148,8 @@ class MigrationTests(unittest.TestCase):
             self.source, HOST, owner_uid=self.owner))
         migration.migrate_store_to_v3(self.source, HOST, expected_revision=3,
             backup_directory=self.root / "v2-backup", owner_uid=self.owner)
+        migration.migrate_store_to_v4(self.source, HOST, expected_revision=3,
+            backup_directory=self.root / "v3-backup", owner_uid=self.owner)
         with HostStore.open_existing(self.source, HOST, owner_uid=self.owner) as store:
             self.assertEqual(store._db.execute("SELECT private_key FROM host").fetchone()[0], key)
             self.assertEqual(store._db.execute("SELECT raw FROM protected_inputs").fetchone()[0], PRIVATE.encode())

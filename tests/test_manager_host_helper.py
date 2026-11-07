@@ -109,14 +109,14 @@ class ProtocolTests(unittest.TestCase):
         bad["arguments"]["source"] = '\ud800'
         self.assert_invalid(json.dumps(bad).encode())
 
-    def test_protected_declarations_are_explicitly_unsupported(self):
+    def test_protected_declarations_require_explicit_preparation(self):
         source = EMPTY + f'''[[inputs]]
 id="private"
 base_directory="/PRIVATE_SENTINEL"
 files=[{{path="secret.env",classification="protected",reference="{HOST}"}}]
 '''
         self.assert_invalid(request("record", "intent", source=source, expected_revision=0,
-                                    source_is_nonsecret=True), "protected_recording_unsupported")
+                                    source_is_nonsecret=True), "protected_preparation_required")
 
     def test_selection_and_size_bounds_do_not_accept_coercion(self):
         for selection in ([], ["a", "a"], "a", [1], ["bad/path"], ["a"] * 4097):
@@ -455,6 +455,8 @@ class InstalledPayloadTests(unittest.TestCase):
                          {path.name for path in (ROOT / "mpkg_manager").glob("*.py")})
         self.assertEqual(stat.S_IMODE((installed / "host-helper.py").stat().st_mode), 0o755)
         self.assertTrue((installed / "host-helper.py").read_text().startswith("#!/usr/bin/python3.12 -I\n"))
+        self.assertEqual((installed / "attempt-worker.py").read_bytes(), (installed / "host-helper.py").read_bytes())
+        self.assertEqual(stat.S_IMODE((installed / "attempt-worker.py").stat().st_mode), 0o755)
         self.assertEqual((target / "usr/lib/tmpfiles.d/mpkg.conf").read_bytes(),
                          (ROOT / "packages/mpkg-manager/mpkg.conf").read_bytes())
         self.assertFalse((target / "etc").exists())
@@ -509,6 +511,30 @@ class InstalledPayloadTests(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertEqual(list(target.iterdir()), [sentinel])
             self.assertEqual(sentinel.read_text(), "keep")
+
+    def test_worker_entrypoint_is_required_and_checked_before_module_import(self):
+        _, installed = self.stage()
+        entrypoint = installed / "attempt-worker.py"
+        raw = entrypoint.read_bytes()
+        entrypoint.chmod(0o777)
+        with self.assertRaises(ValueError):
+            self.checker()(str(installed), owner_uid=os.geteuid())
+        entrypoint.unlink()
+        with self.assertRaises(FileNotFoundError):
+            self.checker()(str(installed), owner_uid=os.geteuid())
+        entrypoint.write_bytes(raw)
+        entrypoint.chmod(0o755)
+        self.checker()(str(installed), owner_uid=os.geteuid())
+
+    def test_staged_worker_refuses_wrong_location_and_additional_arguments(self):
+        _, installed = self.stage()
+        for arguments in ([HOST], [HOST, "PRIVATE_ARGUMENT_SENTINEL"]):
+            result = subprocess.run([sys.executable, "-I", str(installed / "attempt-worker.py"), *arguments],
+                                    capture_output=True, timeout=5)
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(json.loads(result.stdout)["error"]["code"], "installed_helper_unavailable")
+            self.assertEqual(result.stderr, b"")
+            self.assertNotIn(b"SENTINEL", result.stdout)
 
 
 if __name__ == "__main__":

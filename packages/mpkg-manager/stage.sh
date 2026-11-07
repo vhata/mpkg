@@ -14,4 +14,5 @@ for source in "$root"/mpkg_manager/*.py; do
   install -m644 "$source" "$target/usr/lib/mpkg/mpkg_manager/$(basename "$source")"
 done
 install -m755 "$root/packages/mpkg-manager/host-helper.py" "$target/usr/lib/mpkg/host-helper.py"
+install -m755 "$root/packages/mpkg-manager/host-helper.py" "$target/usr/lib/mpkg/attempt-worker.py"
 install -Dm644 "$root/packages/mpkg-manager/mpkg.conf" "$target/usr/lib/tmpfiles.d/mpkg.conf"

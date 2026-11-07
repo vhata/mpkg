@@ -83,9 +83,11 @@ The client reads a bounded regular source file without following its
 final symlink, validates it locally, and sends the exact UTF-8 bytes as
 JSON text. Comments and line endings are preserved. It does not read
 referenced input files. Malformed declarations, invalid selections and
-unsupported protected declarations fail before invoking sudo.
-Protected inputs return the fixed `protected_recording_unsupported`
-error; authenticated protected recording remains separate work.
+protected recording without preparation fail before invoking sudo.
+Protected inputs require the explicit
+[`prepare-inputs` / `--prepared-inputs` flow](manager-protected-recording.md).
+The helper captures inputs privately and consumes the exact preparation
+once; a reference in TOML alone never authenticates captured content.
 
 ## Fixed transport and failure outcomes
 

@@ -199,11 +199,11 @@ files=[{{path="absent.conf",classification="nonsecret"}}]
         self.assertEqual(len(self.sent), 1)
         self.assertEqual((self.state()[0]["revision"], self.state()[2]), (1, 1))
 
-    def test_protected_entries_remain_unsupported_before_transport(self):
+    def test_unprepared_protected_entries_fail_before_transport(self):
         self.source.write_text(self.source.read_text().replace('classification="nonsecret"',
                                f'classification="protected",reference="{HOST}"'))
         code, value = self.record()
-        self.assertEqual((code, value["error"]["code"]), (2, "protected_recording_unsupported"))
+        self.assertEqual((code, value["error"]["code"]), (2, "protected_preparation_required"))
         self.assertEqual(self.sent, [])
 
     def test_unknown_adoption_selection_is_rejected_before_capture(self):

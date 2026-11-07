@@ -313,7 +313,7 @@ def derive_sonarr_port_proposal(recorder, *, expected_revision, snapshot_id, sta
         policy = recorder._policy_context()
         with store._read():
             recorder._revision(expected_revision)
-            _require(store._schema_version == 3, "proposal_migration_required")
+            _require(store._schema_version >= 3, "proposal_migration_required")
             context, candidate, capture, entry = _derive(store, expected_revision, snapshot_id,
                                                          stable_resource_id, policy)
         fresh = recorder._capture(entry)
@@ -341,7 +341,7 @@ def read_sonarr_port_proposal(store, proposal_id):
     """Read verified historical proposal evidence; never refresh execution gates."""
     _require(type(store) is HostStore and _uuid(proposal_id))
     with store._read():
-        _require(store._schema_version == 3, "proposal_migration_required")
+        _require(store._schema_version >= 3, "proposal_migration_required")
         row = store._db.execute("SELECT * FROM sonarr_port_proposals WHERE id=?", (proposal_id,)).fetchone()
         _require(row is not None, "proposal_missing")
         context = _verified_row(store, row)
@@ -353,7 +353,7 @@ def list_sonarr_port_proposals(store, *, limit=100, after_id=None):
     _require(type(store) is HostStore and type(limit) is int and 1 <= limit <= 100)
     _require(after_id is None or _uuid(after_id))
     with store._read():
-        _require(store._schema_version == 3, "proposal_migration_required")
+        _require(store._schema_version >= 3, "proposal_migration_required")
         rows = store._db.execute("SELECT * FROM sonarr_port_proposals WHERE id>? ORDER BY id LIMIT ?",
                                 ("" if after_id is None else after_id, limit)).fetchall()
         return [_projection(row, _verified_row(store, row), store._revision()) for row in rows]

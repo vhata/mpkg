@@ -20,8 +20,9 @@ classification, authorization, selection and transport behavior.
 
 ## Scope and retained baselines
 
-Every input file must be explicitly classified `nonsecret` in the
-declaration. Classification is the operator's responsibility, not secret
+Each nonsecret input file must be explicitly classified `nonsecret` in the
+declaration. Protected entries require the separate
+[preparation flow](manager-protected-recording.md). Classification is the operator's responsibility, not secret
 detection. Bytes remain in the private store even for this classification.
 The source acknowledgement separately classifies the entire TOML text.
 
@@ -61,11 +62,11 @@ There is no automatic retry or rollback claim. Filesystem reads and store
 validation have no enforced wall-clock deadline; the client transport
 deadline does not prove the helper stopped.
 
-Protected recording declarations still fail before helper invocation
-with `protected_recording_unsupported`, even with `--capture-inputs`.
-This option does not turn a caller-supplied reference into authenticated
-protected bytes. Issuing and retaining protected preparations across
-separate installed requests remains separate work.
+Protected recording declarations require `--prepared-inputs UUID` from
+[`prepare-inputs`](manager-protected-recording.md), even with
+`--capture-inputs`. The preparation authenticates the protected subset;
+this flag additionally captures the nonsecret subset. Caller-supplied
+references alone never authenticate protected bytes.
 
 Private integration tests exercise real capture/store/status flows,
 retained adoption baselines, no implicit reads, selection/revision races,
