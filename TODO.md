@@ -22,6 +22,19 @@ measured against the first-release contract and acceptance scenarios.
 
 ### Unprioritized
 
+- [NATIVE] `visualize-installed-package-dependencies` — **Show installed packages as a tree rooted at explicitly requested packages.** Make it possible to follow each requested package's dependencies and understand why packages are installed.
+  - Source: user request, 2026-11-07.
+  - Show explicitly requested packages at the top level and their transitive installed dependencies underneath.
+  - Account for the underlying graph: shared dependencies can have multiple parents. Choose a readable expansion/reference convention that preserves those relationships, identifies repeated packages, and terminates on cycles.
+  - Clarify how installation reasons and recorded requests determine roots, how provider relationships are represented, and where packages unreachable from an explicit root appear.
+  - Validate with synthetic inventories containing shared dependencies, multiple roots and cycles; the visualization must leave installed package state unchanged.
+
+- [NATIVE] `visualize-pacman-upgrade-reasons` — **Visualize a pacman -Syu transaction with old/new versions and reasons for each change.** Explain what is being updated or upgraded and why it is included.
+  - Source: user request, 2026-11-07.
+  - Show the currently installed version and proposed target version for each package, with additions and replacements clearly identified.
+  - Distinguish newer repository versions, dependency requirements and replacements where the transaction metadata supports those explanations; connect dependency-driven changes to the packages or constraints that require them and show unavailable explanations explicitly.
+  - Triage whether the view previews a proposed transaction, explains a completed one, or supports both, and define which package/database snapshots the explanation describes.
+  - Validate against synthetic transaction inputs with shared dependencies and version changes; viewing an explanation must not itself perform an upgrade.
 
 - [DESIGN] `refine-later-server-milestones` — **Define concrete scenarios for the later milestones.** Extend accountability, replacement-host recreation, and reusable application knowledge without weakening the first release.
   - Source: [later milestones](plans/2026-10-31-server-environment-milestones.md#later-milestones), 2026-10-31.
