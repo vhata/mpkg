@@ -536,6 +536,9 @@ class _FixtureJournal:
             _require(len(events) == expected_sequence, "attempt_sequence_conflict")
             if kind == "launch_reserved":
                 _require(not _pending_launches(self.store), "attempt_launch_conflict")
+            if kind == "action_started":
+                _require(not any(identity != attempt_id for identity in _pending_launches(self.store)),
+                         "attempt_recovery_required")
             values = [attempt_id, expected_sequence + 1, str(uuid.uuid4()), action_id, kind, _now(), outcome]
             previous = events[-1][-1] if events else row[7]
             event = tuple(values) + (_seal(self.store, "event", values, previous),)

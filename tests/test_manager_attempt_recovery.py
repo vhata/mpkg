@@ -1,6 +1,7 @@
 """Fake recovery evidence and owned fixtures; no live system inspection."""
 from dataclasses import replace
 import json
+import multiprocessing
 import os
 import sqlite3
 import unittest
@@ -26,6 +27,20 @@ def quiet(request):
         "idle" if request.package_lock_required else "not_applicable",
         tuple((identity, "quiescent") for identity in request.engine_ids),
         tuple((identity, "quiescent") for identity in request.resource_ids))
+
+
+def _owned_recovery(arguments, attempt_id, sequence, started, release, results):
+    def collect(request):
+        started.set()
+        if not release.wait(5):
+            raise RuntimeError("fixture collection interrupted")
+        return quiet(request)
+    try:
+        result = recovery.AttemptRecovery(**arguments, _collector=collect).recover(
+            attempt_id, expected_sequence=sequence)
+        results.put(result["supervision"]["recovery"])
+    except Exception as error:
+        results.put(getattr(error, "code", "fixture_failure"))
 
 
 class RecoveryTests(unittest.TestCase):
@@ -195,6 +210,91 @@ class RecoveryTests(unittest.TestCase):
         self.recover(attempt, inspect)
         self.assertEqual(observed, ["unknown"])
 
+    def test_caller_death_does_not_allow_recovery_over_live_owned_worker(self):
+        attempt = self.create()
+        context = multiprocessing.get_context("fork")
+        dispatched, started, release = context.Event(), context.Event(), context.Event()
+        results = context.Queue()
+        owned = context.Process(target=fixtures._owned_worker,
+            args=(self.arguments, attempt["attempt_id"], dispatched, started, release, results))
+        caller = context.Process(target=fixtures._disconnected_caller,
+            args=(self.arguments, attempt["attempt_id"], dispatched))
+        owned.start()
+        caller.start()
+        try:
+            caller.join(5)
+            self.assertEqual(caller.exitcode, 0)
+            self.assertTrue(started.wait(5))
+            self.assertTrue(owned.is_alive())
+            collected = []
+            self.assert_error("mutation_busy", lambda: self.recover(attempt,
+                lambda request: collected.append(request) or quiet(request)))
+            self.assertEqual(collected, [])
+            self.assertEqual(self.read(attempt)["state"], "unknown")
+            release.set()
+            owned.join(5)
+            self.assertEqual(owned.exitcode, 0)
+            self.assertEqual(results.get(timeout=1), ("completed", "observed-complete"))
+            self.assert_error("recovery_not_required", lambda: self.recover(attempt))
+        finally:
+            release.set()
+            for process in (caller, owned):
+                if process.is_alive():
+                    process.terminate()
+                process.join(5)
+                process.close()
+            results.close()
+            results.join_thread()
+
+    def test_concurrent_process_recovery_has_one_owner_and_one_disposition(self):
+        attempt = self.unknown()
+        sequence = self.read(attempt)["sequence"]
+        context = multiprocessing.get_context("fork")
+        started, release, results = context.Event(), context.Event(), context.Queue()
+        owner = context.Process(target=_owned_recovery,
+            args=(self.arguments, attempt["attempt_id"], sequence, started, release, results))
+        owner.start()
+        try:
+            self.assertTrue(started.wait(5))
+            self.assert_error("mutation_busy", lambda: self.recover(attempt))
+            self.assertEqual(self.read(attempt)["sequence"], sequence)
+            release.set()
+            owner.join(5)
+            self.assertEqual(owner.exitcode, 0)
+            self.assertEqual(results.get(timeout=1), "quiescent")
+            self.assertEqual(self.read(attempt)["sequence"], sequence + 1)
+            self.assert_error("recovery_sequence_conflict", lambda: recovery.AttemptRecovery(
+                **self.arguments, _collector=quiet).recover(attempt["attempt_id"], expected_sequence=sequence))
+        finally:
+            release.set()
+            if owner.is_alive():
+                owner.terminate()
+            owner.join(5)
+            owner.close()
+            results.close()
+            results.join_thread()
+
+    def test_disposition_never_kills_deletes_locks_or_starts_a_process(self):
+        attempt = self.unknown()
+        inode = self.lock.stat().st_ino
+        with patch("os.kill", side_effect=AssertionError("kill attempted")), \
+                patch("os.unlink", side_effect=AssertionError("unlink attempted")), \
+                patch("os.remove", side_effect=AssertionError("remove attempted")), \
+                patch("subprocess.Popen", side_effect=AssertionError("process attempted")):
+            result = self.recover(attempt)
+        self.assertTrue(result["supervision"]["released"])
+        self.assertEqual(self.lock.stat().st_ino, inode)
+
+    def test_interruption_during_collection_leaves_original_gate_and_journal(self):
+        attempt = self.unknown()
+        before = self.read(attempt)
+        def interrupted(request):
+            raise KeyboardInterrupt()
+        with self.assertRaises(KeyboardInterrupt):
+            self.recover(attempt, interrupted)
+        self.assertEqual(self.read(attempt), before)
+        self.assert_error("attempt_recovery_required", lambda: self.store.record_intent(fixtures.PACKAGES, 1))
+
     def test_recording_and_authority_remain_blocked_until_recovery_commit(self):
         attempt = self.unknown()
         before = (self.store.current(), self.store.history())
@@ -255,6 +355,17 @@ class RecoveryTests(unittest.TestCase):
             attempt["attempt_id"], expected_sequence=self.read(attempt)["sequence"],
             action_id=None, kind="recovery_recorded", outcome="quiescent"))
 
+    def test_another_inactive_fixture_cannot_start_effects_across_unresolved_ownership(self):
+        inactive = self.create()
+        attempt = self.unknown()
+        effects = []
+        self.assert_error("attempt_recovery_required", lambda: journal._FixtureJournal(self.store).run_inert(
+            inactive["attempt_id"], inactive["actions"][0]["action_id"], expected_sequence=0,
+            effect=lambda: effects.append("started"), observe=lambda: "satisfied"))
+        self.assertEqual(effects, [])
+        self.assertEqual(self.read(inactive)["state"], "planned")
+        self.assertFalse(self.read(attempt)["supervision"]["released"])
+
     def test_production_boundary_and_inactive_attempt_refuse_before_collection(self):
         attempt = self.create()
         calls = []
@@ -287,6 +398,29 @@ class RecoveryTests(unittest.TestCase):
                        (_json(payload).decode(), attempt["attempt_id"], sequence))
             db.execute(_TRIGGERS["attempt_events_update"])
         self.assert_error("store_corrupt", lambda: self.read(attempt))
+
+    def test_authenticated_proof_still_requires_exact_scope_and_consistent_disposition(self):
+        attempt = self.unknown()
+        request = recovery._request(self.store, attempt["attempt_id"], self.read(attempt)["sequence"], fixtures.BOOT)
+        original = json.loads(recovery._encode_evidence(quiet(request), request, os.geteuid()))
+        wrong_ids = [str(uuid.uuid4()) for _ in request.resource_ids]
+        changes = ({"original_boot_id": NEW_BOOT}, {"host_id": NEW_BOOT},
+                   {"disposition": "blocked"}, {"sequence": request.sequence + 1},
+                   {"resource_ids": wrong_ids, "resources": [[identity, "quiescent"] for identity in wrong_ids]})
+        for change in changes:
+            with self.subTest(change=change):
+                self.assert_error("attempt_transition_invalid", lambda: journal._FixtureJournal(self.store)._append_recovery(
+                    attempt["attempt_id"], expected_sequence=request.sequence,
+                    outcome=_json(original | change).decode()))
+        self.assertEqual(self.read(attempt)["sequence"], request.sequence)
+        self.assertTrue(self.recover(attempt)["supervision"]["released"])
+
+    def test_missing_store_is_not_recreated_or_reconstructed(self):
+        missing = self.root / "missing-store"
+        self.assert_error("store_missing", lambda: recovery.AttemptRecovery(**(
+            self.arguments | {"store_directory": missing}), _collector=quiet).recover(
+                str(uuid.uuid4()), expected_sequence=1))
+        self.assertFalse(missing.exists())
 
     def test_private_context_reader_detaches_values_and_recovery_projection(self):
         attempt = self.unknown()
@@ -331,8 +465,8 @@ manage=["services"]
 desired={services=["app"]}
 [[resources]]
 id="two"
-kind="package"
-identity={name="bash"}
+kind="network"
+identity={engine="local",name="app-network"}
 manage=["present"]
 desired={present=true}
 ''')
@@ -348,7 +482,11 @@ desired={present=true}
             (identity, "active" if index == 0 else "quiescent") for index, identity in enumerate(request.resource_ids))))
         with self.assertRaises(recovery.RecoveryError):
             self.recover(attempt, lambda request: replace(quiet(request), engines=(("other-engine", "quiescent"),)))
-        self.assertTrue(self.recover(attempt)["supervision"]["released"])
+        result = self.recover(attempt)
+        self.assertTrue(result["supervision"]["released"])
+        raw = self.store._db.execute("SELECT outcome FROM attempt_events WHERE kind='recovery_recorded' "
+                                     "ORDER BY sequence DESC LIMIT 1").fetchone()[0]
+        self.assertEqual(json.loads(raw)["package_lock"], "not_applicable")
 
 
 if __name__ == "__main__":

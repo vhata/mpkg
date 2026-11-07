@@ -88,7 +88,11 @@ fixture writer grants no production execution authority.
 [Attempt supervision](manager-attempt-supervision.md) adds durable launch
 reservations and a fixed staged worker. Recording checks pending ownership
 through the host lock handoff; fake system-manager and owned inert-worker
-tests do not establish real systemd or application acceptance. The
+tests do not establish real systemd or application acceptance. [Evidence-backed recovery](manager-attempt-recovery.md) releases pending
+ownership only after complete fresh quiescence evidence, preserving unknown
+or failed effects and preventing further writes from the old attempt.
+Retries require a new plan and attempt. Production collectors and the
+public recovery request remain separate implementation work. The
 [declaration guide](manager-declarations.md) owns the schema; the original
 first-release contract and acceptance evidence requirements remain in
 force.
