@@ -17,6 +17,12 @@ It binds the complete proposed upgrade, artifacts, provider/replacement
 choices and package reasons without changing the live package database.
 Exact ABI and committed transaction acceptance remain explicit gates.
 
+AUR [recipe preparation](manager-aur-preparation.md) acquires pinned inputs
+under an explicit recipe trust decision without evaluating `PKGBUILD` or
+installing dependencies. Recursive AUR inputs and native dependency requests
+retain their distinct provenance. Inspection does not establish generated
+metadata equivalence or authorize building or installing artifacts.
+
 Keep the existing `mpkg` helper usable while the replacement is developed
 in the `mpkg_manager` Python 3.12 namespace. The validation command
 validates a closed TOML model and produces an immutable nonsecret snapshot.

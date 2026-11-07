@@ -84,6 +84,11 @@ checks and product acceptance.
   The bridge source and explicit build entrypoint live under `native/`.
   Preparation is a trusted library operation; installed request integration
   and real native transaction acceptance remain separate work.
+- `mpkg_manager.aur_recipes` acquires explicitly trusted, digest-pinned
+  recipe and source bytes and parses `.SRCINFO` without executing recipes.
+  The [AUR preparation guide](docs/manager-aur-preparation.md) describes
+  recursive input closure and separate unresolved native dependency requests.
+  Generated metadata verification, builds and installation remain separate.
 - `mpkg_manager.observe_accounts` collects
   [local account scalar properties](docs/manager-account-observation.md)
   through bounded fixed queries and repeated local/default NSS checks.

@@ -86,7 +86,7 @@ measured against the first-release contract and acceptance scenarios.
 
 - [NATIVE] `build-aur-artifacts` — **Build accepted AUR sources under an isolated unprivileged identity.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#build-aur-artifacts), 2026-11-07.
-  - Depends on: `prepare-aur-recipes`, `apply-native-transactions`, `expose-execution-requests`
+  - Depends on: `apply-native-transactions`, `expose-execution-requests`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [NATIVE] `install-aur-artifacts` — **Require separate acceptance of built AUR package artifacts.** Deliver the bounded scope and acceptance checks in the linked task.
@@ -185,10 +185,6 @@ measured against the first-release contract and acceptance scenarios.
 ### P3 Low
 
 ### Unprioritized
-
-- [NATIVE] `prepare-aur-recipes` — **Capture reviewed AUR recipes and their dependency inputs.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#prepare-aur-recipes), 2026-11-07.
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [DOCKER] `verify-container-application-health` — **Verify the selected Sonarr and Radarr application predicates.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#verify-container-application-health), 2026-11-07.
