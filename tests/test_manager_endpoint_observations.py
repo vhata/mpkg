@@ -302,7 +302,8 @@ class EndpointSupervisorTests(unittest.TestCase):
         while time.monotonic() < deadline:
             try:
                 state = Path(f"/proc/{pid}/stat").read_text().split(") ", 1)[1][0]
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
+                # A process can disappear after opening its procfs stat file.
                 return
             if state in ("Z", "X"):
                 return
@@ -314,6 +315,28 @@ class EndpointSupervisorTests(unittest.TestCase):
             os.kill(pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+
+    def test_assert_stopped_accepts_process_disappearance_during_stat_read(self):
+        for error in (FileNotFoundError(2, "No such file or directory"),
+                      ProcessLookupError(3, "No such process")):
+            with self.subTest(error=type(error).__name__), \
+                    patch.object(Path, "read_text", side_effect=error):
+                self.assert_stopped(12345)
+
+    def test_assert_stopped_preserves_unrelated_stat_errors(self):
+        for error in (PermissionError("Access denied"), OSError("Read failed")):
+            with self.subTest(error=type(error).__name__), \
+                    patch.object(Path, "read_text", side_effect=error), \
+                    self.assertRaises(type(error)) as raised:
+                self.assert_stopped(12345)
+            self.assertIs(raised.exception, error)
+
+    def test_assert_stopped_rejects_live_descendant_at_deadline(self):
+        with patch.object(Path, "read_text", return_value="12345 (owned fixture) S 0 0"), \
+                patch.object(time, "monotonic", side_effect=[0.0, 0.0, 2.0]), \
+                patch.object(time, "sleep"), \
+                self.assertRaisesRegex(AssertionError, "Owned fixture descendant still runs"):
+            self.assert_stopped(12345)
 
     def test_request_is_stdin_only_and_worker_environment_is_closed(self):
         record = self.directory / "private-request.json"
