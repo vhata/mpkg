@@ -22,6 +22,7 @@ from .status_wire import validate_status
 from .protected_bindings import BindingError, ProtectedRecorder
 from .protected_preparation import consume_recording, prepare_recording
 from .attempt_journal import require_no_pending_launch
+from .attempt_reporting import AttemptReportError, attempt_page, attempt_detail
 
 
 STORE_DIRECTORY = Path("/var/lib/mpkg")
@@ -38,6 +39,8 @@ _ERROR_CODES = frozenset({
     "record_outcome_unknown", "internal_error", "invalid_status_selection",
     "status_no_recorded_snapshot", "status_unavailable", "status_context_changed", "status_scope_limit",
     "input_capture_rejected", "store_migration_required", "attempt_recovery_required",
+    "invalid_attempt_page", "attempt_history_requires_migration", "attempt_history_size_limit",
+    "attempt_cursor_missing", "attempt_event_cursor_missing", "attempt_missing",
 })
 _STORE_ERRORS = _ERROR_CODES & frozenset({
     "store_missing", "store_exists", "store_busy", "store_recovery_required", "store_corrupt",
@@ -169,6 +172,17 @@ class HostBoundary:
                                 "status_context_changed": "status_context_changed",
                                 "status_scope_limit": "status_scope_limit"}.get(error.code, "status_unavailable")
                         raise BoundaryError(code) from None
+                    if request.include_attempts:
+                        page = attempt_page(store)
+                        if page["revision"] != current["revision"]:
+                            raise BoundaryError("status_context_changed")
+                        report = result["report"]
+                        report["attempts"] = page
+                        report["blockers"] = [code for code in report["blockers"]
+                                              if code != "attempt_history_unavailable"]
+                        report["limitations"] = ["no_input_replay_verification" if code ==
+                            "no_attempt_history_or_input_replay_verification" else code
+                            for code in report["limitations"]]
                     validate_status(result, request)
                     return result
             if request.verb == "export":
@@ -177,6 +191,11 @@ class HostBoundary:
                     self._bound(store, accepted_policy)
                     if request.operation == "current":
                         result = _current_projection(store.current())
+                    elif request.operation == "attempts":
+                        result = attempt_page(store, limit=request.page_limit, after_id=request.after_id)
+                    elif request.operation == "attempt":
+                        result = attempt_detail(store, request.attempt_id, after_event=request.after_event,
+                                                event_limit=request.page_limit)
                     elif request.operation == "history":
                         result = {"host_id": accepted_policy.host_id, "decisions": store.history()}
                     else:
@@ -269,6 +288,8 @@ def handle_request(raw, *, boundary=None):
                               and request.verb == "record" else "internal_error")
         else:
             response = _error(error.code if error.code in _STORE_ERRORS else "record_rejected")
+    except AttemptReportError as error:
+        response = _error(error.code)
     except BoundaryError as error:
         response = _error(error.code)
     except Exception:

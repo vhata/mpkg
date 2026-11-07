@@ -16,6 +16,7 @@ import uuid
 
 from .host_protocol import MAX_RESPONSE_BYTES, PROTOCOL_VERSION, parse_request
 from .status_wire import validate_status
+from .attempt_reporting import validate_attempt_page, validate_attempt_detail
 
 
 _ENVIRONMENT = {"PATH": "/usr/bin", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"}
@@ -34,6 +35,8 @@ _ERROR_CODES = frozenset({
     "record_outcome_unknown", "internal_error", "installed_helper_unavailable", "invalid_status_selection",
     "status_no_recorded_snapshot", "status_unavailable", "status_context_changed", "status_scope_limit",
     "input_capture_rejected", "store_migration_required", "attempt_recovery_required",
+    "invalid_attempt_page", "attempt_history_requires_migration", "attempt_history_size_limit",
+    "attempt_cursor_missing", "attempt_event_cursor_missing", "attempt_missing",
 })
 _UNCERTAIN_CODES = {"commit_outcome_unknown", "record_outcome_unknown", "response_size_limit",
                     "internal_error", "installed_helper_unavailable"}
@@ -285,6 +288,10 @@ def _result(value, request):
         _require(value["revision"] == 0 and value["initialized"] is True)
     elif request.operation == "current":
         _current(value)
+    elif request.operation == "attempts":
+        validate_attempt_page(value, request)
+    elif request.operation == "attempt":
+        validate_attempt_detail(value, request)
     elif request.operation == "history":
         _keys(value, {"host_id", "decisions"})
         _uuid(value["host_id"])

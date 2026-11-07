@@ -65,6 +65,8 @@ def _parser():
         "relinquish": "relinquish selected stable resource UUIDs without removing anything",
         "current": "show recorded revision and responsibility, without live observation",
         "history": "show recorded decisions without declaration contents",
+        "attempts": "page original attempt targets and partial outcomes without observation",
+        "attempt": "inspect an original attempt and page its recorded events",
         "status": "inspect recorded or working-tree intent without changing host state",
     }
     for name, help_text in descriptions.items():
@@ -86,6 +88,15 @@ def _parser():
             command.add_argument("--resource", action="append", required=True,
                                  metavar="ID" if name == "adopt" else "UUID",
                                  help="select one resource; repeat to select more")
+        if name in {"attempts", "attempt"}:
+            command.add_argument("--limit", type=_revision, default=20, metavar="N",
+                                 help="maximum entries or events, from 1 through 100")
+            if name == "attempts":
+                command.add_argument("--after", metavar="UUID", help="continue after an attempt UUID")
+            else:
+                command.add_argument("attempt_id", metavar="UUID")
+                command.add_argument("--after-event", type=_revision, default=0, metavar="N",
+                                     help="continue after this event sequence")
         if name == "status":
             command.add_argument("source", nargs="?", metavar="PATH",
                                  help="working-tree declaration; omit to inspect recorded intent")
@@ -110,6 +121,13 @@ def _request(options):
     command = options.command
     arguments = {"operation": {"init": "initialize", "record": "intent",
                                "prepare-inputs": "protected-inputs"}.get(command, command)}
+    if command in {"attempts", "attempt"}:
+        arguments["limit"] = options.limit
+        if command == "attempts":
+            arguments["after_id"] = options.after
+        else:
+            arguments.update(attempt_id=options.attempt_id, after_event=options.after_event)
+        return json.dumps({"version": PROTOCOL_VERSION, "verb": "export", "arguments": arguments}).encode()
     if command == "status":
         if (options.source is not None) != options.source_is_nonsecret:
             raise RequestError("invalid_request")
@@ -120,7 +138,7 @@ def _request(options):
             source = raw.decode("utf-8")
         arguments.update(source=source, source_is_nonsecret=options.source_is_nonsecret,
                          expected_revision=options.expected_revision,
-                         selected_components=options.component, probe_endpoints=options.probe_endpoints)
+                         selected_components=options.component, probe_endpoints=options.probe_endpoints, include_attempts=True)
         for name in ("check_file_content", "attribute_endpoints", "check_consumer_access"):
             if getattr(options, name):
                 arguments[name] = True
@@ -166,6 +184,14 @@ def _human_result(command, result):
                   f"{resource['management']}; declaration {resource['declaration_state']}; "
                   f"pending disposition {'yes' if resource['pending_disposition'] else 'no'}.")
         print(f"{len(result['resources'])} recorded resources. Live state has not been observed.")
+    elif command == "attempts":
+        _human_attempt_page(result)
+    elif command == "attempt":
+        _human_attempt(result["attempt"])
+        for event in result["events"]:
+            print(f"Event {event['sequence']}: {event['kind']} = {event['outcome']}.")
+        print(f"Events through {result['observed_through_sequence']}; more: {result['has_more']}.")
+        print(f"Continue: mpkg-manager attempt {result['attempt']['attempt_id']} --after-event {result['next_event']}.")
     elif command == "status":
         report, collection = result["report"], result["collection"]
         label = "recorded" if report["target"]["recorded"] else "working-tree (unrecorded)"
@@ -204,13 +230,38 @@ def _human_result(command, result):
                 print(f"Check {row['check_id']} ({owner}): {outcome} ({row['reason']}).")
             print("Runtime ownership and local-user access do not establish application functionality.")
         print("Blockers: " + ", ".join(report["blockers"]) + ".")
-        print("Status is time-bounded evidence. Application and attempt history remain unavailable.")
+        if "attempts" in report:
+            _human_attempt_page(report["attempts"])
+        print("Status is time-bounded evidence. Application remains unavailable.")
     else:
         print(f"Host {result['host_id']}: {len(result['decisions'])} recorded decisions.")
         for decision in result["decisions"]:
             print(f"Revision {decision['revision']}: {decision['kind']} at {decision['created_at']}.")
     if command in {"init", "record", "adopt", "relinquish"}:
         print("Recording does not observe, apply or verify host state.")
+
+
+def _human_attempt(attempt):
+    print(f"Attempt {attempt['attempt_id']}: {attempt['state']}; original revision {attempt['revision']} "
+          f"({attempt['decision_state']}); predecessor {attempt['predecessor'] or 'none'}.")
+    for action in attempt["actions"]:
+        target = action["target"]
+        print(f"  {target['resource_id']} ({target['stable_id']}): {action['work']}; {action['state']}; "
+              f"command {action['command_outcome']}; observation {action['observation_outcome']}.")
+        for check in target["required_checks"]:
+            print(f"    Original check {check['id']} at revision {check['revision']}: "
+                  f"{json.dumps(check['predicates'], sort_keys=True)}; {check['result']}.")
+    print(f"  Events: mpkg-manager attempt {attempt['attempt_id']} --after-event 0.")
+
+
+def _human_attempt_page(page):
+    print(f"Attempt history at revision {page['revision']}; through ordinal {page['observed_through_ordinal']}.")
+    for attempt in page["attempts"]:
+        _human_attempt(attempt)
+    print(f"{len(page['attempts'])} attempts in this page; more: {page['has_more']}.")
+    if page["next_after"] is not None:
+        print(f"Continue: mpkg-manager attempts --after {page['next_after']}.")
+    print("Historical outcomes are independent of current observations; reading does not recover or retry work.")
 
 
 def _human_checks(checks):

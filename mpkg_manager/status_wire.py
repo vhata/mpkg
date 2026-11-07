@@ -5,6 +5,7 @@ import re
 import uuid
 
 from .declarations import load_declaration
+from .attempt_reporting import validate_attempt_page
 from ._endpoint_process import PROBE_CODES
 from .runtime_reporting import SUMMARY_REASONS as _RUNTIME_SUMMARY_REASONS
 from .runtime_checks import LIMITATIONS as _RUNTIME_LIMITATIONS, _UNAVAILABLE as _RUNTIME_UNAVAILABLE
@@ -282,6 +283,10 @@ def validate_status(value, request):
     production responses; no imported response is an authorization token.
     """
     report_schema, collection_schema = _REPORT, _COLLECTION
+    if request.include_attempts:
+        report_schema = report_schema | {"attempts": validate_attempt_page,
+            "limitations": ["no_input_replay_verification" if code ==
+                "no_attempt_history_or_input_replay_verification" else code for code in _REPORT_LIMITATIONS]}
     if request.check_file_content:
         report_schema = report_schema | {"file_content": _CONTENT}
         collection_schema = collection_schema | {"file_content_reason": _nullable(_COLLECTION_REASONS)}
@@ -295,7 +300,14 @@ def validate_status(value, request):
              and report["management"]["snapshot_id"] == collection["snapshot_id"]
              and report["observation"]["observed_at"] == collection["observed_at"])
     _require((collection["revision"] == 0) == (collection["snapshot_id"] is None))
-    _require({"application_not_implemented", "attempt_history_unavailable"} <= set(report["blockers"]))
+    _require("application_not_implemented" in report["blockers"])
+    if request.include_attempts:
+        _require("attempt_history_unavailable" not in report["blockers"]
+                 and report["attempts"]["host_id"] == report["host_id"]
+                 and report["attempts"]["revision"] == collection["revision"]
+                 and report["attempts"]["after_id"] is None and report["attempts"]["limit"] == 20)
+    else:
+        _require("attempt_history_unavailable" in report["blockers"])
     _require(request.expected_revision is None or request.expected_revision == collection["revision"])
     if request.selected_components is not None:
         _require(list(request.selected_components) == report["selected_components"])
