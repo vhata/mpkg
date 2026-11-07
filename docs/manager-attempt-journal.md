@@ -88,7 +88,9 @@ order, resolving the last returned UUID to its ordinal. New UUIDs cannot
 sort behind a previous page. This is an advancing history feed: later
 appends remain available after its last cursor, while each page has one
 consistent read transaction. Missing cursors fail explicitly. Neither read
-writes events nor starts recovery. CLI/status reporting remains separate.
+writes events nor starts recovery. The
+[reporting guide](manager-attempt-reporting.md) describes installed
+CLI/status pages and independent event pagination.
 
 Version-3 and version-4 stores remain readable. The explicit
 `migrate_store_to_v4` library operation adds the journal after verifying a
