@@ -15,7 +15,7 @@ from mpkg_manager.host_client import _Reply
 from mpkg_manager.host_helper import HostBoundary, handle_request
 from mpkg_manager.host_policy import load_host_policy
 from mpkg_manager.protected_bindings import ProtectedRecorder
-from mpkg_manager.store import HostStore, StoreError
+from mpkg_manager.store import HostStore, _json
 
 
 HOST = "12345678-1234-4234-8234-123456789abc"
@@ -225,13 +225,20 @@ files=[{{path="public.conf",classification="nonsecret"}}]
         self.assert_rejected(self.record(receipt))
 
     def test_manifest_tampering_is_rejected(self):
-        receipt = self.prepare()
-        pending = self.store / "protected-preparation.json"
-        value = json.loads(pending.read_bytes())
-        value["manifest"]["entries"][0]["token"] = "0" * 64
-        pending.write_text(json.dumps(value))
-        self.assert_rejected(self.record(receipt))
-        self.assertEqual(self.revision(), 0)
+        for field in ("capture_token", "manifest_seal"):
+            with self.subTest(field=field):
+                receipt = self.prepare()
+                pending = self.store / "protected-preparation.json"
+                value = json.loads(pending.read_bytes())
+                if field == "capture_token":
+                    value["manifest"]["entries"][0]["token"] = "0" * 64
+                else:
+                    value["seal"] = "0" * 64
+                # Preserve canonical encoding so authentication, rather than
+                # the canonical JSON parser, must detect the altered receipt.
+                pending.write_bytes(_json(value))
+                self.assert_rejected(self.record(receipt))
+                self.assertEqual(self.revision(), 0)
 
     def test_failed_commit_burns_receipt_and_preserves_unknown_outcome(self):
         receipt = self.prepare()
