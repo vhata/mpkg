@@ -183,6 +183,7 @@ class HostBoundary:
                         report["limitations"] = ["no_input_replay_verification" if code ==
                             "no_attempt_history_or_input_replay_verification" else code
                             for code in report["limitations"]]
+                    policy.policy
                     validate_status(result, request)
                     return result
             if request.verb == "export":

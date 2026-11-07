@@ -6,8 +6,8 @@ installation and complete-manager acceptance remain separate. Recording
 and exports perform no live observation. Explicit status can query native
 tools, Docker, file metadata and recorded input files; endpoint requests
 require an additional explicit flag. No supported request applies host
-changes. Preparation, executable planning, application and recovery are
-unsupported.
+changes. Executable planning, application and recovery are unsupported.
+Preparation is limited to the protected-input recording workflow.
 
 ## Installation and authorization boundary
 
@@ -68,7 +68,9 @@ The supported operations are:
 | `prepare` | `protected-inputs` | `expected_revision`, `source`, `source_is_nonsecret` |
 | `export` | `current` | None |
 | `export` | `history` | None |
-| `observe` | `status` | `expected_revision`, `source`, `source_is_nonsecret`, `selected_components`, `probe_endpoints`, optional `check_file_content`, `attribute_endpoints`, `check_consumer_access` |
+| `export` | `attempts` | `limit`, `after_id` |
+| `export` | `attempt` | `attempt_id`, `after_event`, `limit` |
+| `observe` | `status` | `expected_revision`, `source`, `source_is_nonsecret`, `selected_components`, `probe_endpoints`, optional `check_file_content`, `attribute_endpoints`, `check_consumer_access`, `include_attempts` |
 
 `initialize` creates the private store using the existing policy's host
 and engine bindings. It refuses an existing destination. Ordinary reads
@@ -119,8 +121,7 @@ no current components. Missing recorded intent is an explicit error.
 See the [status guide](manager-status-cli.md) for evidence and latency
 limits, retained scope and the closed public response.
 
-The remaining fixed verbs `prepare`, `plan`, `apply` and
-`recover` return `operation_unsupported`. Unknown verbs are malformed
+The remaining fixed verbs `plan`, `apply` and `recover` return `operation_unsupported`. Unknown verbs are malformed
 requests; there is no generic command fallback.
 
 Successful responses contain `version`, `ok: true` and `result`. Failure
@@ -150,7 +151,14 @@ A detected policy change after recording returns an uncertain outcome.
 kinds, managed-property names, management/disposition status and explicit
 unknown observation state. It omits resource paths, desired values,
 physical identities, consumer predicates and protected references.
-`history` exports decision metadata only. Neither exposes raw TOML,
+`history` exports decision metadata only.
+[Attempt reporting](manager-attempt-reporting.md) exports original targets,
+checks, predecessor links and independent action/event outcomes. `attempts`
+pages by append ordinal after a UUID; `attempt` pages one attempt's events
+after a sequence. Both have a 1 MiB page limit and explicit next cursors.
+The optional status boolean `include_attempts` adds the first attempt page;
+the CLI supplies it by default. Missing/corrupt or pre-journal history
+fails explicitly, never as an apparently complete empty history. Neither exposes raw TOML,
 protected bytes or private capture tokens. Declared identifiers and
 explicitly nonsecret snapshot hashes retain their existing meaning.
 

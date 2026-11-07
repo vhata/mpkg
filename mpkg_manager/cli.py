@@ -251,6 +251,14 @@ def _human_attempt(attempt):
         for check in target["required_checks"]:
             print(f"    Original check {check['id']} at revision {check['revision']}: "
                   f"{json.dumps(check['predicates'], sort_keys=True)}; {check['result']}.")
+        print(f"    Adopted target at revision {target['adoption_revision']}: "
+              f"{json.dumps(target['desired'], sort_keys=True)}.")
+        decision = action["decision_target"]
+        print(f"    Decision target declared: {decision['declared']}; "
+              f"{json.dumps(decision['desired'], sort_keys=True)}.")
+    for check in attempt["decision_checks"]:
+        print(f"  Decision check {check['id']} at revision {check['revision']}: "
+              f"{json.dumps(check['predicates'], sort_keys=True)}; {check['result']}.")
     print(f"  Events: mpkg-manager attempt {attempt['attempt_id']} --after-event 0.")
 
 

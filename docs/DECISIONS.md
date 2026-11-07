@@ -84,12 +84,19 @@ It binds exact declarations, revisions, policy and freshly captured inputs;
 recording consumes it before the atomic decision transaction. Public
 responses expose neither captured bytes nor private comparison tokens.
 
+[Attempt reporting](manager-attempt-reporting.md) exposes original targets,
+checks, partial outcomes and retry ancestry through bounded helper/CLI pages
+and default status. Current observations cannot rewrite historical effects;
+private inputs and recovery evidence never enter ordinary responses.
+Explicit continuation cursors distinguish remaining history from absence,
+and read-only inspection does not acquire the application lock or recover.
+
 Combined library checks use private temporary stores and synthetic query
 responses, including unavailable evidence, retained data, relinquishment
 and changed check declarations. This evidence is separate from disposable
 mechanism experiments and A1–A12 acceptance. Real installed-helper and
-sudo acceptance, an apply protocol, public attempt
-reporting and real native/Docker acceptance remain separate implementation
+sudo acceptance, an apply protocol and real native/Docker acceptance
+remain separate implementation
 and validation work. The [internal attempt journal](manager-attempt-journal.md)
 retains original targets and append-only outcomes introduced in v4; its inert
 fixture writer grants no production execution authority.

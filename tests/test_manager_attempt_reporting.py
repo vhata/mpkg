@@ -437,5 +437,49 @@ class AttemptReportingTests(unittest.TestCase):
         self.assertNotIn('result', json.loads(output.getvalue()))
 
 
+
+    def test_mixed_classification_input_indexes_match_original_declaration_order(self):
+        import test_manager_protected_recording as protected
+        fixture = protected.ProtectedRecordingTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        source = fixture.source.read_text().replace('manage=["content_input"]', 'manage=["present"]')
+        source = source.replace('desired={content_input="config-input"}', 'desired={present=true}')
+        source = source.replace('files=[', 'files=[{path="PUBLIC_NAME",classification="nonsecret"},')
+        fixture.source.write_text(source)
+        (fixture.inputs / 'PUBLIC_NAME').write_text('PUBLIC_BYTES')
+        self.assertEqual(fixture.record(fixture.prepare(), adopt=True, capture=True)[0], 0)
+        with HostStore.open_existing(fixture.store, protected.HOST, owner_uid=os.geteuid()) as store:
+            selected = [item['stable_id'] for item in store.current()['resources']]
+            plan = journal._fixture_plan(store, expected_revision=1, stable_resource_ids=selected)
+            attempt = journal._FixtureJournal(store).create(plan, self.worker, stable_resource_ids=selected).as_dict()
+            report = reporting.attempt_detail(store, attempt['attempt_id'])
+        slots = report['attempt']['inputs']
+        self.assertEqual([(item['classification'], item['file_index']) for item in slots],
+                         [('nonsecret', 0), ('protected', 1)])
+        self.assertEqual([item['origin_revision'] for item in slots], [1, 1])
+        self.assertNotIn('PUBLIC_NAME', json.dumps(report))
+        self.assertNotIn('PUBLIC_BYTES', json.dumps(report))
+        self.assertNotIn(protected.SECRET, json.dumps(report))
+
+    def test_human_output_preserves_both_target_roles_and_check_definitions(self):
+        self.store.record_intent(load_declaration(SOURCE.replace('1.0', '2.0').encode()), 1)
+        attempt = self.create()
+        output = io.StringIO()
+        def sender(raw):
+            reply = handle_request(raw, boundary=self.boundary)
+            return _Reply(reply, 0 if json.loads(reply)['ok'] else 2)
+        with redirect_stdout(output):
+            code = main(['attempt', attempt['attempt_id']], _sender=sender)
+        self.assertEqual(code, 0)
+        text = output.getvalue()
+        self.assertIn('Adopted target at revision 1', text)
+        self.assertIn('Decision check original at revision 2', text)
+        self.assertIn('1.0', text)
+        self.assertIn('2.0', text)
+        self.assertIn('not_attempted', text)
+        self.assertIn('Continue: mpkg-manager attempt', text)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -24,6 +24,13 @@ checks and product acceptance.
 
 ## Current boundaries
 
+- `mpkg_manager.attempt_reporting` exposes bounded read-only attempt and
+  event pages through the installed helper, CLI and default status output.
+  The [reporting guide](docs/manager-attempt-reporting.md) preserves exact
+  historical references, redacted target/check predicates, retry ancestry
+  and separate command/observation outcomes. Explicit cursors disclose
+  remaining history; inspection never starts recovery or takes the host
+  application lock.
 - `mpkg_manager.declarations` owns the Python 3.12 replacement's typed
   nonsecret model, contextual consumer constraints and exact snapshots.
   `mpkg_manager.cli` exposes local declaration validation plus explicit
@@ -56,7 +63,7 @@ checks and product acceptance.
   [journal guide](docs/manager-attempt-journal.md) defines original input,
   decision, check and worker bindings, separate command/observation outcomes,
   and explicit migration. The creation harness accepts inert fixtures only;
-  production attempts and CLI reporting remain separate.
+  production attempts remain separate.
 - `mpkg_manager.attempt_supervisor` and `attempt_worker` add durable launch
   reservations and worker ownership using the fixed staged worker entrypoint.
   The [supervision guide](docs/manager-attempt-supervision.md) describes

@@ -160,8 +160,7 @@ def _decision_target(context, resource_id):
 
 def _entry(store, identity, revision):
     # _read verifies all authenticated rows before this private seam is used.
-    # Journal ownership explicitly permits this seam; never use raw event
-    # outcomes, which can contain private recovery evidence in later schemas.
+    # Never use raw event outcomes: they may contain private recovery evidence.
     rows = journal._rows(store, identity)
     context = _decode(rows[0][6])["target"]
     summary = journal._projection(*rows, revision).as_dict()
@@ -171,15 +170,18 @@ def _entry(store, identity, revision):
             "action_id", "ordinal", "state", "attempted", "command_outcome", "observation_outcome")} | {
                 "work": "attempted" if action["attempted"] else "not_attempted", "target": _target(resource),
                 "decision_target": _decision_target(context, resource["logical_id"])})
-    inputs, counters = [], {}
+    indexes = {(snapshot["revision"], snapshot["snapshot_id"], bundle["id"], entry["path"]): index
+               for snapshot in context["snapshots"] for bundle in snapshot["declaration"]["inputs"]
+               for index, entry in enumerate(bundle["files"])}
+    inputs = []
     for item in context["declared_inputs"]:
-        key = (item["revision"], item["snapshot_id"], item["entry"]["input_id"])
-        index = counters.get(key, 0)
-        counters[key] = index + 1
+        key = (item["revision"], item["snapshot_id"], item["entry"]["input_id"], item["entry"]["path"])
+        index = indexes[key]
         inputs.append({"revision": item["revision"], "snapshot_id": item["snapshot_id"],
             "input_id": item["entry"]["input_id"], "file_index": index,
             "classification": item["entry"]["classification"], "state": item["state"],
             "origin_revision": item["origin_revision"]})
+    inputs.sort(key=lambda item: (item["revision"], item["snapshot_id"], item["input_id"], item["file_index"]))
     result = {name: summary[name] for name in ("attempt_id", "plan_id", "host_id", "revision", "snapshot_id",
         "predecessor", "created_at", "ordinal", "authority", "executable", "finished", "state",
         "decision_state", "sequence")}
@@ -374,6 +376,13 @@ def _entry_context(entry, host, revision):
         for check in target["required_checks"]:
             _require(check["role"] == "accepted" and check["revision"] == target["adoption_revision"]
                      and check["snapshot_id"] == target["snapshot_id"] and check["resource_id"] == target["resource_id"])
+    slots = set()
+    for item in entry["inputs"]:
+        slot = (item["revision"], item["snapshot_id"], item["input_id"], item["file_index"])
+        _require(slot not in slots and 0 < item["revision"] <= entry["revision"])
+        slots.add(slot)
+        _require((item["state"] == "bound") == (item["origin_revision"] is not None))
+        _require(item["origin_revision"] is None or 0 < item["origin_revision"] <= item["revision"])
     for check in entry["decision_checks"]:
         _require(check["role"] == "decision" and check["revision"] == entry["revision"]
                  and check["snapshot_id"] == entry["snapshot_id"])
