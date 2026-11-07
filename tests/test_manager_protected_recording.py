@@ -100,7 +100,7 @@ files=[{{path="private.xml",classification="protected",reference="{self.referenc
         status, value = result
         self.assertEqual((status, value["error"]["code"]), (6, code), value)
 
-    def test_prepare_record_and_adopt_preserve_bytes_and_original_checks(self):
+    def test_prepare_record_and_adopt_preserve_bytes_and_capture_origin(self):
         original = self.secret.read_bytes(), self.source.read_bytes()
         receipt = self.prepare()
         self.assertEqual(self.revision(), 0)
@@ -122,6 +122,51 @@ files=[{{path="private.xml",classification="protected",reference="{self.referenc
         self.assertEqual(original, (self.secret.read_bytes(), self.source.read_bytes()))
         self.assertEqual(self.invoke("history")[0], 0)
         self.assertEqual(self.invoke("current")[0], 0)
+
+    def test_new_intent_keeps_original_accepted_predicates_and_capture(self):
+        self.source.write_text(self.source.read_text() + '''
+[[resources]]
+id="app"
+kind="service"
+identity={manager="system",unit="app.service"}
+manage=["running"]
+desired={running=true}
+checks=["state"]
+[[checks]]
+id="state"
+kind="service"
+resource="app"
+timeout_seconds=3
+expected={running=true}
+''')
+        receipt = self.prepare()
+        status, value = self.invoke("adopt", str(self.source), "--source-is-nonsecret",
+            "--expected-revision", "0", "--prepared-inputs", receipt, "--resource", "app")
+        self.assertEqual(status, 0, value)
+        with HostStore.open_readonly(self.store, HOST, owner_uid=os.geteuid()) as store:
+            original = store.current()["resources"][0]["accepted_checks"]
+        self.source.write_text(self.source.read_text().replace(self.reference, str(uuid.uuid4()))
+                               .replace("expected={running=true}", "expected={running=false}"))
+        receipt = self.prepare(1)
+        self.assertEqual(self.record(receipt, 1)[0], 0)
+        with HostStore.open_readonly(self.store, HOST, owner_uid=os.geteuid()) as store:
+            self.assertEqual(store.current()["resources"][0]["accepted_checks"], original)
+            self.assertEqual(original["definitions"][0]["expected"], {"running": True})
+            self.assertEqual(store._db.execute("SELECT count(*) FROM protected_inputs").fetchone()[0], 2)
+
+    def test_mixed_capture_records_nonsecret_and_protected_slots_atomically(self):
+        public = self.inputs / "public.conf"
+        public.write_text("nonsecret")
+        self.source.write_text(self.source.read_text() + f'''
+[[inputs]]
+id="public-input"
+base_directory={json.dumps(str(self.inputs))}
+files=[{{path="public.conf",classification="nonsecret"}}]
+''')
+        receipt = self.prepare()
+        self.assertEqual(self.record(receipt, capture=True)[0], 0)
+        with HostStore.open_readonly(self.store, HOST, owner_uid=os.geteuid()) as store:
+            self.assertEqual(store._db.execute("SELECT count(*) FROM protected_inputs").fetchone()[0], 2)
 
     def test_source_and_reference_substitution_are_rejected_before_consuming(self):
         for change in (lambda raw: raw + "# same model, different source\n",
@@ -246,6 +291,11 @@ files=[{{path="private.xml",classification="protected",reference="{self.referenc
                                         "--expected-revision", "0")
         self.assertEqual((status, value["error"]["code"]), (6, "input_capture_rejected"))
         self.assertEqual(self.revision(), 0)
+        with patch("mpkg_manager.protected_preparation.MAX_PENDING_BYTES", 10):
+            status, value = self.invoke("prepare-inputs", str(self.source), "--source-is-nonsecret",
+                                        "--expected-revision", "0")
+        self.assertEqual((status, value["error"]["code"]), (6, "input_capture_rejected"))
+        self.assertFalse((self.store / "protected-preparation.json").exists())
 
     def test_closed_protocol_rejects_caller_capture_bytes(self):
         from mpkg_manager.host_protocol import RequestError, parse_request
