@@ -71,7 +71,10 @@ engine/resource coverage. No history is expired or truncated.
 
 Missing or corrupt history blocks recovery rather than reconstructing
 authority from current resources. Commit failure leaves the result
-uncertain; reopening authenticated history distinguishes a committed
+uncertain, including failures closing the store, policy or host lock after
+commit. These return `recovery_outcome_unknown` without exposing raw
+cleanup errors; interruptions retain their interruption semantics.
+Reopening authenticated history distinguishes a committed
 disposition from an uncommitted one. Repeating recovery never replays
 effects or treats a lost response as permission to append duplicate work.
 
