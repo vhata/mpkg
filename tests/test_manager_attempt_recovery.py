@@ -1,5 +1,6 @@
 """Fake recovery evidence and owned fixtures; no live system inspection."""
 from dataclasses import replace
+from contextlib import contextmanager
 import json
 import multiprocessing
 import os
@@ -322,7 +323,7 @@ class RecoveryTests(unittest.TestCase):
         attempt = self.unknown()
         sequence = self.read(attempt)["sequence"]
         with patch.object(HostStore, "_commit", side_effect=sqlite3.OperationalError(SECRET)):
-            self.assert_error("commit_outcome_unknown", lambda: self.recover(attempt))
+            self.assert_error("recovery_outcome_unknown", lambda: self.recover(attempt))
         self.assertEqual(self.read(attempt)["sequence"], sequence)
         self.assertFalse(self.read(attempt)["supervision"]["released"])
         self.recover(attempt)
@@ -334,11 +335,58 @@ class RecoveryTests(unittest.TestCase):
             commit(store)
             raise OSError(SECRET)
         with patch.object(HostStore, "_commit", lost):
-            self.assert_error("commit_outcome_unknown", lambda: self.recover(attempt))
+            self.assert_error("recovery_outcome_unknown", lambda: self.recover(attempt))
         result = self.read(attempt)
         self.assertTrue(result["supervision"]["released"])
         self.assertEqual(result["state"], "unknown")
         self.assert_error("recovery_not_required", lambda: self.recover(attempt))
+
+    def test_post_commit_lock_policy_and_store_cleanup_failures_are_private_and_uncertain(self):
+        for name in ("lock", "policy", "store"):
+            with self.subTest(cleanup=name):
+                attempt = self.unknown()
+                if name == "store":
+                    original = HostStore.__exit__
+                    def failed_store_close(store, *arguments):
+                        original(store, *arguments)
+                        raise OSError(SECRET)
+                    patched = patch.object(HostStore, "__exit__", failed_store_close)
+                else:
+                    attribute = "_mutation_lock" if name == "lock" else "load_host_policy"
+                    original = getattr(recovery, attribute)
+                    @contextmanager
+                    def failed_close(*arguments, **keywords):
+                        with original(*arguments, **keywords) as value:
+                            yield value
+                        raise OSError(SECRET)
+                    patched = patch.object(recovery, attribute, failed_close)
+                with patched:
+                    self.assert_error("recovery_outcome_unknown", lambda: self.recover(attempt))
+                with HostStore.open_readonly(self.directory, fixtures.HOST, owner_uid=os.geteuid()) as reopened:
+                    result = journal.read_attempt(reopened, attempt["attempt_id"]).as_dict()
+                self.assertTrue(result["supervision"]["released"])
+                self.assertEqual(result["state"], "unknown")
+                self.assertNotIn(SECRET, json.dumps(result))
+
+    def test_precommit_untyped_failure_is_sanitized_without_releasing_ownership(self):
+        attempt = self.unknown()
+        before = self.read(attempt)
+        with patch.object(recovery, "load_host_policy", side_effect=OSError(SECRET)):
+            self.assert_error("recovery_failed", lambda: self.recover(attempt))
+        self.assertEqual(self.read(attempt), before)
+
+    def test_post_commit_interruption_stays_an_interrupt_with_durable_disposition(self):
+        attempt = self.unknown()
+        original = recovery._mutation_lock
+        @contextmanager
+        def interrupted_close(*arguments, **keywords):
+            with original(*arguments, **keywords):
+                yield
+            raise KeyboardInterrupt()
+        with patch.object(recovery, "_mutation_lock", interrupted_close):
+            with self.assertRaises(KeyboardInterrupt):
+                self.recover(attempt)
+        self.assertTrue(self.read(attempt)["supervision"]["released"])
 
     def test_blocked_evidence_cannot_consume_final_quiescent_slot(self):
         attempt = self.unknown()

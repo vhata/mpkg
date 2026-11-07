@@ -5,17 +5,18 @@ Only explicitly assembled inert fixtures are available. Installed recovery
 collectors and production request authorization remain separate work.
 """
 from dataclasses import dataclass, field
+from contextlib import contextmanager
 from pathlib import Path
 import json
 import os
 import time
 import uuid
 
-from .attempt_journal import (_FixtureJournal, _decode, _rows, _uuid,
+from .attempt_journal import (JournalError, _FixtureJournal, _decode, _rows, _uuid,
                               read_attempt)
-from .host_helper import MUTATION_LOCK, STORE_DIRECTORY, _mutation_lock
-from .host_policy import POLICY_PATH, load_host_policy
-from .store import HostStore, _json
+from .host_helper import BoundaryError, MUTATION_LOCK, STORE_DIRECTORY, _mutation_lock
+from .host_policy import POLICY_PATH, PolicyError, load_host_policy
+from .store import HostStore, StoreError, _json
 
 
 MAX_RECOVERY_OBSERVATIONS = 128
@@ -187,6 +188,22 @@ def _encode_evidence(evidence, request, operator_uid):
     return raw
 
 
+@contextmanager
+def _outcome_boundary():
+    """Keep all enclosing context cleanup inside the durable outcome boundary."""
+    state = {"appending": False, "recorded": False}
+    try:
+        yield state
+    except Exception as error:
+        if (state["recorded"] or (isinstance(error, StoreError) and error.code == "commit_outcome_unknown")
+                or (state["appending"] and not isinstance(error,
+                    (RecoveryError, JournalError, StoreError, PolicyError, BoundaryError)))):
+            raise RecoveryError("recovery_outcome_unknown") from None
+        if isinstance(error, (RecoveryError, JournalError, StoreError, PolicyError, BoundaryError)):
+            raise
+        raise RecoveryError("recovery_failed") from None
+
+
 class AttemptRecovery:
     """Trusted fixture assembly. Public arguments select only an existing ID.
 
@@ -207,7 +224,7 @@ class AttemptRecovery:
         _require(self.fixture and callable(self.collector), "recovery_unavailable")
         _require(type(self.owner_uid) is int and self.owner_uid == os.geteuid(), "recovery_owner_required")
         _require(_uuid(self.boot), "recovery_boot_unavailable")
-        with _mutation_lock(self.mutation_lock, self.owner_uid):
+        with _outcome_boundary() as outcome, _mutation_lock(self.mutation_lock, self.owner_uid):
             with load_host_policy(path=self.policy_path, owner_uid=self.owner_uid) as policy:
                 with HostStore.open_existing(self.store_directory, policy.policy.host_id,
                                              owner_uid=self.owner_uid) as store:
@@ -226,5 +243,8 @@ class AttemptRecovery:
                         evidence = _unavailable(request)
                     policy.policy  # Revalidate the pinned policy before committing.
                     raw = _encode_evidence(evidence, request, self.owner_uid)
-                    return _FixtureJournal(store)._append_recovery(attempt_id,
-                        expected_sequence=expected_sequence, outcome=raw).as_dict()
+                    outcome["appending"] = True
+                    result = _FixtureJournal(store)._append_recovery(attempt_id,
+                        expected_sequence=expected_sequence, outcome=raw)
+                    outcome["recorded"] = True
+                    return result.as_dict()
