@@ -106,12 +106,12 @@ measured against the first-release contract and acceptance scenarios.
 
 - [NATIVE] `apply-native-service-configuration` — **Apply the selected native configuration and service change.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#apply-native-service-configuration), 2026-11-07.
-  - Depends on: `expose-execution-requests`, `verify-native-application-health`, `publish-managed-file-content`, `apply-local-resource-properties`
+  - Depends on: `expose-execution-requests`, `verify-native-application-health`, `apply-local-resource-properties`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [DOCKER] `apply-sonarr-port-change` — **Apply the accepted Sonarr port change to the same container.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#apply-sonarr-port-change), 2026-11-07.
-  - Depends on: `expose-execution-requests`, `render-compose-execution-bundles`, `verify-container-application-health`, `verify-runtime-consumer-access`, `publish-managed-file-content`
+  - Depends on: `expose-execution-requests`, `render-compose-execution-bundles`, `verify-container-application-health`, `verify-runtime-consumer-access`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [DOCKER] `apply-compose-recreation` — **Apply an explicitly accepted Compose deployment change.** Deliver the bounded scope and acceptance checks in the linked task.
@@ -196,10 +196,6 @@ measured against the first-release contract and acceptance scenarios.
 
 - [TOOLING] `verify-runtime-consumer-access` — **Check access as the actual declared runtime consumer.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#verify-runtime-consumer-access), 2026-11-07.
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
-- [TOOLING] `publish-managed-file-content` — **Publish authorized configuration bytes with safe file replacement.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#publish-managed-file-content), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [NATIVE] `compare-package-file-baselines` — **Explain package-supplied files and local configuration differences.** Deliver the bounded scope and acceptance checks in the linked task.

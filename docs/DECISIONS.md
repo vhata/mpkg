@@ -23,6 +23,12 @@ installing dependencies. Recursive AUR inputs and native dependency requests
 retain their distinct provenance. Inspection does not establish generated
 metadata equivalence or authorize building or installing artifacts.
 
+Trusted [file publication](manager-file-publication.md) requires immutable
+input/candidate bindings and current adapter evidence for authority and
+writer exclusion. It preserves supported metadata through synchronized
+replacement and reports uncertainty after a possible publication. The
+primitive exposes no public apply request or automatic restart/rollback.
+
 Keep the existing `mpkg` helper usable while the replacement is developed
 in the `mpkg_manager` Python 3.12 namespace. The validation command
 validates a closed TOML model and produces an immutable nonsecret snapshot.

@@ -154,6 +154,12 @@ checks and product acceptance.
   [adapter guide](docs/manager-sonarr-xml.md) defines the supported subset
   and protected candidate interface. It performs no live file operation,
   writer coordination or restart, and grants no apply authority.
+- `mpkg_manager.file_publication` supplies a narrow trusted replacement
+  primitive for immutable configuration candidates. Its
+  [publication guide](docs/manager-file-publication.md) defines required
+  adapter authorization and writer exclusion, descriptor and mount checks,
+  supported metadata preservation, synchronization and uncertain outcomes.
+  It exposes no installed request, lifecycle adapter or apply authority.
 - `mpkg` contains the CLI, PKGBUILD metadata handling, dependency edits,
   package-tool calls, and scoped Git commits. Paths are resolved
   relative to the executable, including when invoked through a symlink.
