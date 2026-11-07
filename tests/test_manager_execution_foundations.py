@@ -2,14 +2,62 @@
 import json
 import os
 import unittest
+from unittest.mock import patch
 import uuid
 
 from mpkg_manager import attempt_journal as journal
+from mpkg_manager.attempt_supervisor import AttemptSupervisor, LaunchResult
 from mpkg_manager.store import HostStore
 import test_manager_protected_recording as recording
 
 
 class ExecutionFoundationIntegrationTests(unittest.TestCase):
+    def test_pending_launch_blocks_preparation_and_preserves_unconsumed_receipt(self):
+        fixture = recording.ProtectedRecordingTests()
+        fixture.setUp()
+        self.addCleanup(fixture.doCleanups)
+        self.assertEqual(fixture.record(fixture.prepare(), adopt=True)[0], 0)
+        receipt = fixture.prepare(1)
+        pending = fixture.store / "protected-preparation.json"
+        original_receipt = pending.read_bytes()
+        boot_id = str(uuid.uuid4())
+        with HostStore.open_existing(fixture.store, recording.HOST,
+                                     owner_uid=os.geteuid()) as store:
+            selected = [item["stable_id"] for item in store.current()["resources"]]
+            plan = journal._fixture_plan(store, expected_revision=1,
+                                         stable_resource_ids=selected)
+            worker = journal.WorkerIdentity(os.geteuid(), os.geteuid(),
+                                            boot_id, str(uuid.uuid4()))
+            attempt = journal._FixtureJournal(store).create(
+                plan, worker, stable_resource_ids=selected).as_dict()
+
+        class LostLaunchReply:
+            def launch(self, spec):
+                return LaunchResult("unknown")
+
+        supervisor = AttemptSupervisor(policy_path=fixture.policy,
+            store_directory=fixture.store, mutation_lock=fixture.lock,
+            owner_uid=os.geteuid(), _fixture=True, _fixture_boot=boot_id,
+            _transport=LostLaunchReply())
+        self.assertEqual(supervisor.dispatch(attempt["attempt_id"])["launch"], "unknown")
+        with patch.object(recording.ProtectedRecorder, "_capture",
+                          side_effect=AssertionError("capture while worker ownership is uncertain")) as capture:
+            result = fixture.invoke("prepare-inputs", str(fixture.source),
+                                    "--source-is-nonsecret", "--expected-revision", "1")
+            fixture.assert_rejected(result, "attempt_recovery_required")
+            fixture.assert_rejected(fixture.record(receipt, 1), "attempt_recovery_required")
+            capture.assert_not_called()
+        self.assertEqual(pending.read_bytes(), original_receipt)
+        self.assertEqual(fixture.revision(), 1)
+        self.assertEqual(fixture.invoke("current")[0], 0)
+        self.assertEqual(fixture.invoke("history")[0], 0)
+        with HostStore.open_readonly(fixture.store, recording.HOST,
+                                     owner_uid=os.geteuid()) as store:
+            retained = journal.read_attempt(store, attempt["attempt_id"]).as_dict()
+            self.assertTrue(retained["supervision"]["reserved"])
+            self.assertFalse(retained["supervision"]["released"])
+            self.assertEqual(retained["supervision"]["worker"], "not_started")
+
     def test_prepared_recording_origin_survives_adoption_attempt_and_new_intent(self):
         fixture = recording.ProtectedRecordingTests()
         fixture.setUp()
