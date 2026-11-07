@@ -4,7 +4,6 @@ This module is a trusted journal consumer, never an execution capability. Raw
 context stays private; public fields are constructed explicitly, not filtered.
 """
 from datetime import datetime, timezone
-import json
 import re
 import uuid
 
@@ -91,9 +90,17 @@ def _boolean(value):
     _require(type(value) is bool)
 
 
+def _public_version(value):
+    return (type(value) is dict and value.get("policy") in {"any", "exact"}
+            and set(value) == ({"policy"} if value["policy"] == "any" else
+                              {"policy", "value"} | ({"recipe_revision"} if "recipe_revision" in value else set()))
+            and all(type(item) is str and _TOKEN.fullmatch(item) for item in value.values()))
+
+
 def _property(name, value):
     public = (type(value) is bool or type(value) is int and 0 <= value < 2**63 - 1
-              or name in _PUBLIC_STRINGS and type(value) is str and _TOKEN.fullmatch(value))
+              or name in _PUBLIC_STRINGS and type(value) is str and _TOKEN.fullmatch(value)
+              or name == "version" and _public_version(value))
     return {"property": name, "redacted": not bool(public), "value": value if public else None}
 
 
@@ -106,7 +113,8 @@ def _property_schema(value):
     else:
         raw = value["value"]
         _require(type(raw) is bool or type(raw) is int and 0 <= raw < 2**63 - 1
-                 or value["property"] in _PUBLIC_STRINGS and type(raw) is str and _TOKEN.fullmatch(raw))
+                 or value["property"] in _PUBLIC_STRINGS and type(raw) is str and _TOKEN.fullmatch(raw)
+                 or value["property"] == "version" and _public_version(raw))
 
 
 def _check(check, role, revision, snapshot):
@@ -134,6 +142,22 @@ def _target(record):
                                 for check in record["checks"]]}
 
 
+def _decision_target(context, resource_id):
+    model = next(item["declaration"] for item in context["snapshots"]
+                 if item["revision"] == context["revision"] and item["snapshot_id"] == context["snapshot_id"])
+    resource = next((item for item in model["resources"] if item["id"] == resource_id), None)
+    return {"resource_id": resource_id, "declared": resource is not None,
+        "kind": None if resource is None else resource["kind"],
+        "managed_properties": [] if resource is None else resource["manage"],
+        "desired": [] if resource is None else [_property(name, value)
+            for name, value in sorted(resource["desired"].items())],
+        "consumers": [] if resource is None else resource["consumers"],
+        "requirements": [{"consumer_id": component["id"],
+                          "predicate": _property(item["property"], item["value"])}
+                         for component in model["components"] for item in component["requirements"]
+                         if item["resource"] == resource_id]}
+
+
 def _entry(store, identity, revision):
     # _read verifies all authenticated rows before this private seam is used.
     # Journal ownership explicitly permits this seam; never use raw event
@@ -145,7 +169,8 @@ def _entry(store, identity, revision):
     for action, resource in zip(summary["actions"], context["resources"]):
         actions.append({name: action[name] for name in (
             "action_id", "ordinal", "state", "attempted", "command_outcome", "observation_outcome")} | {
-                "work": "attempted" if action["attempted"] else "not_attempted", "target": _target(resource)})
+                "work": "attempted" if action["attempted"] else "not_attempted", "target": _target(resource),
+                "decision_target": _decision_target(context, resource["logical_id"])})
     inputs, counters = [], {}
     for item in context["declared_inputs"]:
         key = (item["revision"], item["snapshot_id"], item["entry"]["input_id"])
@@ -221,7 +246,7 @@ def attempt_page(store, *, limit=DEFAULT_PAGE_ITEMS, after_id=None):
 def attempt_detail(store, attempt_id, *, after_event=0, event_limit=DEFAULT_PAGE_ITEMS):
     """Read an exact original target and one complete, resumable event page."""
     _page_options(event_limit, attempt_id)
-    if attempt_id is None or type(after_event) is not int or not 0 <= after_event < 2**63 - 1:
+    if type(store) is not HostStore or attempt_id is None or type(after_event) is not int or not 0 <= after_event < 2**63 - 1:
         raise AttemptReportError("invalid_attempt_page")
     with store._read():
         if store._schema_version < 4:
@@ -251,6 +276,33 @@ def attempt_detail(store, attempt_id, *, after_event=0, event_limit=DEFAULT_PAGE
         return result
 
 
+def _check_schema(value):
+    _validate(value, _CHECK)
+    _require(1 <= value["timeout_seconds"] <= 60 and value["revision"] > 0)
+    names = [predicate["property"] for predicate in value["predicates"]]
+    _require(len(set(names)) == len(names))
+    allowed = {"package": {"present", "version", "reason"}, "service": {"running", "enabled"},
+               "endpoint": {"url", "expected_status"}, "access": {"as_user", "operation", "consumer"}}
+    _require(bool(names) and set(names) <= allowed[value["kind"]])
+    if value["kind"] in {"endpoint", "access"}:
+        _require(set(names) == allowed[value["kind"]])
+    for item in value["predicates"]:
+        name, raw = item["property"], item["value"]
+        if name == "url":
+            _require(item["redacted"])
+        elif not item["redacted"]:
+            if name in {"present", "running", "enabled"}:
+                _boolean(raw)
+            elif name == "expected_status":
+                _require(type(raw) is int and 100 <= raw <= 599)
+            elif name == "reason":
+                _require(raw in {"explicit", "dependency"})
+            elif name == "operation":
+                _require(raw in {"read", "list"})
+            else:
+                _require(type(raw) is str)
+
+
 _CHECK = {"id": _identifier, "kind": frozenset({"package", "service", "endpoint", "access"}),
           "resource_id": _identifier, "role": frozenset({"accepted", "decision"}), "revision": _integer,
           "snapshot_id": _hash, "timeout_seconds": _integer, "predicates": _list(_property_schema, 4),
@@ -259,7 +311,11 @@ _TARGET = {"stable_id": _uuid, "resource_id": _identifier, "kind": _KINDS,
            "adoption_revision": _integer, "snapshot_id": _hash, "managed_properties": _list(_PROPERTIES, 32),
            "desired": _list(_property_schema, 32), "consumers": _list(_identifier),
            "requirements": _list({"consumer_id": _identifier, "predicate": _property_schema}),
-           "required_checks": _list(_CHECK)}
+           "required_checks": _list(_check_schema)}
+_DECISION_TARGET = {"resource_id": _identifier, "declared": _boolean, "kind": _nullable(_KINDS),
+    "managed_properties": _list(_PROPERTIES, 32), "desired": _list(_property_schema, 32),
+    "consumers": _list(_identifier),
+    "requirements": _list({"consumer_id": _identifier, "predicate": _property_schema})}
 _ENTRY = {"attempt_id": _uuid, "plan_id": _uuid, "host_id": _uuid, "revision": _integer,
     "snapshot_id": _hash, "predecessor": _nullable(_uuid), "created_at": _time, "ordinal": _integer,
     "authority": "fixture_only", "executable": False, "finished": _boolean, "state": _STATES,
@@ -270,11 +326,11 @@ _ENTRY = {"attempt_id": _uuid, "plan_id": _uuid, "host_id": _uuid, "revision": _
     "actions": _list({"action_id": _uuid, "ordinal": _integer, "state": _STATES, "attempted": _boolean,
         "command_outcome": frozenset({"not_recorded", "succeeded", "failed", "timeout", "unknown"}),
         "observation_outcome": frozenset({"not_recorded", "satisfied", "failed", "unavailable"}),
-        "work": frozenset({"attempted", "not_attempted"}), "target": _TARGET}, journal.MAX_ACTIONS),
+        "work": frozenset({"attempted", "not_attempted"}), "target": _TARGET, "decision_target": _DECISION_TARGET}, journal.MAX_ACTIONS),
     "inputs": _list({"revision": _integer, "snapshot_id": _hash, "input_id": _identifier,
         "file_index": _integer, "classification": frozenset({"nonsecret", "protected"}),
         "state": frozenset({"bound", "unavailable"}), "origin_revision": _nullable(_integer)}),
-    "decision_checks": _list(_CHECK),
+    "decision_checks": _list(_check_schema),
     "event_details": {"operation": "attempt", "attempt_id": _uuid, "after_event": 0}}
 _EVENT_OUTCOMES = {"action_started": {"started"}, "command_completed": {"succeeded", "failed", "timeout", "unknown"},
     "observation_completed": {"satisfied", "failed", "unavailable"},
@@ -296,11 +352,24 @@ def _entry_context(entry, host, revision):
     _require(entry["decision_state"] == ("current" if entry["revision"] == revision else "superseded"))
     _require(bool(entry["actions"]))
     _require(len({item["action_id"] for item in entry["actions"]}) == len(entry["actions"]))
+    expected_state = journal._overall([{"started": item["attempted"],
+        "command_outcome": item["command_outcome"], "observation_outcome": item["observation_outcome"]}
+        for item in entry["actions"]])
+    _require(entry["state"] == expected_state)
+    _require(not entry["finished"] or entry["state"] in {"observed-complete", "failed", "unverified"})
+    _require(entry["predecessor"] != entry["attempt_id"])
     for ordinal, action in enumerate(entry["actions"]):
         _require(action["ordinal"] == ordinal and action["attempted"] == (action["work"] == "attempted"))
         _require(action["state"] == journal._action_state({"started": action["attempted"],
             "command_outcome": action["command_outcome"], "observation_outcome": action["observation_outcome"]}))
+        _require(action["attempted"] or (action["command_outcome"] == "not_recorded"
+                                         and action["observation_outcome"] == "not_recorded"))
         target = action["target"]
+        decision = action["decision_target"]
+        _require(decision["resource_id"] == target["resource_id"])
+        _require(decision["declared"] == (decision["kind"] is not None))
+        _require(decision["declared"] or not any(decision[name] for name in
+            ("managed_properties", "desired", "consumers", "requirements")))
         _require(0 < target["adoption_revision"] <= entry["revision"])
         for check in target["required_checks"]:
             _require(check["role"] == "accepted" and check["revision"] == target["adoption_revision"]
@@ -318,10 +387,14 @@ def validate_attempt_page(value, request=None):
     _require(_size(value) <= MAX_PAGE_BYTES)
     if request is not None:
         _require(value["limit"] == request.page_limit and value["after_id"] == request.after_id)
+    identities = [entry["attempt_id"] for entry in value["attempts"]]
+    _require(len(set(identities)) == len(identities) and value["after_id"] not in identities)
     previous = 0
     for entry in value["attempts"]:
         _entry_context(entry, value["host_id"], value["revision"])
         _require(previous < entry["ordinal"] <= value["observed_through_ordinal"])
+        _require(not previous or entry["ordinal"] == previous + 1)
+        _require(value["after_id"] is not None or previous or entry["ordinal"] == 1)
         previous = entry["ordinal"]
     _require(value["next_after"] == (value["attempts"][-1]["attempt_id"] if value["attempts"] else value["after_id"]))
     _require(not value["has_more"] or bool(value["attempts"]))
@@ -345,6 +418,7 @@ def validate_attempt_detail(value, request=None):
         _require(value["attempt"]["attempt_id"] == request.attempt_id and value["after_event"] == request.after_event
                  and value["event_limit"] == request.page_limit)
     actions = {action["action_id"] for action in value["attempt"]["actions"]}
+    _require(len({event["event_id"] for event in value["events"]}) == len(value["events"]))
     for sequence, event in enumerate(value["events"], value["after_event"] + 1):
         _require(event["sequence"] == sequence and event["sequence"] <= value["observed_through_sequence"])
         _require(event["action_id"] in actions if event["kind"] in {
