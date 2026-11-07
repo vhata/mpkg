@@ -101,7 +101,7 @@ measured against the first-release contract and acceptance scenarios.
 
 - [NATIVE] `apply-native-transactions` — **Commit only an exactly accepted native transaction.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#apply-native-transactions), 2026-11-07.
-  - Depends on: `prepare-native-transactions`, `expose-execution-requests`
+  - Depends on: `expose-execution-requests`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [NATIVE] `build-aur-artifacts` — **Build accepted AUR sources under an isolated unprivileged identity.** Deliver the bounded scope and acceptance checks in the linked task.
@@ -208,10 +208,6 @@ measured against the first-release contract and acceptance scenarios.
 
 - [TOOLING] `persist-attempt-journal` — **Persist durable attempts and action events.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#persist-attempt-journal), 2026-11-07.
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
-- [NATIVE] `prepare-native-transactions` — **Prepare coherent native package transactions without live changes.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#prepare-native-transactions), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [NATIVE] `prepare-aur-recipes` — **Capture reviewed AUR recipes and their dependency inputs.** Deliver the bounded scope and acceptance checks in the linked task.

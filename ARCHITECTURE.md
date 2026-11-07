@@ -64,6 +64,13 @@ checks and product acceptance.
   cannot establish absence, provider identity or provenance. Planner
   source/property guards keep that evidence distinct from installed
   version and installation-reason facts.
+- `mpkg_manager.native_preparation` stages stable copied native metadata
+  and signed package artifacts for a fixed preparation-only libalpm bridge.
+  Its [preparation guide](docs/manager-native-preparation.md) describes exact
+  source, inventory, provider, replacement, upgrade and reason bindings.
+  The bridge source and explicit build entrypoint live under `native/`.
+  Preparation is a trusted library operation; installed request integration
+  and real native transaction acceptance remain separate work.
 - `mpkg_manager.observe_accounts` collects
   [local account scalar properties](docs/manager-account-observation.md)
   through bounded fixed queries and repeated local/default NSS checks.
@@ -114,8 +121,8 @@ checks and product acceptance.
   [Endpoint report binding](docs/manager-endpoint-reporting.md) requires
   typed complete role coverage, exact recorded context and freshness;
   every route result remains functionally unverified.
-  Reports are always non-executable; attempts, native preparation and
-  application are not supplied.
+  Reports are always non-executable; production attempts and application
+  are not supplied by comparison. Native preparation is a separate boundary.
 - `mpkg_manager.status_collection` coordinates fixed read-only adapters
   with live policy/history checks, bounded query scheduling and explicit
   gaps. The [collection guide](docs/manager-status-collection.md) defines

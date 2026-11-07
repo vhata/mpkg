@@ -11,6 +11,12 @@ design, including parallel work and reviewable PRs while unattended.
 Final review and landing remain with the user; this does not authorize
 production package, service or Docker operations.
 
+Native [transaction preparation](manager-native-preparation.md) uses a fixed
+libalpm bridge with copied installed metadata and isolated repository inputs.
+It binds the complete proposed upgrade, artifacts, provider/replacement
+choices and package reasons without changing the live package database.
+Exact ABI and committed transaction acceptance remain explicit gates.
+
 Keep the existing `mpkg` helper usable while the replacement is developed
 in the `mpkg_manager` Python 3.12 namespace. The validation command
 validates a closed TOML model and produces an immutable nonsecret snapshot.
