@@ -471,6 +471,7 @@ def prepare_native_transaction(*, host_id, installed_database, keyring,
         _write(stage / "protocol", ("1\t" + LIBALPM_VERSION + "\t" + architecture + "\n").encode())
         before_stage = _tree(stage / "db/local")[2]
         before_sync = _tree(stage / "db/sync")[2]
+        before_keys = _tree(stage / "gpg")[2]
         before_artifacts = _tree(stage / "artifacts", capture=False,
                                  limit=MAX_ARTIFACT_TOTAL)[2]
         result = (_bridge if runner is None else runner)(stage)
@@ -479,6 +480,7 @@ def prepare_native_transaction(*, host_id, installed_database, keyring,
         transaction = _parse(result.output, requests, artifacts, repositories)
         _require(_tree(installed_database) == inventory, "installed_snapshot_unstable")
         _require(_tree(keyring) == keys, "native_keyring_changed")
+        _require(_tree(stage / "gpg")[2] == before_keys, "native_staged_keyring_changed")
         _require(_tree(stage / "db/local")[2] == before_stage
                  and _tree(stage / "db/sync")[2] == before_sync
                  and _tree(stage / "artifacts", capture=False,

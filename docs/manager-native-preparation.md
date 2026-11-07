@@ -61,7 +61,10 @@ Descriptor traversal refuses symlinks, special files, hard-linked regular
 files, writable input files and changed identities. Nonblocking opens
 prevent a FIFO substitution from hanging capture. Local metadata is copied
 between repeated complete identity/content observations, and checked again
-after native preparation. Keyring source changes also refuse the result.
+after native preparation. Source and staged keyring changes also refuse the
+result, including automatic trustdb changes by native verification. A
+keyring needing such maintenance must be prepared explicitly before this
+operation; a changed trust result is never bound to the original keyring.
 This detects observed changes; it is not an atomic snapshot or reservation
 against an independently operating package manager.
 

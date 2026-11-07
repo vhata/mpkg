@@ -268,6 +268,16 @@ class NativePreparationTests(unittest.TestCase):
         self.write(self.keys / "gpg.conf", b"keyserver private.example")
         self.refused("unsupported_native_keyring")
 
+    def test_changed_staged_trust_input_cannot_be_bound_to_original_keyring(self):
+        for name in ("trustdb.gpg", "pubring.gpg"):
+            with self.subTest(name=name):
+                def changed(stage):
+                    (stage / "gpg" / name).write_bytes(b"substituted native trust")
+                    return QueryResult("ok", self.output(), 0)
+
+                self.refused("native_staged_keyring_changed", runner=changed)
+        self.assertFalse(any(self.stages.glob("*/manifest.json")))
+
     def test_symlinks_and_special_inputs_are_not_followed(self):
         original = self.artifacts[0]
         link = self.source / "linked"
