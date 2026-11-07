@@ -36,9 +36,10 @@ worker handoff; production execution authorization remains separate.
 Actions have stable random IDs, fixed fixture operation descriptors and a
 bounded order. This slice accepts at most 128 actions and 4 MiB of private
 target context. It does not accept arbitrary effect graphs. Retry ancestry
-requires a finished failed or unverified predecessor, a distinct plan ID
-and a later attempt ordinal. Unknown attempts cannot be retried through
-this fixture interface; recovery must establish a separate disposition.
+requires a finished failed or unverified inactive predecessor, or a
+predecessor sealed by [quiescent recovery](manager-attempt-recovery.md),
+plus a distinct plan ID and later attempt ordinal. Recovery preserves
+unknown outcomes; it supplies no new plan or execution authority.
 
 ## Events and uncertainty
 
@@ -70,8 +71,9 @@ state machine. SQL triggers reject updates and deletions. Completion is a
 separate append, preserves unattempted actions and refuses unknown running
 work. A newer intent revision can coexist with prior outcomes. Once a launch
 reservation exists, the [supervisor](manager-attempt-supervision.md) blocks
-ordinary mutations until verified inert completion; interrupted or failed
-workers retain the reservation for explicit recovery.
+ordinary mutations until verified inert completion or evidence-backed
+quiescent recovery; interrupted or failed workers retain the reservation
+until that separate disposition is durably recorded.
 
 These checks detect schema/record corruption and invalid transitions. They
 are not protection against an administrator owning the database and key,
@@ -108,4 +110,5 @@ commit outcomes.
 
 No native adapter, package operation, Docker lifecycle command, root
 installed worker or real systemd service runs in these tests. Real crash/power-loss,
-privilege, supervision, recovery and A1–A12 acceptance remain separate.
+privilege, supervision, recovery and A1–A12 acceptance remain separate
+from the inert library checks.

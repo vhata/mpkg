@@ -17,7 +17,7 @@ from .store import (HostStore, StoreError, _decode, _declared_nonsecret,
 
 
 MAX_ACTIONS = 128
-MAX_EVENTS = 4 * MAX_ACTIONS + 5
+MAX_EVENTS = 4 * MAX_ACTIONS + 5 + 128
 MAX_CONTEXT_BYTES = 4 * 1024 * 1024
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
 _DOMAIN = b"MPKGATTEMPT\x00\x01"
@@ -97,6 +97,23 @@ class Attempt:
 
     def as_dict(self):
         return json.loads(self._summary)
+
+
+@dataclass(frozen=True)
+class AttemptContext:
+    """Private authenticated read seam for trusted redacted report assembly."""
+    _data: bytes = field(repr=False)
+
+    def as_dict(self):
+        return json.loads(self._data)
+
+
+def _recovery_payload(outcome):
+    from .attempt_recovery import RecoveryError, _decode_evidence
+    try:
+        return _decode_evidence(outcome)
+    except RecoveryError:
+        raise JournalError("attempt_transition_invalid") from None
 
 
 def _seal(store, kind, values, previous=None):
@@ -218,17 +235,34 @@ def _replay(actions, events):
               "command_outcome": "not_recorded", "observation_outcome": "not_recorded"}
              for row in actions]
     by_id = {action["action_id"]: action for action in state}
-    finished, previous_time, seen = False, None, set()
-    launch = {"reserved": False, "dispatch": "not_recorded", "worker": "not_started", "released": False}
+    finished, previous_time, seen, recoveries = False, None, set(), 0
+    launch = {"reserved": False, "dispatch": "not_recorded", "worker": "not_started",
+              "released": False, "recovery": "not_recorded"}
     for expected, row in enumerate(events, 1):
         _, sequence, event_id, action_id, kind, created_at, outcome, _ = row
         _require(type(sequence) is int and sequence == expected and _uuid(event_id)
                  and event_id not in seen
-                 and (not finished or kind in ("launch_result", "worker_completed")), "attempt_transition_invalid")
+                 and launch["recovery"] != "quiescent"
+                 and (not finished or kind in ("launch_result", "worker_completed", "recovery_recorded")),
+                 "attempt_transition_invalid")
         seen.add(event_id)
         timestamp = _time(created_at)
         _require(previous_time is None or timestamp >= previous_time, "attempt_transition_invalid")
         previous_time = timestamp
+        if kind == "recovery_recorded":
+            from .attempt_recovery import MAX_RECOVERY_OBSERVATIONS
+            payload = _recovery_payload(outcome)
+            _require(action_id is None and launch["reserved"] and not launch["released"]
+                     and payload["attempt_id"] == row[0] and payload["sequence"] == expected - 1,
+                     "attempt_transition_invalid")
+            recoveries += 1
+            # Reserve the final slot for evidence that can clear uncertainty.
+            _require(recoveries <= MAX_RECOVERY_OBSERVATIONS
+                     and (recoveries < MAX_RECOVERY_OBSERVATIONS or payload["disposition"] == "quiescent"),
+                     "attempt_recovery_limit")
+            launch["recovery"] = payload["disposition"]
+            launch["released"] = payload["disposition"] == "quiescent"
+            continue
         if kind == "launch_reserved":
             _require(action_id is None and outcome == "reserved" and expected == 1,
                      "attempt_transition_invalid")
@@ -317,10 +351,12 @@ def _verified(store, row, actions, events):
         previous = store._db.execute("SELECT plan_id,created_at,ordinal FROM attempts WHERE id=?", (predecessor,)).fetchone()
         _require(previous is not None and previous[0] != plan_id and previous[1] <= created_at
                  and previous[2] < ordinal)
-        terminal = store._db.execute("SELECT kind,outcome,created_at FROM attempt_events WHERE attempt_id=? "
-                                    "ORDER BY sequence DESC LIMIT 1", (predecessor,)).fetchone()
-        _require(terminal is not None and terminal[0] == "attempt_finished"
-                 and terminal[1] in ("failed", "unverified") and terminal[2] <= created_at)
+        _, prior_actions, prior_events = _rows(store, predecessor)
+        prior_state, prior_finished, prior_launch = _replay(prior_actions, prior_events)
+        _require(prior_events and prior_events[-1][5] <= created_at
+                 and (prior_launch["recovery"] == "quiescent"
+                      or (prior_finished and _overall(prior_state) in ("failed", "unverified")
+                          and not prior_launch["reserved"])))
     _require(len(actions) == len(target["resources"]) and len(events) <= MAX_EVENTS)
     for ordinal, action in enumerate(actions):
         attempt, action_id, number, encoded, action_seal = action
@@ -335,6 +371,13 @@ def _verified(store, row, actions, events):
         _require(event[0] == identity and event[5] >= created_at and type(event[-1]) is bytes
                  and hmac.compare_digest(event[-1], _seal(store, "event", list(event[:-1]), previous_seal)))
         previous_seal = event[-1]
+        if event[4] == "recovery_recorded":
+            from .attempt_recovery import RecoveryError, _verify_binding
+            try:
+                _verify_binding(_recovery_payload(event[6]), context, event[1] - 1,
+                                identity, store.engine_aliases)
+            except RecoveryError:
+                raise JournalError("attempt_transition_invalid") from None
     return context, *_replay(actions, events)
 
 
@@ -362,7 +405,24 @@ def _projection(row, actions, events, current_revision):
         "state": _overall(state), "decision_state": "current" if row[2] == current_revision else "superseded",
         "sequence": len(events), "actions": state,
         "events": [{"event_id": event[2], "sequence": event[1], "action_id": event[3],
-                    "kind": event[4], "created_at": event[5], "outcome": event[6]} for event in events]}))
+                    "kind": event[4], "created_at": event[5], "outcome":
+                    _recovery_payload(event[6])["disposition"] if event[4] == "recovery_recorded" else event[6]}
+                   for event in events]}))
+
+
+def _attempt_context(store, attempt_id):
+    """Caller holds one verified read transaction for a complete report page."""
+    rows = _rows(store, attempt_id)
+    return AttemptContext(_json({"context": _decode(rows[0][6]),
+        "summary": _projection(*rows, store._revision()).as_dict()}))
+
+
+def read_attempt_context(store, attempt_id):
+    """Private data for trusted embedding; never forward this object to a wire."""
+    _require(type(store) is HostStore and _uuid(attempt_id))
+    with store._read():
+        _require(store._schema_version >= 4, "attempt_migration_required")
+        return _attempt_context(store, attempt_id)
 
 
 def read_attempt(store, attempt_id):
@@ -456,6 +516,15 @@ class _FixtureJournal:
         return result
 
     def append(self, attempt_id, *, expected_sequence, action_id, kind, outcome):
+        _require(kind != "recovery_recorded", "attempt_recovery_evidence_required")
+        return self._append(attempt_id, expected_sequence=expected_sequence,
+                            action_id=action_id, kind=kind, outcome=outcome)
+
+    def _append_recovery(self, attempt_id, *, expected_sequence, outcome):
+        return self._append(attempt_id, expected_sequence=expected_sequence,
+                            action_id=None, kind="recovery_recorded", outcome=outcome)
+
+    def _append(self, attempt_id, *, expected_sequence, action_id, kind, outcome):
         _require(_uuid(attempt_id) and type(expected_sequence) is int and 0 <= expected_sequence < MAX_EVENTS
                  and (action_id is None or _uuid(action_id)) and type(kind) is str and type(outcome) is str)
         # Journal transitions preserve the original attempt revision while new
