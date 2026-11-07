@@ -74,6 +74,12 @@ measured against the first-release contract and acceptance scenarios.
   - Reproduction: with the claimed entry and its Findings present in both snapshots, the consumer finds the finding and exits successfully, but the producer receives SIGPIPE (`141 0` pipeline statuses), so valid Claims review finding markers are reported as absent. A draining consumer returns `0 0` on the same input.
   - Verify strict Claims and Resolves cases, retain rejection of absent findings, and preserve the original Claims input and reproduction evidence. This work does not authorize a gate or hooks-policy change.
 
+- [TOOLING] `update-docket-cleanup-worktree-enumeration` — **Resync Docket after cleanup safely enumerates repositories with many worktrees.** The dry run must reach its preservation checks instead of exiting while finding the main worktree.
+  - Source: [vendored cleanup helper](docket/scripts/cleanup-landed.sh), cleanup after PR #58 during the parallel execution-control tasks, 2026-11-07.
+  - Blocked by: an upstream Docket correction and supported installer update; do not patch the vendored helper directly.
+  - Reproduction: `git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }'` returns pipeline statuses `141 0` in this checkout. Under `set -euo pipefail`, cleanup exits 141 after its dry-run heading, before examining any branch.
+  - Verify large worktree inventories, correct main-worktree identification, and preservation of dirty worktrees and unique ignored evidence. No branches or worktrees were removed during the reproduction.
+
 - [TOOLING] `expose-execution-requests` — **Connect bounded plan, apply and recover requests.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#expose-execution-requests), 2026-11-07.
   - Depends on: `recover-interrupted-attempts`, `report-attempt-outcomes`, `authorize-execution-plans`
