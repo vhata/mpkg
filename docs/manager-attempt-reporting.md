@@ -8,7 +8,8 @@ acquire the application lock, recover an attempt or authorize a retry.
 
 Every entry identifies the original attempt and plan UUIDs, decision
 revision, immutable snapshot, original adopted resource UUIDs and their
-adoption revisions/snapshots. It retains desired property predicates,
+adoption revisions/snapshots. It distinguishes the decision-time target (including removal) from the
+retained adopted target. It retains desired property predicates,
 consumer requirements, accepted check definitions and decision-time check
 definitions. New intent and new observations do not rewrite these facts.
 The predecessor UUID links retries; use `attempt UUID` to inspect each

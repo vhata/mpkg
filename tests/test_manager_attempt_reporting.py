@@ -136,6 +136,10 @@ class AttemptReportingTests(unittest.TestCase):
         newer = self.create()
         report = self.detail(newer)['attempt']
         self.assertEqual(report['decision_checks'][0]['predicates'][1]['value'], '2.0')
+        self.assertEqual(report['actions'][0]['decision_target']['desired'][1]['value'],
+                         {'policy': 'exact', 'value': '2.0'})
+        self.assertEqual(report['actions'][0]['target']['desired'][1]['value'],
+                         {'policy': 'exact', 'value': '1.0'})
         self.assertEqual(report['actions'][0]['target']['required_checks'][0]['predicates'][1]['value'], '1.0')
 
     def test_failed_finished_attempt_retains_not_attempted_work_and_retry_link(self):
@@ -361,6 +365,76 @@ class AttemptReportingTests(unittest.TestCase):
         self.assertEqual(page['attempts'][0]['state'], 'unknown')
         self.assertNotIn('attempt_history_unavailable', result['result']['report']['blockers'])
         self.assertFalse((fixture.root / 'missing.lock').exists())
+
+
+    def test_old_schema_history_is_refused_without_migration_or_empty_success(self):
+        directory = self.root / 'old-store'
+        with patch('mpkg_manager.store.SCHEMA_VERSION', 3):
+            with HostStore.create(directory, HOST, owner_uid=os.geteuid()) as old:
+                old.record_intent(load_declaration(b'schema=1\ncomponents=[]\nresources=[]\n'), 0)
+        self.boundary._store_directory = directory
+        before = (directory / 'state.sqlite3').read_bytes()
+        for args in [('attempts',), ('attempt', str(uuid.uuid4())), ('status',)]:
+            status, error = self.invoke(*args)
+            self.assertEqual(status, 6)
+            self.assertEqual(error['error']['code'], 'attempt_history_requires_migration')
+        self.assertEqual((directory / 'state.sqlite3').read_bytes(), before)
+
+    def test_removed_decision_target_retains_original_adoption_obligations(self):
+        self.store.record_intent(load_declaration(b'schema=1\ncomponents=[]\nresources=[]\n'), 1)
+        attempt = self.create()
+        entry = self.detail(attempt)['attempt']
+        action = entry['actions'][0]
+        self.assertFalse(action['decision_target']['declared'])
+        self.assertIsNone(action['decision_target']['kind'])
+        self.assertEqual(action['target']['adoption_revision'], 1)
+        self.assertEqual(action['target']['required_checks'][0]['id'], 'original')
+        self.assertEqual(entry['decision_checks'], [])
+        self.assertEqual(entry['revision'], 2)
+
+    def test_partial_event_history_corruption_refuses_the_whole_response(self):
+        attempt = self.append(self.create(), 'action_started', 'started')
+        self.append(attempt, 'command_completed', 'succeeded')
+        self.corrupt('attempt_events', 'DELETE FROM attempt_events WHERE sequence=1')
+        status, result = self.invoke('attempts')
+        self.assertEqual(status, 6)
+        self.assertEqual(result['error']['code'], 'store_corrupt')
+        self.assertNotIn('result', result)
+
+    def test_private_internal_exception_is_fixed_diagnostic_without_partial_history(self):
+        self.create()
+        with patch.object(reporting, '_entry', side_effect=OSError('/PRIVATE_PATH/TOKEN')):
+            status, result = self.invoke('attempts')
+        self.assertNotEqual(status, 0)
+        self.assertEqual(result['error']['code'], 'store_read_failed')
+        self.assertNotIn('PRIVATE', json.dumps(result))
+
+    def test_malformed_page_cannot_claim_completeness_or_success(self):
+        self.create()
+        valid = self.page()
+        changes = [lambda x: x.update(has_more=True),
+                   lambda x: x.update(next_after=str(uuid.uuid4())),
+                   lambda x: x.update(observed_through_ordinal=0),
+                   lambda x: x['attempts'][0].update(state='observed-complete'),
+                   lambda x: x['attempts'][0]['actions'][0]['target']['required_checks'][0].update(timeout_seconds=100)]
+        for change in changes:
+            value = deepcopy(valid)
+            change(value)
+            with self.assertRaises(ValueError):
+                reporting.validate_attempt_page(value)
+
+    def test_unrelated_new_event_or_wrong_attempt_reply_is_rejected_by_client(self):
+        attempt = self.create()
+        page = self.detail(attempt)
+        output = io.StringIO()
+        wrong = deepcopy(page)
+        wrong['attempt']['attempt_id'] = str(uuid.uuid4())
+        wrong['attempt']['event_details']['attempt_id'] = wrong['attempt']['attempt_id']
+        sender = lambda raw: _Reply(json.dumps({'version': 1, 'ok': True, 'result': wrong}).encode(), 0)
+        with redirect_stdout(output):
+            code = main(['attempt', attempt['attempt_id'], '--json'], _sender=sender)
+        self.assertNotEqual(code, 0)
+        self.assertNotIn('result', json.loads(output.getvalue()))
 
 
 if __name__ == '__main__':
