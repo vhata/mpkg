@@ -272,6 +272,15 @@ files=[{{path="public.conf",classification="nonsecret"}}]
         self.assertEqual((status, value["error"]["code"]), (6, "input_capture_rejected"))
         self.assertEqual(target.read_text(), SECRET)
 
+    def test_restrictive_umask_does_not_make_published_receipt_unusable(self):
+        previous = os.umask(0o777)
+        try:
+            receipt = self.prepare()
+        finally:
+            os.umask(previous)
+        self.assertEqual((self.store / "protected-preparation.json").stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.record(receipt)[0], 0)
+
     def test_legacy_reference_is_not_promoted(self):
         with HostStore.open_existing(self.store, HOST, owner_uid=os.geteuid()) as store, \
                 load_host_policy(path=self.policy, owner_uid=os.geteuid()) as policy:

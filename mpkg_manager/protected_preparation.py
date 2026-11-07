@@ -126,6 +126,7 @@ def prepare_recording(recorder, declaration, revision):
         fd = os.open(_NEXT, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC,
                      0o600, dir_fd=store._dirfd)
         try:
+            os.fchmod(fd, 0o600)
             with os.fdopen(fd, "wb", closefd=False) as stream:
                 stream.write(encoded)
                 stream.flush()
