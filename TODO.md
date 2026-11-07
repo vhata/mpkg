@@ -82,7 +82,7 @@ measured against the first-release contract and acceptance scenarios.
 
 - [TOOLING] `expose-execution-requests` — **Connect bounded plan, apply and recover requests.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#expose-execution-requests), 2026-11-07.
-  - Depends on: `recover-interrupted-attempts`, `report-attempt-outcomes`, `authorize-execution-plans`
+  - Depends on: `report-attempt-outcomes`, `authorize-execution-plans`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [NATIVE] `apply-native-transactions` — **Commit only an exactly accepted native transaction.** Deliver the bounded scope and acceptance checks in the linked task.
@@ -147,7 +147,7 @@ measured against the first-release contract and acceptance scenarios.
 
 - [TOOLING] `export-and-recover-host-history` — **Export complete redacted history and recover from verified backups.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#export-and-recover-host-history), 2026-11-07.
-  - Depends on: `recover-interrupted-attempts`, `record-retirement-dispositions`
+  - Depends on: `record-retirement-dispositions`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [TOOLING] `validate-installed-execution-boundary` — **Validate the installed privilege and worker boundary in a disposable guest.** Deliver the bounded scope and acceptance checks in the linked task.
@@ -218,8 +218,4 @@ measured against the first-release contract and acceptance scenarios.
 
 - [TOOLING] `authorize-execution-plans` — **Bind accepted execution plans to exact authority and inputs.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#authorize-execution-plans), 2026-11-07.
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
-- [TOOLING] `recover-interrupted-attempts` — **Recover uncertain attempts without overlapping work.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#recover-interrupted-attempts), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.

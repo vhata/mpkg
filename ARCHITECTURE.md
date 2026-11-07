@@ -56,7 +56,7 @@ checks and product acceptance.
   [journal guide](docs/manager-attempt-journal.md) defines original input,
   decision, check and worker bindings, separate command/observation outcomes,
   and explicit migration. The creation harness accepts inert fixtures only;
-  production attempts, recovery and CLI reporting remain separate.
+  production attempts and CLI reporting remain separate.
 - `mpkg_manager.attempt_supervisor` and `attempt_worker` add durable launch
   reservations and worker ownership using the fixed staged worker entrypoint.
   The [supervision guide](docs/manager-attempt-supervision.md) describes
@@ -64,6 +64,12 @@ checks and product acceptance.
   Owned inert workers and a controlled system-manager transport exercise
   these boundaries; production effects and real systemd acceptance remain
   unavailable.
+- `mpkg_manager.attempt_recovery` records authenticated quiescence
+  evidence under the host lock without changing original action outcomes.
+  Its [recovery guide](docs/manager-attempt-recovery.md) defines complete
+  dispatch, unit/cgroup, boot, package-lock and engine/resource evidence,
+  the durable mutation gate and sealed retry ancestry. Inert collectors
+  exercise the contract; production collectors and requests remain absent.
 - `mpkg_manager.observe_native` and `mpkg_manager.observe_compose` collect
   time-bounded observations through closed read-only queries. Their
   [native](docs/manager-observations.md) and
