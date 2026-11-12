@@ -14,6 +14,9 @@ from urllib.parse import urlsplit
 import uuid
 
 
+from .application_predicates import normalize_metadata
+
+
 SCHEMA_VERSION = 1
 NORMALIZATION_VERSION = 1
 MAX_DECLARATION_BYTES = 16 * 1024 * 1024
@@ -315,7 +318,7 @@ def _check(value, path):
     extra = {"package": ("expected",), "service": ("expected",),
              "endpoint": ("url", "expected_status"),
              "access": ("as_user", "operation", "consumer")}[kind]
-    _object(value, common + extra, common + extra, path)
+    _object(value, common + extra + (("application",) if kind == "endpoint" else ()), common + extra, path)
     result = {"id": _identifier(value["id"], path + ("id",)), "kind": kind,
               "resource": _identifier(value["resource"], path + ("resource",)),
               "timeout_seconds": _integer(value["timeout_seconds"], path + ("timeout_seconds",), 1, 60)}
@@ -331,6 +334,19 @@ def _check(value, path):
     elif kind == "endpoint":
         result["url"] = _endpoint_url(value["url"], path + ("url",))
         result["expected_status"] = _integer(value["expected_status"], path + ("expected_status",), 100, 599)
+        if "application" in value:
+            try:
+                metadata = normalize_metadata(value["application"])
+                parsed = urlsplit(result["url"])
+                expected_path = metadata["base"] + ("/ping" if metadata["name"] == "sonarr" else
+                                                    f'/api/v3/rootfolder/{metadata["root_id"]}')
+                if (result["expected_status"] != 200 or result["timeout_seconds"] > 10
+                        or parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1")
+                        or parsed.path != expected_path):
+                    raise ValueError
+                result["application"] = metadata
+            except (ValueError, TypeError, KeyError):
+                _fail("invalid_application_predicate", path + ("application",))
     else:
         result["as_user"] = _name(value["as_user"], path + ("as_user",))
         result["operation"] = _enum(value["operation"], ("read", "list"), path + ("operation",))
@@ -521,6 +537,8 @@ def _validate(model):
             _fail("missing_resource", at + ("resource",))
         resource = resources[check["resource"]]
         if resource["kind"] not in check_resources[check["kind"]]:
+            _fail("check_resource_kind_mismatch", at + ("resource",))
+        if "application" in check and resource["kind"] != "compose":
             _fail("check_resource_kind_mismatch", at + ("resource",))
         if check["kind"] == "access" and check["consumer"] not in resource["consumers"]:
             _fail("unknown_access_consumer", at + ("consumer",))
