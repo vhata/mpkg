@@ -6,8 +6,12 @@ installation and complete-manager acceptance remain separate. Recording
 and exports perform no live observation. Explicit status can query native
 tools, Docker, file metadata and recorded input files; endpoint requests
 require an additional explicit flag. No supported request applies host
-changes. Executable planning, application and recovery are unsupported.
-Preparation is limited to the protected-input recording workflow.
+changes. The protocol also recognizes bounded execution preparation,
+plan inspection/acceptance, apply and recovery requests. The installed
+adapter registry is empty, so these return execution_adapter_unavailable;
+trusted inert integration exercises their orchestration. See the
+[execution request guide](manager-execution-requests.md). Protected-input
+preparation remains a separate recording workflow.
 
 ## Installation and authorization boundary
 
@@ -27,9 +31,11 @@ Enter the installed helper through explicit operator authorization, such
 as interactive sudo. Never invoke repository code or a caller-selected
 Python module as root. There is no passwordless sudo rule, Docker-group
 grant or request-controlled operator identity. The attempt journal retains
-trusted fixture operator/worker identity.
-The recording protocol does not yet attribute initiating operators, and
-no request can launch a production attempt.
+trusted operator/worker identity. The launcher captures the initiating
+sudo UID before clearing its environment, or UID zero for direct root
+invocation; request JSON cannot select it. Execution acceptance and apply
+require the same operator. The recording protocol does not yet attribute
+initiating operators, and no request can launch a production attempt.
 
 Production construction fixes the private policy at
 `/etc/mpkg/host-policy.toml`, the store at `/var/lib/mpkg`, and the host
@@ -66,6 +72,10 @@ The supported operations are:
 | `record` | `adopt` | The intent fields plus `resource_ids` |
 | `record` | `relinquish` | `expected_revision`, `resource_ids` |
 | `prepare` | `protected-inputs` | `expected_revision`, `source`, `source_is_nonsecret` |
+| `prepare` | `execution` | `expected_revision`, `resource_ids`, `interruption` |
+| `plan` | `inspect` or `accept` | `plan_id` |
+| `apply` | `execution` | `plan_id` |
+| `recover` | `attempt` | `attempt_id`, `expected_sequence` |
 | `export` | `current` | None |
 | `export` | `history` | None |
 | `export` | `attempts` | `limit`, `after_id` |

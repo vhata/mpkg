@@ -15,9 +15,14 @@ production package, service or Docker operations.
 immutable plans and separate authenticated operator acceptance in schema
 v5. Closed inert adapters bind dependency order, original consumers/checks,
 policy, inputs, artifacts and before-evidence. Each boundary revalidates
-that accepted target; changed facts require new acceptance. Production
-adapter registration and request dispatch remain unavailable, and old
-blocked Sonarr proposals never gain execution authority.
+that accepted target; changed facts require new acceptance.
+[Execution requests](manager-execution-requests.md) connect bounded
+preparation, exact acceptance, apply and recovery through the fixed helper.
+The launcher supplies operator identity. Attempt identity and reservation
+persist before dispatch, and repeated apply never relaunches that plan.
+Inert integration exercises the boundary; production adapter registration
+and collectors remain unavailable. Old blocked Sonarr proposals never gain
+execution authority.
 
 Native [transaction preparation](manager-native-preparation.md) uses a fixed
 libalpm bridge with copied installed metadata and isolated repository inputs.
@@ -101,9 +106,8 @@ Combined library checks use private temporary stores and synthetic query
 responses, including unavailable evidence, retained data, relinquishment
 and changed check declarations. This evidence is separate from disposable
 mechanism experiments and A1–A12 acceptance. Real installed-helper and
-sudo acceptance, an apply protocol and real native/Docker acceptance
-remain separate implementation
-and validation work. The [internal attempt journal](manager-attempt-journal.md)
+sudo acceptance, production effect adapters and real native/Docker
+acceptance remain separate implementation and validation work. The [internal attempt journal](manager-attempt-journal.md)
 retains original targets and append-only outcomes introduced in v4; its inert
 fixture writer grants no production execution authority.
 [Attempt supervision](manager-attempt-supervision.md) adds durable launch
@@ -112,8 +116,8 @@ through the host lock handoff; fake system-manager and owned inert-worker
 tests do not establish real systemd or application acceptance. [Evidence-backed recovery](manager-attempt-recovery.md) releases pending
 ownership only after complete fresh quiescence evidence, preserving unknown
 or failed effects and preventing further writes from the old attempt.
-Retries require a new plan and attempt. Production collectors and the
-public recovery request remain separate implementation work. The
+Retries require a new plan and attempt. Bounded recovery requests now
+connect the inert integration; production collectors remain separate work. The
 [declaration guide](manager-declarations.md) owns the schema; the original
 first-release contract and acceptance evidence requirements remain in
 force.
