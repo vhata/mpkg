@@ -138,6 +138,14 @@ checks and product acceptance.
   current/retained private scopes. `runtime_reporting` validates them
   against independent history. Explicit [status options](docs/manager-runtime-check-reporting.md)
   keep socket ownership, local-user access and application health separate.
+- `mpkg_manager.application_collection` derives original current and
+  retained versioned application predicates from verified policy and
+  read-only history. `application_checks` and its private worker verify
+  pinned Sonarr ping and Radarr root-folder discovery separately from
+  published-route reachability. The
+  [application-check guide](docs/manager-application-checks.md) defines
+  durable predicate binding, live guard checks, namespace/listener and
+  credential boundaries, and the remaining real Docker acceptance gates.
 - `mpkg_manager.observe_endpoint` uses a fixed isolated Python worker
   for bounded loopback HTTP status evidence. `endpoint_checks` collects
   required current and retained accepted predicates from actual host

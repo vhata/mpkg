@@ -76,6 +76,12 @@ Library-only [Compose preflight](manager-compose-input-bundles.md) remains
 a separate boundary. Explicit [runtime/access status options](manager-runtime-check-reporting.md)
 collect original current and retained predicates without equating socket
 ownership or a local-user operation with application functionality.
+Optional closed endpoint application metadata is retained in immutable
+snapshots and original adopted check definitions. Explicit
+[application collection](manager-application-checks.md) independently
+loads current and accepted roles and rechecks policy/history before
+credential delivery. Ordinary endpoint/runtime status remains
+functionally unverified; no installed application-check request is added.
 Legacy missing input captures remain unavailable. Recording commands can
 [explicitly capture declared nonsecret files](manager-recording-capture.md).
 [Protected preparation and recording](manager-protected-recording.md) now

@@ -112,12 +112,12 @@ measured against the first-release contract and acceptance scenarios.
 
 - [DOCKER] `apply-sonarr-port-change` — **Apply the accepted Sonarr port change to the same container.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#apply-sonarr-port-change), 2026-11-07.
-  - Depends on: `expose-execution-requests`, `render-compose-execution-bundles`, `verify-container-application-health`, `verify-runtime-consumer-access`
+  - Depends on: `expose-execution-requests`, `render-compose-execution-bundles`, `verify-runtime-consumer-access`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [DOCKER] `apply-compose-recreation` — **Apply an explicitly accepted Compose deployment change.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#apply-compose-recreation), 2026-11-07.
-  - Depends on: `expose-execution-requests`, `prepare-compose-images`, `verify-container-application-health`, `verify-runtime-consumer-access`, `apply-local-resource-properties`
+  - Depends on: `expose-execution-requests`, `prepare-compose-images`, `verify-runtime-consumer-access`, `apply-local-resource-properties`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [TOOLING] `resolve-manual-configuration-drift` — **Expose separate keep and restore decisions for manual edits.** Deliver the bounded scope and acceptance checks in the linked task.
@@ -148,7 +148,7 @@ measured against the first-release contract and acceptance scenarios.
 
 - [TOOLING] `accept-recording-and-accountability` — **Run first-release adoption and accountability scenarios.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#accept-recording-and-accountability), 2026-11-07.
-  - Depends on: `validate-installed-execution-boundary`, `render-compose-execution-bundles`, `compare-package-file-baselines`, `verify-container-application-health`, `verify-native-application-health`, `verify-runtime-consumer-access`
+  - Depends on: `validate-installed-execution-boundary`, `render-compose-execution-bundles`, `compare-package-file-baselines`, `verify-native-application-health`, `verify-runtime-consumer-access`
   - Blocked by: explicit approval of exact system commands, write contents and disposable target, and verified fixture/tool prerequisites.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
@@ -181,10 +181,6 @@ measured against the first-release contract and acceptance scenarios.
 ### P3 Low
 
 ### Unprioritized
-
-- [DOCKER] `verify-container-application-health` — **Verify the selected Sonarr and Radarr application predicates.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#verify-container-application-health), 2026-11-07.
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [NATIVE] `verify-native-application-health` — **Verify the selected native service behavior.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#verify-native-application-health), 2026-11-07.
