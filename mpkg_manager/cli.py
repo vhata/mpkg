@@ -58,6 +58,11 @@ def _parser():
     validate.add_argument("source", metavar="PATH")
     validate.add_argument("--json", action="store_true", help="emit a bounded JSON summary")
     descriptions = {
+        "prepare-execution": "prepare an exact selected execution scope",
+        "accept-plan": "accept an exact immutable plan",
+        "inspect-plan": "inspect the durable plan after a lost response",
+        "apply": "dispatch an accepted plan once",
+        "recover": "collect evidence for an interrupted attempt",
         "init": "explicitly initialize the host store using installed policy",
         "record": "record intent without adopting or applying resources",
         "prepare-inputs": "prepare protected input captures for an exact declaration and revision",
@@ -72,6 +77,15 @@ def _parser():
     for name, help_text in descriptions.items():
         command = commands.add_parser(name, help=help_text, description=help_text)
         command.add_argument("--json", action="store_true", help="emit a bounded JSON result")
+        if name == "prepare-execution":
+            command.add_argument("--expected-revision", type=_revision, required=True)
+            command.add_argument("--resource", action="append", required=True, metavar="UUID")
+            command.add_argument("--interruption", choices=["stop_and_require_recovery"], required=True)
+        if name in {"accept-plan", "inspect-plan", "apply"}:
+            command.add_argument("plan_id", metavar="UUID")
+        if name == "recover":
+            command.add_argument("attempt_id", metavar="UUID")
+            command.add_argument("--expected-sequence", type=_revision, required=True)
         if name in {"record", "adopt", "prepare-inputs"}:
             command.add_argument("source", metavar="PATH")
             command.add_argument("--source-is-nonsecret", action="store_true", required=True,
@@ -119,6 +133,19 @@ def _parser():
 
 def _request(options):
     command = options.command
+    if command in {"prepare-execution", "accept-plan", "inspect-plan", "apply", "recover"}:
+        verb, operation = {"prepare-execution": ("prepare", "execution"),
+            "accept-plan": ("plan", "accept"), "inspect-plan": ("plan", "inspect"),
+            "apply": ("apply", "execution"), "recover": ("recover", "attempt")}[command]
+        arguments = {"operation": operation}
+        if command == "prepare-execution":
+            arguments.update(expected_revision=options.expected_revision,
+                resource_ids=options.resource, interruption=options.interruption)
+        elif command == "recover":
+            arguments.update(attempt_id=options.attempt_id, expected_sequence=options.expected_sequence)
+        else:
+            arguments["plan_id"] = options.plan_id
+        return json.dumps({"version": PROTOCOL_VERSION, "verb": verb, "arguments": arguments}).encode()
     arguments = {"operation": {"init": "initialize", "record": "intent",
                                "prepare-inputs": "protected-inputs"}.get(command, command)}
     if command in {"attempts", "attempt"}:
@@ -168,7 +195,9 @@ def _request(options):
 
 
 def _human_result(command, result):
-    if command == "init":
+    if command in {"prepare-execution", "accept-plan", "inspect-plan", "apply", "recover"}:
+        print(json.dumps(result, sort_keys=True))
+    elif command == "init":
         print(f"Initialized host {result['host_id']} at revision 0.")
     elif command == "prepare-inputs":
         print(f"Prepared protected inputs at revision {result['revision']}: {result['preparation_id']}.")
@@ -289,7 +318,7 @@ def _host_failure(options, code, category, *, path=None):
         print(json.dumps(value, sort_keys=True))
     else:
         labels = {"authentication": "Authentication failed", "transport": "Helper transport failed",
-                  "rejected": "Request rejected", "uncertain": "Recording outcome uncertain",
+                  "rejected": "Request rejected", "uncertain": "Mutation outcome uncertain",
                   "validation": "Invalid request"}
         print(f"{labels[category]} ({code}).")
         if category == "uncertain":

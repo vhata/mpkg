@@ -75,6 +75,14 @@ def main():
             raise ValueError
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
         os.umask(0o077)
+        # sudo sets SUDO_UID; root is trusted when invoking directly. Capture
+        # it before clearing the environment, never from request JSON.
+        operator = os.environ.get("SUDO_UID", "0")
+        if not operator.isascii() or not operator.isdecimal() or len(operator) > 10:
+            raise ValueError
+        operator_uid = int(operator)
+        if not 0 <= operator_uid < 2**32 - 1:
+            raise ValueError
         os.environ.clear()
         os.environ.update({"PATH": "/usr/bin", "LANG": "C.UTF-8", "LC_ALL": "C.UTF-8"})
         os.chdir("/")
@@ -85,7 +93,7 @@ def main():
             from mpkg_manager.attempt_worker import main as dispatch_worker
             return dispatch_worker(sys.argv[1])
         from mpkg_manager.host_helper import main as dispatch
-        return dispatch()
+        return dispatch(operator_uid=operator_uid)
     except BaseException:
         # Never emit a traceback, import error, source path or request value.
         # A nonblocking write also avoids an unresponsive caller retaining root.

@@ -45,6 +45,9 @@ class HostRequest:
     after_id: str | None = None
     attempt_id: str | None = None
     after_event: int = 0
+    plan_id: str | None = None
+    expected_sequence: int = 0
+    interruption: str | None = None
 
 
 def _object(pairs):
@@ -114,6 +117,38 @@ def _status(arguments):
                        **options)
 
 
+def _execution(verb, arguments):
+    operation = arguments.get("operation")
+    keys = {
+        ("prepare", "execution"): {"operation", "expected_revision", "resource_ids", "interruption"},
+        ("plan", "accept"): {"operation", "plan_id"},
+        ("plan", "inspect"): {"operation", "plan_id"},
+        ("apply", "execution"): {"operation", "plan_id"},
+        ("recover", "attempt"): {"operation", "attempt_id", "expected_sequence"},
+    }
+    if type(operation) is not str or (verb, operation) not in keys:
+        raise RequestError("operation_unsupported")
+    if set(arguments) != keys[verb, operation]:
+        raise RequestError("invalid_request")
+    values = {}
+    for name in ("plan_id", "attempt_id"):
+        if name in arguments:
+            _selection([arguments[name]], stable=True)
+            values[name] = arguments[name]
+    for name in ("expected_revision", "expected_sequence"):
+        if name in arguments:
+            value = arguments[name]
+            if type(value) is not int or not 0 <= value < 2**63 - 1:
+                raise RequestError("invalid_request")
+            values[name] = value
+    if verb == "prepare":
+        values["resource_ids"] = _selection(arguments["resource_ids"], stable=True)
+        if arguments["interruption"] != "stop_and_require_recovery":
+            raise RequestError("operation_unsupported")
+        values["interruption"] = "stop_and_require_recovery"
+    return HostRequest(verb, operation, **values)
+
+
 def parse_request(raw):
     """Validate one UTF-8 JSON object; no lookup, file access or mutation."""
     if type(raw) is not bytes or not raw or len(raw) > MAX_REQUEST_BYTES:
@@ -130,6 +165,8 @@ def parse_request(raw):
             raise RequestError("invalid_request")
         if verb == "observe":
             return _status(arguments)
+        if verb in {"plan", "apply", "recover"} or (verb == "prepare" and arguments.get("operation") == "execution"):
+            return _execution(verb, arguments)
         if verb not in {"record", "export", "prepare"}:
             raise RequestError("operation_unsupported")
         operation = arguments.get("operation")

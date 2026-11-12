@@ -218,7 +218,9 @@ class AttemptRecovery:
         _require(type(_fixture) is bool)
         self.fixture, self.boot, self.collector = _fixture, _fixture_boot, _collector
 
-    def recover(self, attempt_id, *, expected_sequence):
+    def recover(self, attempt_id, *, expected_sequence, operator_uid=None):
+        operator_uid = self.owner_uid if operator_uid is None else operator_uid
+        _require(type(operator_uid) is int and 0 <= operator_uid < 2**32 - 1, "invalid_recovery_request")
         _require(_uuid(attempt_id) and type(expected_sequence) is int and expected_sequence >= 0,
                  "invalid_recovery_request")
         _require(self.fixture and callable(self.collector), "recovery_unavailable")
@@ -242,7 +244,7 @@ class AttemptRecovery:
                     if time.monotonic() - started > EVIDENCE_SECONDS:
                         evidence = _unavailable(request)
                     policy.policy  # Revalidate the pinned policy before committing.
-                    raw = _encode_evidence(evidence, request, self.owner_uid)
+                    raw = _encode_evidence(evidence, request, operator_uid)
                     outcome["appending"] = True
                     result = _FixtureJournal(store)._append_recovery(attempt_id,
                         expected_sequence=expected_sequence, outcome=raw)
