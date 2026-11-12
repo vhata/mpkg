@@ -3,8 +3,8 @@
 `mpkg_manager.attempt_supervisor` and `attempt_worker` add a fixed launch
 adapter, durable launch reservations and a worker that holds the host
 application lock through an attempt. Their executable test assembly accepts
-only inert fixture attempts. The installed helper still has no apply or
-launch request, and production construction rejects fixture authority
+only inert fixture attempts. The installed [request boundary](manager-execution-requests.md) recognizes
+apply requests, while production construction rejects fixture authority
 before dispatch or execution. Native and Docker effects remain unavailable.
 
 ## Reservation and lock handoff

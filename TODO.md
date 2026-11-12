@@ -80,14 +80,9 @@ measured against the first-release contract and acceptance scenarios.
   - Reproduction: `git worktree list --porcelain | awk '/^worktree / { print substr($0, 10); exit }'` returns pipeline statuses `141 0` in this checkout. Under `set -euo pipefail`, cleanup exits 141 after its dry-run heading, before examining any branch.
   - Verify large worktree inventories, correct main-worktree identification, and preservation of dirty worktrees and unique ignored evidence. No branches or worktrees were removed during the reproduction.
 
-- [NATIVE] `apply-native-transactions` — **Commit only an exactly accepted native transaction.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#apply-native-transactions), 2026-11-07.
-  - Depends on: `expose-execution-requests`
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
 - [NATIVE] `build-aur-artifacts` — **Build accepted AUR sources under an isolated unprivileged identity.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#build-aur-artifacts), 2026-11-07.
-  - Depends on: `apply-native-transactions`, `expose-execution-requests`
+  - Depends on: `apply-native-transactions`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [NATIVE] `install-aur-artifacts` — **Require separate acceptance of built AUR package artifacts.** Deliver the bounded scope and acceptance checks in the linked task.
@@ -100,24 +95,19 @@ measured against the first-release contract and acceptance scenarios.
   - Depends on: `render-compose-execution-bundles`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
-- [NATIVE] `apply-local-resource-properties` — **Apply bounded local account and directory prerequisites.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#apply-local-resource-properties), 2026-11-07.
-  - Depends on: `expose-execution-requests`
-  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
-
 - [NATIVE] `apply-native-service-configuration` — **Apply the selected native configuration and service change.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#apply-native-service-configuration), 2026-11-07.
-  - Depends on: `expose-execution-requests`, `verify-native-application-health`, `apply-local-resource-properties`
+  - Depends on: `verify-native-application-health`, `apply-local-resource-properties`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [DOCKER] `apply-sonarr-port-change` — **Apply the accepted Sonarr port change to the same container.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#apply-sonarr-port-change), 2026-11-07.
-  - Depends on: `expose-execution-requests`, `render-compose-execution-bundles`, `verify-runtime-consumer-access`
+  - Depends on: `render-compose-execution-bundles`, `verify-runtime-consumer-access`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [DOCKER] `apply-compose-recreation` — **Apply an explicitly accepted Compose deployment change.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#apply-compose-recreation), 2026-11-07.
-  - Depends on: `expose-execution-requests`, `prepare-compose-images`, `verify-runtime-consumer-access`, `apply-local-resource-properties`
+  - Depends on: `prepare-compose-images`, `verify-runtime-consumer-access`, `apply-local-resource-properties`
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
 - [TOOLING] `resolve-manual-configuration-drift` — **Expose separate keep and restore decisions for manual edits.** Deliver the bounded scope and acceptance checks in the linked task.
@@ -142,7 +132,7 @@ measured against the first-release contract and acceptance scenarios.
 
 - [TOOLING] `validate-installed-execution-boundary` — **Validate the installed privilege and worker boundary in a disposable guest.** Deliver the bounded scope and acceptance checks in the linked task.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#validate-installed-execution-boundary), 2026-11-07.
-  - Depends on: `expose-execution-requests`, `export-and-recover-host-history`
+  - Depends on: `export-and-recover-host-history`
   - Blocked by: explicit approval of exact system commands, write contents and disposable target, and verified fixture/tool prerequisites.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
@@ -202,6 +192,10 @@ measured against the first-release contract and acceptance scenarios.
   - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#record-retirement-dispositions), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
 
-- [TOOLING] `expose-execution-requests` — **Connect bounded plan, apply and recover requests.** Deliver the bounded scope and acceptance checks in the linked task.
-  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#expose-execution-requests), 2026-11-07.
+- [NATIVE] `apply-native-transactions` — **Commit only an exactly accepted native transaction.** Deliver the bounded scope and acceptance checks in the linked task.
+  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#apply-native-transactions), 2026-11-07.
+  - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.
+
+- [NATIVE] `apply-local-resource-properties` — **Apply bounded local account and directory prerequisites.** Deliver the bounded scope and acceptance checks in the linked task.
+  - Source: user-requested [execution breakdown](plans/2026-11-07-execution-work-breakdown.md#apply-local-resource-properties), 2026-11-07.
   - Acceptance: the linked task defines ownership, scope, failure cases and required evidence; slice completion does not waive A1–A12.

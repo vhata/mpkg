@@ -36,10 +36,12 @@ _ERROR_CODES = frozenset({
     "status_no_recorded_snapshot", "status_unavailable", "status_context_changed", "status_scope_limit",
     "input_capture_rejected", "store_migration_required", "attempt_recovery_required",
     "invalid_attempt_page", "attempt_history_requires_migration", "attempt_history_size_limit",
+    "execution_adapter_unavailable", "execution_request_rejected", "execution_outcome_unknown",
+    "operator_identity_unavailable",
     "attempt_cursor_missing", "attempt_event_cursor_missing", "attempt_missing",
 })
 _UNCERTAIN_CODES = {"commit_outcome_unknown", "record_outcome_unknown", "response_size_limit",
-                    "internal_error", "installed_helper_unavailable"}
+                    "internal_error", "installed_helper_unavailable", "execution_outcome_unknown"}
 _TRANSPORT_CODES = {"request_timeout", "transport_unavailable", "installed_helper_unavailable"}
 _IDENTIFIER = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\Z")
 _HASH = re.compile(r"[0-9a-f]{64}\Z")
@@ -271,8 +273,44 @@ def _current(value):
     _require(value["revision"] != 0 or not value["resources"])
 
 
+def _execution_result(value, request):
+    if request.verb in {"prepare", "plan"}:
+        _keys(value, {"plan_id", "revision", "accepted", "acceptance_id", "actions", "executable", "authority", "interruption"})
+        _uuid(value["plan_id"])
+        if request.plan_id is not None:
+            _require(value["plan_id"] == request.plan_id)
+        _integer(value["revision"], minimum=1)
+        if request.expected_revision is not None:
+            _require(value["revision"] == request.expected_revision)
+        _require(type(value["accepted"]) is bool and value["executable"] is False
+                 and value["authority"] == "fixture_only" and value["interruption"] == "stop_and_require_recovery")
+        if value["accepted"]:
+            _uuid(value["acceptance_id"])
+        else:
+            _require(value["acceptance_id"] is None)
+        _require(type(value["actions"]) is list and 1 <= len(value["actions"]) <= 128)
+        for action in value["actions"]:
+            _keys(action, {"stable_resource_id", "adapter", "effect", "required_check_count", "artifact_count"})
+            _uuid(action["stable_resource_id"])
+            _enum(action["adapter"], {"inert_resource_v1"})
+            _enum(action["effect"], {"inert_change", "inert_verify"})
+            _integer(action["required_check_count"])
+            _integer(action["artifact_count"])
+    elif request.verb == "apply":
+        _keys(value, {"attempt_id", "launch", "executable"})
+        _uuid(value["attempt_id"])
+        _enum(value["launch"], {"accepted", "rejected", "unknown", "existing"})
+        _require(value["executable"] is False)
+    else:
+        _keys(value, {"attempt_id", "disposition"})
+        _require(value["attempt_id"] == request.attempt_id)
+        _enum(value["disposition"], {"blocked", "quiescent"})
+
+
 def _result(value, request):
-    if request.verb == "prepare":
+    if request.verb in {"plan", "apply", "recover"} or (request.verb == "prepare" and request.operation == "execution"):
+        _execution_result(value, request)
+    elif request.verb == "prepare":
         _keys(value, {"host_id", "revision", "preparation_id", "protected_count"})
         _uuid(value["host_id"])
         _uuid(value["preparation_id"])
@@ -321,7 +359,7 @@ def _response(reply, request):
     code = value["error"]["code"]
     _enum(code, _ERROR_CODES)
     _require(reply.returncode == (1 if code in _TRANSPORT_CODES else 2))
-    if request.verb == "record" and code in _UNCERTAIN_CODES:
+    if request.verb in {"record", "prepare", "plan", "apply", "recover"} and code in _UNCERTAIN_CODES:
         raise HostClientError(code, "uncertain", 7)
     if code in _TRANSPORT_CODES or code in _UNCERTAIN_CODES:
         raise HostClientError(code, "transport", 5)
@@ -336,16 +374,16 @@ def request_host(raw, *, _sender=None):
         try:
             return _response(reply, request)
         except (ValueError, TypeError, UnicodeError, RecursionError, OverflowError, KeyError):
-            uncertain = request.verb == "record"
+            uncertain = request.verb in {"record", "prepare", "plan", "apply", "recover"}
             raise HostClientError("invalid_helper_response", "uncertain" if uncertain else "transport",
                                   7 if uncertain else 5) from None
     except _TransportFailure as error:
-        uncertain = error.dispatched and request.verb == "record"
+        uncertain = error.dispatched and request.verb in {"record", "prepare", "plan", "apply", "recover"}
         raise HostClientError(error.code, "uncertain" if uncertain else "transport",
                               7 if uncertain else 5) from None
     except KeyboardInterrupt:
         # Covers cancellation between transport completion and response
         # validation as well as the boundary between authorization and spawn.
-        uncertain = request.verb == "record"
+        uncertain = request.verb in {"record", "prepare", "plan", "apply", "recover"}
         raise HostClientError("helper_interrupted", "uncertain" if uncertain else "transport",
                               7 if uncertain else 5) from None

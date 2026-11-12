@@ -76,7 +76,8 @@ checks and product acceptance.
   Its [recovery guide](docs/manager-attempt-recovery.md) defines complete
   dispatch, unit/cgroup, boot, package-lock and engine/resource evidence,
   the durable mutation gate and sealed retry ancestry. Inert collectors
-  exercise the contract; production collectors and requests remain absent.
+  exercise the contract through bounded recovery requests; production
+  collectors remain absent.
 - `mpkg_manager.observe_native` and `mpkg_manager.observe_compose` collect
   time-bounded observations through closed read-only queries. Their
   [native](docs/manager-observations.md) and
@@ -157,9 +158,11 @@ checks and product acceptance.
   operator acceptance in schema v5, with verified-backup migration.
   Its [authorization guide](docs/manager-execution-plans.md) binds original
   authority, inputs, checks, artifacts and expected action progression.
-  Closed inert adapters exercise derivation and boundary revalidation;
-  production adapters and requests remain unavailable. Existing blocked
-  Sonarr proposals retain their original non-executable meaning.
+  [Execution requests](docs/manager-execution-requests.md) connect bounded
+  preparation, exact acceptance, apply and recovery to the fixed helper.
+  Inert boundary tests exercise durable dispatch and freshness; installed
+  production adapters and recovery collectors remain unavailable. Existing
+  blocked Sonarr proposals retain their original non-executable meaning.
 - `mpkg_manager.planning` compares validated intent, trusted store
   projections and current facts without reads or effects. The
   [comparison guide](docs/manager-planning.md) owns source/identity

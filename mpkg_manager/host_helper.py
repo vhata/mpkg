@@ -40,6 +40,8 @@ _ERROR_CODES = frozenset({
     "status_no_recorded_snapshot", "status_unavailable", "status_context_changed", "status_scope_limit",
     "input_capture_rejected", "store_migration_required", "attempt_recovery_required",
     "invalid_attempt_page", "attempt_history_requires_migration", "attempt_history_size_limit",
+    "execution_adapter_unavailable", "execution_request_rejected", "execution_outcome_unknown",
+    "operator_identity_unavailable",
     "attempt_cursor_missing", "attempt_event_cursor_missing", "attempt_missing",
 })
 _STORE_ERRORS = _ERROR_CODES & frozenset({
@@ -130,17 +132,22 @@ class HostBoundary:
     """Trusted construction only. The installed entrypoint supplies no overrides."""
 
     def __init__(self, *, policy_path=POLICY_PATH, store_directory=STORE_DIRECTORY,
-                 mutation_lock=MUTATION_LOCK, owner_uid=0):
+                 mutation_lock=MUTATION_LOCK, owner_uid=0, operator_uid=None, _execution=None):
         self._policy_path = policy_path
         self._store_directory = store_directory
         self._mutation_lock = Path(mutation_lock)
         self._owner_uid = owner_uid
+        self._operator_uid = operator_uid
+        self._execution = _execution
 
     def dispatch(self, request):
         if type(request) is not HostRequest:
             raise BoundaryError("invalid_request")
         if type(self._owner_uid) is not int or self._owner_uid != os.geteuid():
             raise BoundaryError("host_owner_required")
+        if request.verb in {"plan", "apply", "recover"} or (request.verb == "prepare" and request.operation == "execution"):
+            from .execution_requests import dispatch_execution
+            return dispatch_execution(self, request)
         with load_host_policy(path=self._policy_path, owner_uid=self._owner_uid) as policy:
             accepted_policy = policy.policy
             if request.verb == "observe" and request.operation == "status":
@@ -358,7 +365,7 @@ def write_response(fd, raw, *, timeout=TRANSPORT_SECONDS):
             pass
 
 
-def main():
+def main(*, operator_uid=None):
     """Fixed installed invocation; no command-line options or environment input."""
     import sys
     transport_failed = False
@@ -366,7 +373,7 @@ def main():
         raw = encode_response(_error("invalid_request"))
     else:
         try:
-            raw = handle_request(read_request(0))
+            raw = handle_request(read_request(0), boundary=HostBoundary(operator_uid=operator_uid))
         except BoundaryError as error:
             raw = encode_response(_error(error.code))
             # The byte limit is a rejected request; timeout or input failure

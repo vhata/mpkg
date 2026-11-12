@@ -417,16 +417,26 @@ class _FixturePlanner(ExecutionPlanner):
             # Never expose its text or imply that earlier work rolled back.
             raise ExecutionPlanError("execution_outcome_unknown") from None
 
-    def _run_inert(self, binding, worker, *, mutation_lock):
+    def _run_inert(self, binding, worker, *, mutation_lock, reserved_attempt=None):
         with _mutation_lock(mutation_lock, self.store.owner_uid):
-            attempt = self.create_attempt(binding, worker).as_dict()
+            if reserved_attempt is None:
+                attempt = self.create_attempt(binding, worker).as_dict()
+            else:
+                self.validate(binding)
+                from .attempt_supervisor import _worker_identity
+                _worker_identity(self.store, reserved_attempt, worker.boot_id, fixture=True)
+                attempt = read_attempt(self.store, reserved_attempt).as_dict()
+                _require(attempt["plan_id"] == binding.plan_id and worker.operator_uid == binding.operator_uid)
+                _require(attempt["supervision"]["reserved"] and not attempt["supervision"]["released"])
+
             identity = attempt["attempt_id"]
             writer = _FixtureJournal(self.store)
             def append(kind, outcome, action_id=None):
                 current = read_attempt(self.store, identity).as_dict()
                 return writer.append(identity, expected_sequence=current["sequence"],
                     action_id=action_id, kind=kind, outcome=outcome).as_dict()
-            append("launch_reserved", "reserved")
+            if reserved_attempt is None:
+                append("launch_reserved", "reserved")
             append("worker_started", "owned")
             completed = []
             try:
