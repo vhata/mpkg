@@ -43,6 +43,23 @@ Inspect plan and attempt history before further action. Preparation creates
 a new proposal on each invocation; only acceptance/apply have exact-plan
 repeat semantics.
 
+Before creating a different attempt, apply derives retry ancestry from the
+complete authenticated history under the host lock. Overlap includes every
+derived prerequisite, not only explicitly selected roots. Both preparation
+and acceptance must postdate every overlapping recovery or failed/unverified
+completion. Accepting an old proposal after recovery is insufficient; a later
+successful retry cannot make an older acceptance valid again.
+
+A fresh retry links to the single latest unresolved lineage. Successful
+linked descendants resolve only the resources they actually verified;
+partial success preserves the remaining ancestor scope. Disjoint attempts
+do not create retry ancestry. Multiple unrelated overlapping lineages, or an
+overlapping attempt without a qualifying terminal disposition, block new
+dispatch. The current single-predecessor schema cannot represent a lineage
+merge, so the helper does not choose one branch or discard the others.
+There is no caller-supplied predecessor or bypass field. Same-plan repeats
+still return the original attempt before these new-attempt checks.
+
 Recovery uses the existing lock, exact journal sequence and complete fresh
 quiescence evidence. It does not infer successful effects, kill workers,
 delete locks or replay actions. Unknown evidence keeps mutations blocked.

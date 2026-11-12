@@ -181,3 +181,163 @@ class ExecutionRequests(unittest.TestCase):
         for command in ('accept-plan', 'inspect-plan', 'apply'):
             with redirect_stdout(StringIO()):
                 self.assertEqual(main([command, plan['plan_id'], '--json'], _sender=self.sender), 0)
+
+    def apply_plan(self, plan):
+        return self.request('apply', operation='execution', plan_id=plan['plan_id'])
+
+    def recover_attempt(self, result):
+        attempt = journal.read_attempt(self.f.store, result['attempt_id']).as_dict()
+        recovered = self.request('recover', operation='attempt', attempt_id=result['attempt_id'],
+                                 expected_sequence=attempt['sequence'])
+        self.assertEqual(recovered['disposition'], 'quiescent')
+
+    def selected_plan(self, identities):
+        revision = self.f.store.current()['revision']
+        plan = self.request('prepare', operation='execution', expected_revision=revision,
+            resource_ids=identities, interruption='stop_and_require_recovery')
+        return self.request('plan', operation='accept', plan_id=plan['plan_id'])
+
+    def test_preaccepted_spare_cannot_bypass_recovery_chronology(self):
+        first, spare = self.accepted(), self.accepted()
+        original = self.apply_plan(first)
+        self.recover_attempt(original)
+        self.execute = True
+        before = len(journal.list_attempts(self.f.store))
+        with self.assertRaisesRegex(client.HostClientError, 'execution_request_rejected'):
+            self.apply_plan(spare)
+        self.assertEqual(len(journal.list_attempts(self.f.store)), before)
+        self.assertEqual(self.f.adapter.executions, [])
+        self.assertEqual(len(self.launches), 1)
+        repeat = self.apply_plan(first)
+        self.assertEqual(repeat['attempt_id'], original['attempt_id'])
+        self.assertEqual(repeat['launch'], 'existing')
+
+    def test_accepting_an_old_proposal_after_recovery_is_insufficient(self):
+        first = self.accepted()
+        old = self.prepare()
+        original = self.apply_plan(first)
+        self.recover_attempt(original)
+        accepted_later = self.request('plan', operation='accept', plan_id=old['plan_id'])
+        with self.assertRaisesRegex(client.HostClientError, 'execution_request_rejected'):
+            self.apply_plan(accepted_later)
+        self.assertEqual(len(self.launches), 1)
+
+    def test_fresh_retries_link_the_latest_single_lineage_and_execute(self):
+        original = self.apply_plan(self.accepted())
+        self.recover_attempt(original)
+        second = self.apply_plan(self.accepted())
+        self.assertEqual(journal.read_attempt(self.f.store, second['attempt_id']).as_dict()['predecessor'],
+                         original['attempt_id'])
+        self.recover_attempt(second)
+        self.execute = True
+        final_plan = self.accepted()
+        final = self.apply_plan(final_plan)
+        attempt = journal.read_attempt(self.f.store, final['attempt_id']).as_dict()
+        self.assertEqual(attempt['predecessor'], second['attempt_id'])
+        self.assertEqual(attempt['state'], 'observed-complete')
+        self.assertEqual(self.f.adapter.executions, [self.f.ids['first'], self.f.ids['second']])
+        self.assertEqual(self.apply_plan(final_plan)['attempt_id'], final['attempt_id'])
+        # A verified descendant resolves its ancestors without preventing a
+        # later fresh no-op plan from verifying the satisfied intent.
+        after_success = self.apply_plan(self.accepted())
+        latest = journal.read_attempt(self.f.store, after_success['attempt_id']).as_dict()
+        self.assertEqual(latest['state'], 'observed-complete')
+        self.assertIsNone(latest['predecessor'])
+        self.assertEqual(len(self.f.adapter.executions), 2)
+
+    def test_dependency_overlap_is_retry_scope_even_with_different_roots(self):
+        original = self.apply_plan(self.selected_plan([self.f.ids['first']]))
+        self.recover_attempt(original)
+        fresh = self.selected_plan([self.f.ids['second']])
+        retry = self.apply_plan(fresh)
+        self.assertEqual(journal.read_attempt(self.f.store, retry['attempt_id']).as_dict()['predecessor'],
+                         original['attempt_id'])
+
+    def test_unrelated_overlapping_legacy_lineages_block_new_dispatch(self):
+        # Assemble authenticated historical attempts as the old boundary did:
+        # neither has a predecessor, although both affect the same resources.
+        from dataclasses import replace
+        from mpkg_manager.attempt_supervisor import _append
+        first, second = self.accepted(), self.accepted()
+        original = self.apply_plan(first)
+        self.recover_attempt(original)
+        binding = self.f.planner.binding(second['acceptance_id'])
+        legacy = self.f.planner.create_attempt(binding, replace(self.f.worker, operator_uid=1234)).as_dict()
+        _append(self.f.store, legacy['attempt_id'], 'launch_reserved', 'reserved')
+        self.recover_attempt(legacy)
+        with self.assertRaisesRegex(client.HostClientError, 'execution_request_rejected'):
+            self.apply_plan(self.accepted())
+        self.assertEqual(len(journal.list_attempts(self.f.store)), 2)
+        self.assertEqual(len(self.launches), 1)
+        self.assertEqual(self.f.adapter.executions, [])
+
+    def test_disjoint_recovery_does_not_invent_retry_ancestry(self):
+        from mpkg_manager.declarations import load_declaration
+        declaration = load_declaration(fixtures.SOURCE.replace(b'requires=["first"]', b''))
+        self.f.store.adopt(declaration, 1, ['first', 'second'])
+        original = self.apply_plan(self.selected_plan([self.f.ids['first']]))
+        self.recover_attempt(original)
+        self.execute = True
+        independent = self.apply_plan(self.selected_plan([self.f.ids['second']]))
+        attempt = journal.read_attempt(self.f.store, independent['attempt_id']).as_dict()
+        self.assertIsNone(attempt['predecessor'])
+        self.assertEqual(attempt['state'], 'observed-complete')
+
+    def test_partial_success_does_not_erase_unchecked_ancestor_scope(self):
+        original = self.apply_plan(self.accepted())
+        self.recover_attempt(original)
+        self.execute = True
+        partial = self.apply_plan(self.selected_plan([self.f.ids['first']]))
+        self.assertEqual(journal.read_attempt(self.f.store, partial['attempt_id']).as_dict()['state'],
+                         'observed-complete')
+        complete = self.apply_plan(self.accepted())
+        self.assertEqual(journal.read_attempt(self.f.store, complete['attempt_id']).as_dict()['predecessor'],
+                         original['attempt_id'])
+        self.assertEqual(self.f.adapter.executions, [self.f.ids['first'], self.f.ids['second']])
+
+    def test_combined_scope_with_two_recovered_lineages_is_ambiguous(self):
+        from mpkg_manager.declarations import load_declaration
+        declaration = load_declaration(fixtures.SOURCE.replace(b'requires=["first"]', b''))
+        self.f.store.adopt(declaration, 1, ['first', 'second'])
+        for logical in ('first', 'second'):
+            original = self.apply_plan(self.selected_plan([self.f.ids[logical]]))
+            self.recover_attempt(original)
+        combined = self.selected_plan(list(self.f.ids.values()))
+        with self.assertRaisesRegex(client.HostClientError, 'execution_request_rejected'):
+            self.apply_plan(combined)
+        self.assertEqual(len(self.launches), 2)
+        self.assertEqual(len(journal.list_attempts(self.f.store)), 2)
+
+    def test_successful_noop_retry_does_not_revive_pre_recovery_acceptance(self):
+        for identity in self.f.ids.values():
+            self.f.adapter.seed(identity, satisfied=True)
+        first, spare = self.accepted(), self.accepted()
+        original = self.apply_plan(first)
+        self.recover_attempt(original)
+        self.execute = True
+        fresh = self.apply_plan(self.accepted())
+        self.assertEqual(journal.read_attempt(self.f.store, fresh['attempt_id']).as_dict()['state'],
+                         'observed-complete')
+        with self.assertRaisesRegex(client.HostClientError, 'execution_request_rejected'):
+            self.apply_plan(spare)
+        self.assertEqual(self.f.adapter.executions, [])
+        self.assertEqual(len(self.launches), 2)
+
+    def test_recovered_completion_still_requires_retry_ancestry(self):
+        self.execute = True
+        append = journal._FixtureJournal.append
+        def lose_worker_completion(writer, identity, **arguments):
+            if arguments['kind'] == 'worker_completed':
+                return journal.read_attempt(writer.store, identity)
+            return append(writer, identity, **arguments)
+        with patch.object(journal._FixtureJournal, 'append', lose_worker_completion):
+            original = self.apply_plan(self.accepted())
+        before = journal.read_attempt(self.f.store, original['attempt_id']).as_dict()
+        self.assertEqual(before['state'], 'observed-complete')
+        self.assertFalse(before['supervision']['released'])
+        self.recover_attempt(original)
+        retry = self.apply_plan(self.accepted())
+        attempt = journal.read_attempt(self.f.store, retry['attempt_id']).as_dict()
+        self.assertEqual(attempt['predecessor'], original['attempt_id'])
+        self.assertEqual(attempt['state'], 'observed-complete')
+        self.assertEqual(len(self.f.adapter.executions), 2)
