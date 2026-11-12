@@ -1,7 +1,7 @@
 """Version-bound application predicates for trusted current/retained roles.
 
-This library has no installed request or declaration extension. Its caller
-must independently bind predicates to accepted history; JSON is not authority.
+The application_collection entrypoints derive predicates and guards from
+trusted durable history. This module owns private observation mechanics.
 """
 from contextlib import contextmanager
 from dataclasses import dataclass, field, asdict
@@ -20,44 +20,10 @@ from ._endpoint_process import run_probe
 from ._runtime_proc import MAX_PROCESSES
 from .declarations import canonical_json
 from .runtime_checks import RuntimeCheckManifest, _decode_scope
+from .application_predicates import ApplicationPredicate, VERSIONS, predicate_from_metadata
 
-VERSIONS = {"sonarr": ("4.0.20.3014", "sha256:076be80fcab2bd0acdea4c8c5f604318f2feb61aeeaacd71cfcb1983a8fb50bf"),
-            "radarr": ("6.4.4.10685", "sha256:a9b08c177649ae4e2c03f4ab375140ac8e633f87a781eeaa7a0e7f1e85b112a8")}
 FORMAT = runtime._FORMAT[:-1] + ',"image":{{json .Image}},"ports":{{json .NetworkSettings.Ports}},"networks":{{json .NetworkSettings.Networks}}}'
 INSPECT = runtime.DOCKER + ("container", "inspect", "--format", FORMAT, "--")
-
-
-def _require(condition):
-    if not condition:
-        raise ValueError
-
-
-@dataclass(frozen=True)
-class ApplicationPredicate:
-    application: str
-    version: str
-    port: int
-    base: str = ""
-    root_id: int = 0
-    root_path: str = ""
-    sentinel: str = ""
-
-    def __post_init__(self):
-        try:
-            _require(self.application in VERSIONS and self.version == VERSIONS[self.application][0])
-            _require(type(self.port) is int and 1 <= self.port <= 65535)
-            _require(type(self.base) is str and re.fullmatch(r"(?:/[A-Za-z0-9_-]+)*", self.base))
-            if self.application == "sonarr":
-                _require((self.root_id, self.root_path, self.sentinel) == (0, "", ""))
-            else:
-                _require(type(self.root_id) is int and 0 < self.root_id < 2**31)
-                _require(re.fullmatch(r"/(?:[A-Za-z0-9 _.-]+/)*[A-Za-z0-9 _.-]+", self.root_path))
-                _require(all(part not in (".", "..") for part in self.root_path.split("/")))
-                _require(re.fullmatch(r"[A-Za-z0-9 _().-]{1,255}", self.sentinel))
-                _require(self.sentinel not in (".", ".."))
-            _require(len(canonical_json(asdict(self))) < 8192)
-        except (ValueError, TypeError, KeyError):
-            raise ValueError("invalid_application_predicate") from None
 
 
 @dataclass(frozen=True)
@@ -82,11 +48,14 @@ class ApplicationObservation:
                                 "selected_predicate_only_not_general_application_health"]}
 
     def matches(self, manifest, scope, predicate, *, now=None, max_age_seconds=60):
-        when = datetime.now(timezone.utc) if now is None else now
-        age = (when - datetime.fromisoformat(self.observed_at.replace("Z", "+00:00"))).total_seconds()
-        return (type(max_age_seconds) is int and 0 <= max_age_seconds <= 300
-                and 0 <= age <= max_age_seconds
-                and self._binding == _binding(manifest, scope, predicate))
+        try:
+            when = datetime.now(timezone.utc) if now is None else now
+            age = (when - datetime.fromisoformat(self.observed_at.replace("Z", "+00:00"))).total_seconds()
+            return (type(max_age_seconds) is int and 0 <= max_age_seconds <= 300
+                    and 0 <= age <= max_age_seconds
+                    and self._binding == _binding(manifest, scope, predicate))
+        except (ValueError, TypeError, KeyError, AttributeError):
+            return False
 
 
 def _binding(manifest, scope, predicate):
@@ -94,7 +63,8 @@ def _binding(manifest, scope, predicate):
         raise ValueError("invalid_application_context")
     manifest.__post_init__()
     predicate.__post_init__()
-    if scope not in manifest._scopes:
+    if (scope not in manifest._scopes
+            or predicate != predicate_from_metadata(json.loads(scope)["context"]["check"].get("application"))):
         raise ValueError("invalid_application_context")
     return canonical_json({"host": manifest.host_id, "revision": manifest.revision,
                            "snapshot": manifest._snapshot_id, "selection": None if manifest._selection is None else list(manifest._selection),
@@ -186,7 +156,7 @@ def published_route(application, url, timeout):
         return "match"
 
 
-def observe_application(manifest, scope, predicate, *, context_guard, credential=None,
+def _observe_application(manifest, scope, predicate, *, context_guard, credential=None,
                         query_runner=None, namespace_holder=hold_namespace,
                         application_runner=run_application, route_runner=published_route):
     """Observe an independently accepted original role and versioned predicate.
@@ -227,6 +197,8 @@ def observe_application(manifest, scope, predicate, *, context_guard, credential
         with namespace_holder(data["pid"]) as namespace:
             if collector.capture_application(context, predicate) != before:
                 raise ValueError
+            if context_guard(manifest, scope, predicate) is not True:
+                return result(reason="context_changed")
             # Key resolution stays private; only the namespace worker sends it.
             key = "" if predicate.application == "sonarr" else credential()
             if predicate.application == "radarr" and (type(key) is not str or not re.fullmatch(r"[A-Za-z0-9]{1,256}", key)):

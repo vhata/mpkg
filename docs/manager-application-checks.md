@@ -1,6 +1,6 @@
 # Version-bound container application checks
 
-`mpkg_manager.application_checks.observe_application` supplies a trusted
+`mpkg_manager.application_collection.observe_application` supplies a trusted
 library observer for Sonarr 4.0.20.3014 and Radarr 6.4.4.10685. It pins the
 runtime image configuration IDs selected in the
 [first-release fixture](specs/2026-10-31-first-release-fixture.md).
@@ -20,33 +20,62 @@ registration, naming configuration and sentinel creation.
 
 ## Trusted history binding
 
-The caller supplies an independently obtained `RuntimeCheckManifest`, an
-exact private original role from that manifest, and an
-`ApplicationPredicate`. The complete binding includes host, revision,
-source snapshot, selection, original current/accepted role and predicate,
-physical resource, selected service, version, port, URL base and Radarr
-root/sentinel expectations. Removed and relinquished accepted roles keep
-their original scope. Changed IDs, predicates, adoption context or source
-cannot reuse an observation. `matches` additionally refuses future or
-stale evidence, with a default 60-second maximum age.
+Endpoint checks may declare optional closed versioned `application`
+metadata, as defined in the [declaration guide](manager-declarations.md).
+It records the version, internal port, URL base and Radarr root ID, path
+and sentinel in the immutable declaration snapshot. Existing adoption
+history already retains full check definitions; no store schema migration
+is needed. Later intent edits or relinquishment do not rewrite the last
+explicitly adopted application predicates. History reopening reconstructs
+them from the original adoption snapshot.
 
-`context_guard(manifest, scope, predicate)` is mandatory. A trusted
-embedding must independently reload live policy/history and the original
-accepted application predicate, returning exactly `True` only for the
-same context. It is checked before queries, before the worker and after
-collection. A permissive test callback is not production authentication.
-Python constructors, public JSON and imported reports cannot establish
-accepted predicates or grant authority.
+`application_check_manifest(readonly_store, loaded_policy, revision=...,
+snapshot_id=...)` independently derives complete runtime roles, including
+application metadata, from verified policy and actual current/accepted
+history. Removed and relinquished resources retain their accepted roles;
+component selection cannot suppress them. The manifest also retains
+ordinary runtime roles so completeness cannot be asserted by dropping
+unwanted definitions.
 
-This library does not extend declaration syntax, store application
-predicate acceptance, collect a complete application batch, or install a
-CLI/helper request. The existing declaration endpoint URL records the
-root-folder path without a query; the fixed Radarr worker appends its
-version-bound `timeout=true` query. An embedding must retain the separate
-application predicate alongside original accepted history rather than
-infer it from a current same-ID endpoint or from observed runtime data.
-The existing runtime and route reports keep their original unverified
-functional meaning.
+`observe_application` takes those trusted store/policy handles, the
+expected manifest and one exact original scope. It derives the application
+predicate from that stored role and constructs its own live history guard.
+It accepts neither a caller predicate nor a guard callback. Complete
+history, policy, source snapshot and selection are rechecked before queries,
+before credential resolution, after resolution and after collection.
+Changed or tampered context refuses the result; an imported or
+caller-constructed manifest must exactly match independent live history
+before it can cause any query or credential resolution.
+
+`collect_application_checks` derives its manifest internally and collects
+all application roles with explicit `check_applications=True`. The default
+performs no application requests. Retained roles run first. Unselected,
+disabled and unscheduled roles remain explicit unavailable rows.
+`credential_resolver(scope)` receives the exact private role to resolve a
+protected credential for its physical target. Credentials and credential
+references never enter declarations, history or public results. The
+resolver cannot override the stored predicate.
+
+The default collection budget is 60 seconds and 64 attempts; trusted
+callers may select up to 300 seconds and 256 attempts. Queries share a
+1,024-query and 64 MiB reserved-output allowance. Each request keeps its
+original timeout, and late results are discarded. Synchronous history,
+policy and kernel reads retain their existing latency limitations. No
+automatic retries occur. Collection rechecks history even for empty,
+disabled or exhausted batches.
+
+`ApplicationCheckBatch.matches_manifest` requires independently derived
+complete scope and rejects future or stale evidence, with a default
+60-second maximum age. Public results omit metadata values and are not
+reusable evidence proofs. Python constructors and serialized reports do
+not authenticate history or confer application authority.
+
+No installed CLI/helper request is added. The existing endpoint URL
+records the root-folder path without a query; the fixed Radarr worker
+appends `timeout=true`. Ordinary endpoint and runtime reporting keeps its
+unverified functional meaning even when the declaration includes metadata.
+Functional evidence is supplied only by explicit trusted application
+collection.
 
 ## Runtime, namespaces and credentials
 
@@ -90,7 +119,11 @@ existing bounds and limitations.
 
 ## Evidence
 
-Owned HTTP listeners and synthetic engine/process evidence cover current
+Real temporary stores and policies cover changed current predicates,
+retained adoption history, removal/relinquishment, reopen, tampered
+snapshots and manifests, stale evidence and denial before credentials.
+A store-backed Radarr check also uses the real private worker and an
+owned HTTP listener. Synthetic engine/process evidence covers current
 and retained binding, wrong versions/listeners, replacement, namespace
 mismatch, bridge mapping, stale context, timeouts, redirects, malformed and
 oversized bodies, exact Radarr sentinel checks and credential redaction.

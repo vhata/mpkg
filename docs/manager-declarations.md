@@ -192,10 +192,55 @@ and literal ASCII controls (C0 and DEL) are unsupported. The
 original URL is checked before parsing; percent-encoded path data stays
 encoded and unchanged. Stored declarations containing literal controls
 also fail when their contents are revalidated; no rewrite is performed.
-Authenticated application checks, response
-content checks and write-access verification require a further bounded
-schema and implementation; they cannot be represented as arbitrary
-commands, headers or secret arguments.
+Endpoint checks for Compose resources may additionally include a closed
+`application` table. Omitting it preserves the original normalized form
+and route-only interpretation. Schema 1 supports the pinned Sonarr and
+Radarr versions below; no commands, headers, credential values or secret
+references are accepted.
+
+```toml
+[[checks]]
+id = "radarr-shared-root"
+kind = "endpoint"
+resource = "radarr"
+url = "http://127.0.0.1:17878/api/v3/rootfolder/1"
+expected_status = 200
+timeout_seconds = 10
+[checks.application]
+schema = 1
+name = "radarr"
+version = "6.4.4.10685"
+port = 17878
+base = ""
+root_id = 1
+root_path = "/mnt/media/mpkg-fixture-shared/radarr-root"
+sentinel = "Mpkg Sentinel (2000)"
+```
+
+Common required fields are integer `schema = 1`, `name`, exact `version`
+and integer internal `port` (1–65535). Optional `base` defaults to empty;
+its path segments contain only letters, digits, underscores and hyphens.
+Radarr `6.4.4.10685` additionally requires a positive integer `root_id`,
+a normalized absolute `root_path` and a single descendant `sentinel`
+name. Sonarr `4.0.20.3014` accepts none of the Radarr fields. Unknown
+fields or versions are refused. Root paths and sentinel names use the
+adapter's bounded literal character subset; neither permits traversal.
+
+The endpoint must use IPv4 loopback HTTP, status 200 and at most ten
+seconds. Its path must exactly match `base + /ping` for Sonarr, or
+`base + /api/v3/rootfolder/{root_id}` for Radarr. The declaration URL has
+no query; the Radarr adapter adds its fixed `timeout=true` query. The
+internal port may differ from the published endpoint port for bridge
+networking; collection verifies their actual mapping.
+
+These nonsecret predicates become part of the exact snapshot and
+original adopted check definitions. Later current changes, removal and
+relinquishment preserve accepted predicates until explicit readoption.
+Metadata alone makes no health claim. Explicit
+[application collection](manager-application-checks.md) derives current
+and retained checks through live store/policy handles. Ordinary endpoint
+status remains route-only. Write-access verification and arbitrary
+application commands remain unsupported.
 
 ## Runtime scope
 

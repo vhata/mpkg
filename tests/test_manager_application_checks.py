@@ -26,6 +26,8 @@ def fixture(application="sonarr", port=18989, role="current"):
         "adoption_revision": None if role == "current" else 1, "snapshot_id": "b" * 64,
         "management": None if role == "current" else "relinquished", "selected": True,
         "context": {"check": {"id": "check", "kind": "endpoint", "resource": "web",
+             "application": {"schema": 1, "name": application, "version": predicate.version, "port": port, "base": "",
+                 **({"root_id": 1, "root_path": predicate.root_path, "sentinel": predicate.sentinel} if application == "radarr" else {})},
              "timeout_seconds": 2, "expected_status": 200, "url": f"http://127.0.0.1:{port}{path}"},
           "resource": {"id": "web", "kind": "compose", "identity": {"engine": "local", "project": "example"},
                        "checks": ["check"], "desired": {"services": ["web"]}},
@@ -57,7 +59,7 @@ class Replies:
 
 class ApplicationTests(unittest.TestCase):
     def observe(self, application="sonarr", role="current", **kwargs):
-        return app.observe_application(*fixture(application, role=role), context_guard=lambda *a: True,
+        return app._observe_application(*fixture(application, role=role), context_guard=lambda *a: True,
              query_runner=kwargs.pop("query_runner", Replies(application)), credential=lambda: "SECRET",
              application_runner=kwargs.pop("application_runner", lambda *a: "passed"),
              route_runner=kwargs.pop("route_runner", lambda *a: "match"), **kwargs)
@@ -80,13 +82,13 @@ class ApplicationTests(unittest.TestCase):
 
     def test_context_refused_before_queries(self):
         replies = Replies()
-        result = app.observe_application(*fixture(), context_guard=lambda *a: False, query_runner=replies)
+        result = app._observe_application(*fixture(), context_guard=lambda *a: False, query_runner=replies)
         self.assertEqual(result.reason, "context_changed")
         self.assertEqual(replies.calls, 0)
 
     def test_context_changed_after_request_discards_result(self):
-        guards = iter((True, True, False))
-        result = app.observe_application(*fixture(), context_guard=lambda *a: next(guards),
+        guards = iter((True, True, True, False))
+        result = app._observe_application(*fixture(), context_guard=lambda *a: next(guards),
              query_runner=Replies(), application_runner=lambda *a: "passed", route_runner=lambda *a: "match")
         self.assertEqual(result.reason, "context_changed")
 
@@ -183,7 +185,7 @@ class WorkerTests(unittest.TestCase):
                 pids=[os.getpid()] if pids is None else pids), "SECRET" if application == "radarr" else "", ns)
     def test_owned_listener_and_full_observer(self):
         self.assertEqual(self.run_worker(), "passed")
-        result = app.observe_application(*fixture(port=self.port), context_guard=lambda *a: True,
+        result = app._observe_application(*fixture(port=self.port), context_guard=lambda *a: True,
                                         query_runner=Replies(port=self.port))
         self.assertEqual(result.functional_result, "passed")
         self.assertEqual(result.route_result, "match")
