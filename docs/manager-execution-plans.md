@@ -8,8 +8,9 @@ fixture adapter and harness exercise the protocol using inert effects only;
 all projections remain `fixture_only` and `executable: false`.
 
 No helper request can submit descriptors, dependency edges, commands,
-callbacks or adapter registrations. Production attempt creation and request
-integration remain separate work. A constructed `AcceptedPlanBinding`, a
+callbacks or adapter registrations. Production attempt creation remains unavailable. The
+[request boundary](manager-execution-requests.md) connects inert acceptance,
+dispatch and recovery without registering production adapters. A constructed `AcceptedPlanBinding`, a
 copied summary or an existing journal fixture record grants no authority.
 
 ## Derivation and retained obligations

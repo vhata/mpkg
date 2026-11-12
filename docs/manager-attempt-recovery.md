@@ -4,7 +4,9 @@
 disposition for a reserved attempt. It never invokes package tools, kills
 processes, deletes locks, replays actions or infers success. The current
 boundary accepts trusted fixture collectors only; production evidence
-collectors and an installed recovery request remain unavailable.
+collectors remain unavailable. The installed
+[request boundary](manager-execution-requests.md) recognizes recovery
+requests but cannot select a fixture collector.
 
 ## Ownership and evidence
 
